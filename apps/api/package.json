@@ -1,0 +1,29 @@
+{
+  "name": "@mozia/skillhub-api",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "start": "bun dist/index.js",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "bun run src/db/migrate.ts",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "@hono/zod-validator": "^0.7.0",
+    "zod": "^3.25.0",
+    "drizzle-orm": "^0.45.0",
+    "postgres": "^3.4.0",
+    "@mozia/skillhub-shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "drizzle-kit": "^0.31.0",
+    "typescript": "^5.6.0"
+  }
+}
