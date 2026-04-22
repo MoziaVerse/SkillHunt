@@ -1,0 +1,19 @@
+{
+  "name": "@mozia/skillhub-scripts",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "bun --env-file=../apps/api/.env test",
+    "seed:owned": "bun --env-file=../apps/api/.env seed-owned.ts",
+    "seed:referenced": "bun --env-file=../apps/api/.env seed-referenced.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.0",
+    "postgres": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.6.0"
+  }
+}

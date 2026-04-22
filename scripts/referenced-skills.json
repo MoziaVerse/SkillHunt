@@ -1,0 +1,42 @@
+[
+  {
+    "slug": "frontend-design",
+    "name": "frontend-design",
+    "description": "Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications.",
+    "tags": ["frontend", "design", "ui"],
+    "sourceRepo": "anthropics/skills",
+    "sourceSkillName": "frontend-design",
+    "sourceInstallCommand": "npx skills add anthropics/skills --skill frontend-design",
+    "sourceUrl": "https://github.com/anthropics/skills/tree/main/frontend-design"
+  },
+  {
+    "slug": "skill-creator",
+    "name": "skill-creator",
+    "description": "Create new skills, modify and improve existing skills, and measure skill performance.",
+    "tags": ["meta", "tooling"],
+    "sourceRepo": "anthropics/skills",
+    "sourceSkillName": "skill-creator",
+    "sourceInstallCommand": "npx skills add anthropics/skills --skill skill-creator",
+    "sourceUrl": "https://github.com/anthropics/skills/tree/main/skill-creator"
+  },
+  {
+    "slug": "web-design-guidelines",
+    "name": "web-design-guidelines",
+    "description": "Vercel's web design guidelines for agents building web interfaces.",
+    "tags": ["frontend", "design", "vercel"],
+    "sourceRepo": "vercel-labs/agent-skills",
+    "sourceSkillName": "web-design-guidelines",
+    "sourceInstallCommand": "npx skills add vercel-labs/agent-skills --skill web-design-guidelines",
+    "sourceUrl": "https://github.com/vercel-labs/agent-skills/tree/main/skills/web-design-guidelines"
+  },
+  {
+    "slug": "brainstorming",
+    "name": "brainstorming",
+    "description": "Collaborative brainstorming techniques for agents to explore problem spaces.",
+    "tags": ["thinking", "planning"],
+    "sourceRepo": "obra/superpowers",
+    "sourceSkillName": "brainstorming",
+    "sourceInstallCommand": "npx skills add obra/superpowers --skill brainstorming",
+    "sourceUrl": "https://github.com/obra/superpowers/tree/main/skills/brainstorming"
+  }
+]
