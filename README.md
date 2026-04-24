@@ -116,5 +116,19 @@ pnpm seed:all
 
 ## 6. 文档导航
 
-- 各阶段 spec：[`docs/spec/phase-0/`](docs/spec/phase-0/) Phase 0 全部，[`docs/spec/phase-1/`](docs/spec/phase-1/) auth
+- 各阶段 spec：[`docs/spec/phase-0/`](docs/spec/phase-0/)、[`docs/spec/phase-1/`](docs/spec/phase-1/)、[`docs/spec/phase-2/`](docs/spec/phase-2/)
+- 战略 + 路线图（跨团队/上行沟通用）：[`docs/SkillHub/strategy.md`](docs/SkillHub/strategy.md)
 - mozia-sso 集成手册：[`../mozia-sso/docs/skillhub-onboarding.md`](../mozia-sso/docs/skillhub-onboarding.md)（分支 `feat/skillhub-onboarding-doc`）
+
+## 7. 飞书 wiki 同步
+
+战略文档 `docs/SkillHub/strategy.md` 同时维护一份**飞书 wiki 镜像** ↗
+[SkillHub · 战略与路线图](https://ecn1zd9lqqzk.feishu.cn/wiki/WHRowkRuliXKj0ktiL7cTCv6nxg)
+
+**单一源是本地 md。** 改完后跑：
+
+```bash
+scripts/feishu-sync.sh docs/SkillHub/strategy.md Rt0Md4z00oXsGnxRuZdcHdmknzc
+```
+
+脚本依赖：`npm install -g @larksuite/cli` + `lark-cli auth login --recommend`（一次性）。详细行为和"section 级精准更新"姿势见脚本头部注释。
