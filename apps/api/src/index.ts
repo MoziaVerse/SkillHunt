@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { serveStatic } from 'hono/bun';
 import { OIDC_PROVIDER_ID, auth } from './lib/auth';
 import { apiRoute } from './routes/api';
 import { wellknownRoute } from './routes/wellknown';
@@ -21,6 +22,17 @@ app.on(['GET', 'POST'], '/api/auth/*', (c) => auth.handler(c.req.raw));
 
 app.route('/.well-known', wellknownRoute);
 app.route('/api', apiRoute);
+
+// Serve web SPA static files when WEB_DIST is set (production/test-server).
+const webDist = Bun.env.WEB_DIST;
+if (webDist) {
+  app.use('/*', serveStatic({ root: webDist }));
+  // SPA fallback: any unmatched GET → index.html
+  app.get('/*', (c) => {
+    const file = Bun.file(`${webDist}/index.html`);
+    return new Response(file, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+  });
+}
 
 const port = Number(Bun.env.PORT ?? 3333);
 
