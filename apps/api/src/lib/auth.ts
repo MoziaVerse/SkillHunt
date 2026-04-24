@@ -43,6 +43,20 @@ export const OIDC_PROVIDER_ID = process.env.OIDC_PROVIDER_ID ?? 'mozia-sso';
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 
+// Mozia user.name doubles as the URL handle (e.g. /u/zeo, /skills/zeo/foo)
+// and must satisfy SLUG_RE. SSO commonly returns mixed-case (e.g. "Zeo") or
+// has whitespace / underscores. Sanitize to lowercase + dash form on
+// account creation; users can still rename in /settings/profile.
+function sanitizeHandle(input: string | undefined, sub: string): string {
+  if (!input) return `user-${sub.slice(0, 8)}`;
+  const cleaned = input
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
+  return cleaned || `user-${sub.slice(0, 8)}`;
+}
+
 export const auth = betterAuth({
   baseURL: cfg('BETTER_AUTH_URL'),
   secret: cfg('BETTER_AUTH_SECRET'),
@@ -77,15 +91,15 @@ export const auth = betterAuth({
               /* keep default */
             }
             const email = str(profile.email) ?? `${sub}@no-email.${issuerHost}`;
+            const rawName =
+              str(profile.preferred_username) ??
+              str(profile.name) ??
+              str(profile.displayName) ??
+              str(profile.email)?.split('@')[0];
             return {
               ssoSub: str(profile.sub),
               email,
-              name:
-                str(profile.name) ??
-                str(profile.displayName) ??
-                str(profile.preferred_username) ??
-                str(profile.email) ??
-                sub,
+              name: sanitizeHandle(rawName, sub),
               image: str(profile.picture) ?? str(profile.avatar),
             };
           },

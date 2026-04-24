@@ -49,6 +49,30 @@ export default function PublishPage() {
     );
   }
 
+  // user.name doubles as the URL handle and must satisfy SLUG_RE. SSO accounts
+  // created before the auto-sanitize fix may have invalid names like "Zeo" —
+  // surface a clear "rename required" UX rather than letting publish hit zod 400.
+  const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
+  if (!SLUG_RE.test(me.name)) {
+    return (
+      <div className="py-24 text-center max-w-md mx-auto">
+        <div className="font-mono text-[12px] uppercase tracking-[0.16em] text-neutral-500 mb-3">
+          handle rename required
+        </div>
+        <p className="text-neutral-700">
+          Your current handle <code className="font-mono">{me.name}</code> contains invalid
+          characters. SkillHub URLs require lowercase letters, digits, and dashes only.
+        </p>
+        <Link
+          to="/settings/profile"
+          className="mt-5 inline-block font-mono text-[12px] uppercase tracking-[0.1em] bg-neutral-900 text-neutral-100 px-3 py-1.5"
+        >
+          rename in settings
+        </Link>
+      </div>
+    );
+  }
+
   const ownerOptions = [me.name, ...me.canPublishAs];
 
   const handleUpload = (data: SkillFromUpload) => {
