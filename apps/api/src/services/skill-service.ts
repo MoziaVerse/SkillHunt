@@ -159,6 +159,17 @@ export async function findSkillBySlug(slug: string): Promise<SkillWithOwner | nu
   return r ? { ...r.skill, owner: r.owner } : null;
 }
 
+export async function findSkillById(skillId: string): Promise<SkillWithOwner | null> {
+  const rows = await db
+    .select({ skill: skills, owner: ownerSelect })
+    .from(skills)
+    .innerJoin(user, eq(skills.ownerUserId, user.id))
+    .where(eq(skills.id, skillId))
+    .limit(1);
+  const r = rows[0];
+  return r ? { ...r.skill, owner: r.owner } : null;
+}
+
 export async function findSkillByOwnerAndSlug(
   ownerHandle: string,
   slug: string,

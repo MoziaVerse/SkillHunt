@@ -4,18 +4,23 @@ import { getAuthContext } from '../lib/auth-context';
 import {
   type SkillDetail,
   type SkillListItem,
+  createPatSchema,
   createSkillSchema,
   filePathSchema,
   listSkillsQuerySchema,
+  mintInstallTokenSchema,
   updateProfileSchema,
   updateSkillSchema,
   upsertFileBodySchema,
 } from '../lib/dto';
+import { mintGrant } from '../services/install-grant-service';
+import { createPat, listPats, revokePat } from '../services/pat-service';
 import {
   type SkillWithOwner,
   createOwnedSkill,
   deleteSkill,
   deleteSkillFile,
+  findSkillById,
   findSkillByOwnerAndSlug,
   findSkillBySlug,
   findUserByHandle,
@@ -317,4 +322,69 @@ apiRoute.get('/users/:owner/skills', async (c) => {
     items,
     total: items.length,
   });
+});
+
+// ─── Personal access tokens ──────────────────────────────────────────
+
+apiRoute.post('/personal-access-tokens', zValidator('json', createPatSchema), async (c) => {
+  const { user } = await getAuthContext(c);
+  if (!user) return c.json({ error: 'Authentication required' }, 401);
+  const input = c.req.valid('json');
+  const result = await createPat({
+    userId: user.id,
+    name: input.name,
+    expiresInDays: input.expiresInDays,
+  });
+  // Token plaintext is returned ONLY here — never again.
+  return c.json(result, 201);
+});
+
+apiRoute.get('/personal-access-tokens', async (c) => {
+  const { user } = await getAuthContext(c);
+  if (!user) return c.json({ error: 'Authentication required' }, 401);
+  const items = await listPats(user.id);
+  return c.json({ items });
+});
+
+apiRoute.delete('/personal-access-tokens/:id', async (c) => {
+  const { user } = await getAuthContext(c);
+  if (!user) return c.json({ error: 'Authentication required' }, 401);
+  const id = c.req.param('id');
+  const ok = await revokePat(user.id, id);
+  return ok ? c.body(null, 204) : c.json({ error: 'Not Found' }, 404);
+});
+
+// ─── Capability URL: mint install token ──────────────────────────────
+
+apiRoute.post('/install-tokens', zValidator('json', mintInstallTokenSchema), async (c) => {
+  const { user } = await getAuthContext(c);
+  if (!user) return c.json({ error: 'Authentication required' }, 401);
+  const input = c.req.valid('json');
+
+  const skill = await findSkillById(input.skillId);
+  if (!skill) return c.json({ error: 'Skill not found' }, 404);
+  const isOwner = skill.ownerUserId === user.id;
+  const visible = skill.visibility === 'public' || skill.type === 'referenced' || isOwner;
+  if (!visible) return c.json({ error: 'Not Found' }, 404);
+
+  const grant = await mintGrant({
+    skillId: skill.id,
+    grantedBy: user.id,
+    expiresInHours: input.expiresInHours,
+    maxUses: input.maxUses,
+  });
+
+  const origin = new URL(c.req.url).origin;
+  const installCommand =
+    `npx skills add ${origin}/.well-known/agent-skills/i/${grant.token}` +
+    ` --skill ${skill.owner.handle}/${skill.slug} --agent claude-code -y`;
+  return c.json(
+    {
+      token: grant.token,
+      expiresAt: grant.expiresAt.toISOString(),
+      maxUses: grant.maxUses,
+      installCommand,
+    },
+    201,
+  );
 });

@@ -1,5 +1,15 @@
 import { sql } from 'drizzle-orm';
-import { index, jsonb, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  index,
+  inet,
+  integer,
+  jsonb,
+  pgSchema,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 // Dedicated schema, isolated from other mozia tables.
 export const skillhubSchema = pgSchema('skillhub');
@@ -73,3 +83,55 @@ export type Skill = typeof skills.$inferSelect;
 export type NewSkill = typeof skills.$inferInsert;
 export type SkillFile = typeof skillFiles.$inferSelect;
 export type NewSkillFile = typeof skillFiles.$inferInsert;
+
+// ─── Phase 2 spec 03 · PAT + capability URL ───────────────────────────
+
+export const personalAccessTokens = skillhubSchema.table(
+  'personal_access_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id').notNull(),
+    name: text('name').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    tokenPrefix: text('token_prefix').notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('pat_user_idx').on(t.userId), index('pat_token_prefix_idx').on(t.tokenPrefix)],
+);
+
+export const installGrants = skillhubSchema.table(
+  'install_grants',
+  {
+    token: text('token').primaryKey(),
+    skillId: uuid('skill_id').notNull(),
+    grantedBy: text('granted_by').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    maxUses: integer('max_uses').notNull().default(1),
+    usedCount: integer('used_count').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('install_grants_skill_idx').on(t.skillId),
+    index('install_grants_expires_idx').on(t.expiresAt),
+  ],
+);
+
+export const installGrantUses = skillhubSchema.table(
+  'install_grant_uses',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    token: text('token').notNull(),
+    ip: inet('ip'),
+    userAgent: text('user_agent'),
+    accessedAt: timestamp('accessed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('grant_uses_token_idx').on(t.token),
+    index('grant_uses_accessed_idx').on(t.accessedAt),
+  ],
+);
+
+export type PersonalAccessToken = typeof personalAccessTokens.$inferSelect;
+export type InstallGrant = typeof installGrants.$inferSelect;

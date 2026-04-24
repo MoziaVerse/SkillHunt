@@ -164,3 +164,23 @@ export const updateProfileSchema = z
   });
 
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+
+// ─── PAT ───────────────────────────────────────────────────────────────
+
+export const createPatSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  // Optional TTL; null/omitted = never expires. Capped client-side at 1 year.
+  expiresInDays: z.number().int().min(1).max(365).optional(),
+});
+
+export type CreatePatInput = z.infer<typeof createPatSchema>;
+
+// ─── Capability URL ────────────────────────────────────────────────────
+
+export const mintInstallTokenSchema = z.object({
+  skillId: z.string().uuid(),
+  expiresInHours: z.number().int().min(1).max(168).optional().default(24),
+  maxUses: z.number().int().min(1).max(100).optional().default(1),
+});
+
+export type MintInstallTokenInput = z.infer<typeof mintInstallTokenSchema>;

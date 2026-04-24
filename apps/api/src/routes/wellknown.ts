@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { mimeFromPath } from '../lib/content-type';
+import { consumeGrant } from '../services/install-grant-service';
 import {
   findPublicOwnedSkillByOwnerAndSlug,
   findPublicOwnedSkillBySlug,
@@ -75,6 +76,35 @@ const handleAgentSkillsFile = async (c: import('hono').Context) => {
   c.header('Content-Type', mimeFromPath(filePath));
   return c.body(content);
 };
+
+// ─── Capability URL: GET /.well-known/agent-skills/i/:token/:owner/:slug/* ────
+//
+// Bearer-less access for one-shot capability tokens. Used by `npx skills`
+// CLI to install private/owner-restricted skills without requiring auth.
+// MUST be registered BEFORE the generic `/agent-skills/:a/:b` routes.
+const handleCapabilityFile = async (c: import('hono').Context) => {
+  const PREFIX = '/.well-known/agent-skills/i/';
+  const tail = c.req.path.slice(PREFIX.length);
+  const segments = tail.split('/').filter((s) => s.length > 0);
+  if (segments.length < 4) return c.text('Path too short', 400);
+
+  const [token, ownerHandle, skillSlug, ...fileSegs] = segments;
+  if (!token || !ownerHandle || !skillSlug) return c.notFound();
+  const filePath = fileSegs.join('/');
+  if (isUnsafePath(filePath)) return c.text('Invalid path', 400);
+
+  const result = await consumeGrant(token, ownerHandle, skillSlug, filePath, {
+    ip: c.req.header('x-forwarded-for') ?? null,
+    userAgent: c.req.header('user-agent') ?? null,
+  });
+  if (!result) return c.notFound();
+
+  c.header('Content-Type', result.contentType ?? mimeFromPath(filePath));
+  return c.body(result.content);
+};
+
+wellknownRoute.get('/agent-skills/i/:token/:owner/:slug', handleCapabilityFile);
+wellknownRoute.get('/agent-skills/i/:token/:owner/:slug/*', handleCapabilityFile);
 
 wellknownRoute.get('/agent-skills/:a/:b', handleAgentSkillsFile);
 wellknownRoute.get('/agent-skills/:a/:b/*', handleAgentSkillsFile);
