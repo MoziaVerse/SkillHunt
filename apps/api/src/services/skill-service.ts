@@ -236,6 +236,19 @@ export async function findUserByHandle(handle: string): Promise<UserRow | null> 
   return rows[0] ?? null;
 }
 
+/**
+ * Look up a user by their mozia-sso `sub` claim.
+ *
+ * Used by the matrix proxy auth path (spec 04): matrix backend forwards
+ * `Authorization: Bearer <SKILLHUB_SERVICE_TOKEN>` + `X-SSO-SUB: <sub>`
+ * and we resolve the sub to a local user row. Returns null if the user has
+ * never signed in to SkillHub directly — caller should 401 + nudge them.
+ */
+export async function findUserBySsoSub(sub: string): Promise<UserRow | null> {
+  const rows = await db.select(userRowSelect).from(user).where(eq(user.ssoSub, sub)).limit(1);
+  return rows[0] ?? null;
+}
+
 export async function updateUserProfile(
   userId: string,
   patch: { name?: string; handle?: string },

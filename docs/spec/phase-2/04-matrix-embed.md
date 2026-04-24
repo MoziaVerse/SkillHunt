@@ -1,141 +1,175 @@
 # Phase 2 · Spec 04 · matrix Embedded Skill Store
 
-> 依赖：02-user-upload（API 已稳定）；可与 03-mclaw-api 并行
-> 产出：matrix 左侧 nav 多一项 "Skill 商店"，进去看到和 SkillHub 同款数据但视觉是 matrix 风格（复用 matrix 的 `Explore.tsx` 模式）；matrix backend 加 SkillHub proxy；统一 mozia-sso session。
+> 依赖：02-user-upload（API 已稳定）；03（capability URL）已落地
+> 产出：matrix sidebar 多一项 "Skill 商店"，UI 走 matrix 风格（复用 `Explore.tsx`），数据来源是 SkillHub。鉴权链路用 **mozia 生态既有的 S2S pattern**（matrix backend 早就在这么调 mozia-api），SkillHub 加同款 middleware 就接入了。
 
 ---
 
 ## 一、目标
 
-把 SkillHub 当 backend 嵌进 matrix 的 UI 里，**视觉风格用 matrix 的**（不是 iframe，也不是新标签）。完成后 Mozia 用户在 matrix 浏览 skill 是无缝体验，不需要切站点。
+把 SkillHub 装进 matrix 的 UI 里，用户在 matrix 内浏览 / 安装 skill，**视觉是 matrix 风格、数据是 SkillHub 的、登录是 mozia-sso 的**。
 
-**现状（来自摸底）：**
-- matrix 的"应用商店"（`/app/explore`）已有完整列表 + 详情 sheet + 搜索 + 状态 tabs 的 UX
-- matrix 用 better-auth + OIDC 接 mozia-sso；providerId 默认 `oidc`
-- matrix 后端是 Bun + Hono + Drizzle，**和 SkillHub 同款栈**
+### 不做（避免偏题）
 
-**目标形态：**
-- matrix sidebar 加 "Skill 商店" 入口（`/app/skills`）
-- 该页 UI 复用 `Explore.tsx` 的组件树，只把数据源换成 SkillHub
-- matrix backend 加 `/api/skills*` proxy 转发到 SkillHub backend，做 auth passthrough
-- 用户已经登录 matrix（mozia-sso）→ 进 skill 商店免再登
+- ❌ 在 matrix 内部发布 skill —— 发布去 SkillHub 自家前端
+- ❌ matrix 主搜索能搜到 skill（跨产品搜索是另一议题）
+- ❌ 暴露给"非 matrix 的外部调用方"用同一套 service token —— 那是另一条线（详见第十章）
 
-## 二、架构决策
+## 二、关键摸底（决定方案的事实）
 
-### 决策 1：proxy 走 matrix backend，不走 frontend 直连
+> spec 重写前重新摸底了 matrix 仓库；以下事实直接决定了第三章的设计。
 
-**为什么不让 matrix frontend 直接调 SkillHub `/api/skills`：**
-- 跨域 cookie 难搞（matrix `*.mzsjai.com` vs SkillHub `*.mzsjai.com`，子域不同）
-- session 不共享：matrix 的 better-auth session 和 SkillHub 的 better-auth session 是两套独立的 cookie
-- CORS preflight 增加延迟
+| # | 事实 | 出处 |
+|---|---|---|
+| 1 | matrix 自身**不存 / 不验**用户 API key —— `token` 子模块全是 UI，CRUD 全部转发给 mozia-api | `matrix/backend/src/lib/mozia-user-api.ts`, `service/token.ts` |
+| 2 | matrix 调 mozia-api 用的鉴权三件套：`Authorization: Bearer <ADMIN_TOKEN>` + `New-Api-User: <ADMIN_ID>` + `X-SSO-SUB: <user-sub>` | 同上 line 26-64 |
+| 3 | matrix 当前**没有** introspect / verify endpoint —— "用 Bearer token 反查 ssoSub" 这件事在生态里还不存在 | matrix `router/` 全文搜索 |
+| 4 | matrix 前端 `Explore.tsx` 是成熟的 marketplace 组件，可复用 / 可复制 | `matrix/src/routes/Explore.tsx` |
+| 5 | matrix sidebar nav 是简单数组，新增一项零摩擦 | `matrix/src/components/layout/Sidebar.tsx` line 34-41 |
+| 6 | matrix 端口：backend `:3257`，frontend `:5173`（react-router 默认） | `matrix/backend/.env.example` |
+| 7 | mozia-api 是另一个独立服务，本仓库**没有源码**（黑盒，只有 HTTP 调用） | matrix CLAUDE.md 描述 + .env 引用 |
 
-**proxy 模式的优点：**
-- matrix frontend 当 SkillHub 不存在，就调 `matrix-backend/api/skills/*`
-- matrix backend 用自己的 better-auth 验证 cookie 拿到 mozia-sso `sub`
-- matrix backend 转发到 SkillHub 时用 **service account PAT**（matrix 在 SkillHub 那边创建一个长期 PAT），同时把当前 matrix 用户的 mozia-sso `sub` 通过 header 透传（如 `X-Acting-User-Sub`），SkillHub 据此判断 viewer 身份
+**最关键的一条是 #2。** mozia 生态目前的 S2S 标准就是 "service Bearer + acting-user header"，且 matrix 已经在用。SkillHub 加一个对称的入口，整条 matrix→SkillHub 链路就和 matrix→mozia-api 完全同构，团队不需要学新概念。
 
-### 决策 2：service account 模式，matrix 在 SkillHub 注册一个"应用身份"
+## 三、架构决策
 
-SkillHub 这边新增 user 类型 `is_service_account=true`，matrix 用一个长期 PAT。该 PAT 调 SkillHub 时**额外**带 `X-Acting-User-Sub: <matrix 当前用户的 sso_sub>` header；SkillHub 后端识别 service account PAT + `X-Acting-User-Sub` → 把请求当成 acting user 的请求来处理。
+### 决策 1 · matrix backend 走 proxy，不让前端直连 SkillHub
+
+理由（不变）：
+- 子域 cookie 不共享、CORS preflight 增加延迟
+- session 不共享：matrix 的 better-auth 和 SkillHub 的 better-auth 是两套独立 cookie
+
+proxy 在 matrix backend 这边吃下："matrix 已登录用户"→"代他调 SkillHub"。
+
+### 决策 2 · matrix → SkillHub 复用 mozia 现成的 S2S pattern
+
+`Authorization: Bearer <SKILLHUB_SERVICE_TOKEN>` + `X-SSO-SUB: <用户 ssoSub>`。一致性收益：
+- matrix backend 端：写法和它调 mozia-api 完全同构；新建一个 `skillhub-user-api.ts` 几乎是复制 `mozia-user-api.ts`
+- 团队认知零负担：不引入新鉴权概念
+- 长期演进：以后 mozia-api 真有 introspect endpoint 时，SkillHub 切换是把 middleware 里 "string equals" 换成 "调 introspect"，调用方（matrix）一行不改
+
+### 决策 3 · 不依赖 matrix introspect endpoint（短期）
+
+事实 #3：introspect endpoint 现在不存在。如果硬等 matrix / mozia-api 团队加，spec 04 卡住。
+
+短期 SkillHub 自己签发 `SKILLHUB_SERVICE_TOKEN`，作为信任 matrix 这一个具体调用方的密钥。**这不是"重新自建 PAT 系统"**——区别：
+- PAT walkback：避免 SkillHub 维护**面向用户**的长效 token CRUD（matrix 已经在干，重复）
+- 本决策：SkillHub 维护**一个**面向**matrix 这一个服务**的固定 secret，env 配一次，不进 DB、不要 UI
+
+中长期当 mozia-api introspect 上线，SkillHub 改 middleware 走那条路，service token 退役。这是**演进路径明确的过渡方案**，不是技术债。
+
+### 决策 4 · acting user 不存在时返回 401，不自动 upsert
+
+matrix 用户首次访问 skill 商店时，SkillHub 那边大概率没他的 user 行。原本想自动 upsert 求"无感"，但仔细看 schema：
+
+- `user.sso_sub` 列无 unique index（02 加 user 表时没加）
+- 如果 matrix proxy 先 upsert 了 stub 行，后续该用户走 OIDC 直接登 SkillHub，better-auth 会插入**第二行**（不同 id、相同 ssoSub），技能权属裂成两份
+- 加 unique index 又会反过来破坏 better-auth 的首次创建流（约束冲突）
+
+权衡：用 401 让 matrix 引导用户到 SkillHub 完成首次登录（mozia-sso 已登 → 一次重定向 → 回来）。多一次点击换零脏数据风险。matrix 端展示样例：
+
+> Skill 商店需要您先在 SkillHub 完成一次首次访问 [→ 跳转 SkillHub]
+
+后续 Phase 3 真要做"无感"，路径是给 ssoSub 加 unique index + 给 better-auth `databaseHooks.user.create.before` 加"找到 ssoSub 已存在 → 返回现有行"逻辑。本 spec 不做。
+
+### 决策 5 · X-SSO-SUB header 只对 service token 生效
+
+普通 cookie session 请求即使带 `X-SSO-SUB` 也忽略。防止任何"持普通 PAT-equivalent + 伪造 X-SSO-SUB → 冒充别人"的可能。middleware 必须先验 service token，才解 acting header。
+
+### 决策 6 · 前端 UI 复用 `Explore.tsx`
+
+matrix 团队选择：
+- 上策：抽 `<MarketplaceList resource="apps" | "skills">` 复用
+- 下策：复制 `Explore.tsx` → `Skills.tsx` 改字段
+
+不强求，由 matrix 工程师定。
+
+## 四、SkillHub 这边的改动
+
+### 1. env
 
 ```
-matrix 用户 ──[matrix cookie]──> matrix backend
-                                        │
-                          [Authorization: Bearer mzhk_pat_<service-account>
-                           X-Acting-User-Sub: <用户 mozia-sso sub>]
-                                        ↓
-                                 SkillHub backend
-                                 (按 acting user 鉴权)
+# apps/api/.env
+SKILLHUB_SERVICE_TOKEN=<openssl rand -hex 32>
+TRUSTED_ORIGINS=https://matrix.mzsjai.com,http://localhost:5173
 ```
 
-这样 SkillHub 知道 "matrix 替谁来"，private skill 只对该用户出现。
+`TRUSTED_ORIGINS` 已有，追加 matrix origin 即可。
 
-### 决策 3：复用 matrix 的 `Explore.tsx` 组件，不复制粘贴
+### 2. auth-context middleware 加 service-token 分支
 
-matrix 那边把 `Explore.tsx` 抽成可复用组件 `<MarketplaceList resource="apps" | "skills">`，按 `resource` prop 切换 API endpoint 和列字段。matrix 已有的 app store 不变，新加 skill store 用同一组件。
-
-如果改 `Explore.tsx` 改动太大，**降级方案**：直接复制 `Explore.tsx` 一份到 `Skills.tsx`，改字段；后续合并复用。
-
-### 决策 4：MVP 不做"在 matrix 内部安装 skill"
-
-matrix 的 app store 有 "launch instance" 按钮（启动 k8s app），skill 没有这个动作。MVP 阶段，matrix 内 skill 详情页的 "Install" 按钮**只是展示安装命令 + 复制到剪贴板**（同 SkillHub 自家的体验），不做"在 matrix 这边帮你装到 mclaw"之类的深度 action。
-
-## 三、SkillHub 这边的改动
-
-很小：
-
-### 1. user 表加 service_account 标记
-
-复用 `is_virtual` 列（02 里已加）。service account 也是一种"非真人 user"。如果要进一步区分：
-
-```sql
-ALTER TABLE skillhub."user" ADD COLUMN account_type TEXT NOT NULL DEFAULT 'human';
--- 'human' | 'virtual' (mozia 这种聚合 owner) | 'service' (matrix backend)
-```
-
-### 2. middleware 解析 acting user
-
-`apps/api/src/middleware/api-auth.ts` 修改：
+`apps/api/src/lib/auth-context.ts`：
 
 ```ts
-// PAT 验证后
-if (pat.user.accountType === 'service') {
-  const actingSub = c.req.header('X-Acting-User-Sub');
-  if (!actingSub) return c.json({ error: 'X-Acting-User-Sub required for service account' }, 400);
-  const actingUser = await findUserBySsoSub(actingSub);
-  if (!actingUser) return c.json({ error: 'Acting user not found' }, 404);
-  c.set('user', actingUser);   // 后续路由全按 acting user 处理
-} else {
-  c.set('user', pat.user);
+const SERVICE_TOKEN = process.env.SKILLHUB_SERVICE_TOKEN;
+
+export async function getAuthContext(c: Context): Promise<AuthContext> {
+  // 1) Service token (matrix proxy 等受信内部服务)
+  const authHeader = c.req.header('authorization') ?? c.req.header('Authorization');
+  if (SERVICE_TOKEN && authHeader === `Bearer ${SERVICE_TOKEN}`) {
+    const sub = c.req.header('x-sso-sub');
+    if (!sub) return { user: null }; // 调用方约定必带 X-SSO-SUB
+    const row = await findUserBySsoSub(sub);
+    if (!row) return { user: null }; // 用户尚未首次登录 SkillHub —— 路由层 401
+    return { user: { id: row.id, email: row.email, name: row.name, ssoSub: sub } };
+  }
+
+  // 2) Cookie session (better-auth, 现有路径)
+  const session = await auth.api.getSession({ headers: c.req.raw.headers });
+  if (!session?.user) return { user: null };
+  // ... 现有逻辑
 }
 ```
 
-### 3. CORS 加 matrix domain
+### 3. service 加 `findUserBySsoSub`
 
-`trustedOrigins` 加 matrix 的 origin（如 `https://matrix.mzsjai.com` + `http://localhost:<matrix-dev-port>`）。
+`apps/api/src/services/skill-service.ts`：
 
-### 4. 创建 matrix 的 service account（手动 / 一次性 SQL）
-
-```sql
-INSERT INTO skillhub."user" (id, name, email, email_verified, account_type, created_at, updated_at)
-VALUES ('matrix-svc', 'matrix', 'svc-matrix@mozia.local', true, 'service', NOW(), NOW());
-
--- 然后通过 admin UI（或直接 SQL）给 matrix-svc 创建一个永不过期的 PAT
--- 把 PAT 给 matrix 团队配置到 matrix backend env
+```ts
+export async function findUserBySsoSub(sub: string): Promise<UserRow | null> {
+  const rows = await db.select(userRowSelect).from(user).where(eq(user.ssoSub, sub)).limit(1);
+  return rows[0] ?? null;
+}
 ```
 
-## 四、matrix 这边的改动
+### 4. CORS
+
+`auth.ts` 的 `trustedOrigins` 已经从 `TRUSTED_ORIGINS` env 读，第 1 步追加 origin 后立即生效。
+
+### 5. 不需要新表 / 新 migration
+
+唯一的"身份"是 env 里那个 secret。SkillHub 这边 schema 一动不动。
+
+## 五、matrix 这边的改动
+
+由 matrix 团队实施，本 spec 给参考实现。
 
 ### Backend
 
-**新增** `apps/backend/src/router/skills.ts`：
+新增 `apps/backend/src/router/skills.ts`：
 
 ```ts
 import { Hono } from 'hono';
 
 const SKILLHUB_URL = process.env.SKILLHUB_URL!;
-const SKILLHUB_PAT = process.env.SKILLHUB_SERVICE_PAT!;
+const SKILLHUB_SERVICE_TOKEN = process.env.SKILLHUB_SERVICE_TOKEN!;
 
 export const skillsRouter = new Hono()
-  .use('*', requireAuth())   // matrix 自己的 better-auth middleware
+  .use('*', requireAuth())
   .all('/*', async (c) => {
-    const subPath = c.req.path.replace('/api/skills', '/api/skills');
-    const url = new URL(SKILLHUB_URL + subPath);
-    url.search = c.req.url.split('?')[1] ?? '';
-
     const session = c.get('session');
-    const actingSub = session.user.ssoSub;  // matrix 这边 better-auth 也存了 sso_sub
+    const url = new URL(SKILLHUB_URL + c.req.path);
+    url.search = c.req.url.split('?')[1] ?? '';
 
     const upstream = await fetch(url, {
       method: c.req.method,
       headers: {
-        'Authorization': `Bearer ${SKILLHUB_PAT}`,
-        'X-Acting-User-Sub': actingSub,
+        Authorization: `Bearer ${SKILLHUB_SERVICE_TOKEN}`,
+        'X-SSO-SUB': session.user.ssoSub,
         'Content-Type': c.req.header('content-type') ?? 'application/json',
       },
       body: ['POST', 'PUT', 'PATCH'].includes(c.req.method) ? await c.req.text() : undefined,
     });
-
     const body = await upstream.text();
     return new Response(body, {
       status: upstream.status,
@@ -144,119 +178,114 @@ export const skillsRouter = new Hono()
   });
 ```
 
-挂载在 `app.route('/api/skills', skillsRouter)`。
+挂载：`app.route('/api/skills', skillsRouter)`。
+
+**首次登录引导：** matrix frontend 的 `Skills.tsx` 拿到 401 时，展示一次性提示：
+
+```
+Skill 商店需要您先在 SkillHub 完成一次首次访问 [→ 跳转 SkillHub]
+```
+
+跳到 `${SKILLHUB_URL}/?from=matrix` 即可（用户已登 mozia-sso，OIDC 一次重定向就回来）。
 
 ### Frontend
 
-**新增** `src/routes/Skills.tsx`：
+- `src/routes/Skills.tsx`：复用 / 复制 `Explore.tsx`，把 fetch 路径换成 `/api/skills`
+- `src/components/layout/Sidebar.tsx`：加 `{ path: '/app/skills', label: 'Skill 商店', icon: BookOpen }`
+- `src/routes.ts`：加 `route("skills", "routes/Skills.tsx")`
 
-如果 `Explore.tsx` 已抽成 `<MarketplaceList>`：
+### env
 
-```tsx
-import { MarketplaceList } from '@/components/marketplace-list';
-export default function Skills() {
-  return <MarketplaceList
-    resource="skills"
-    apiPath="/api/skills"
-    detailFields={SKILL_DETAIL_FIELDS}
-    statusFilter={false}
-  />;
-}
 ```
-
-否则复制 `Explore.tsx` 一份改字段（apps → skills）。
-
-**修改** `src/routes.ts`：
-
-```ts
-route("skills", "routes/Skills.tsx"),
-```
-
-**修改** `src/components/layout/Sidebar.tsx`：
-
-```ts
-mainNavItems.push({
-  to: '/app/skills',
-  icon: BookOpen,    // lucide-react
-  label: 'Skill 商店',
-});
-```
-
-### Env
-
-```env
 # matrix backend .env
-SKILLHUB_URL=https://skillhub.mzsjai.com
-SKILLHUB_SERVICE_PAT=mzhk_pat_<由 SkillHub admin 给>
+SKILLHUB_URL=http://localhost:3333          # dev
+SKILLHUB_SERVICE_TOKEN=<由 SkillHub 团队给>
 ```
 
-## 五、协作分工
+## 六、协作 / 时序
 
-| 谁 | 做什么 |
-|---|---|
-| **SkillHub 团队（你 + me）** | 决策 1-4 全部 + 创建 matrix-svc + 把 PAT 安全传给 matrix 团队 |
-| **matrix 团队** | proxy router + Skills.tsx + sidebar 加 nav + env 配置 + 联调 |
+| 阶段 | 谁 | 做什么 |
+|---|---|---|
+| 1 | SkillHub | 实现第四章 1-4 步、生成 `SKILLHUB_SERVICE_TOKEN`、单测过、commit |
+| 2 | SkillHub | 把 token 通过受信渠道（不是 IM 明文）传给 matrix 团队 |
+| 3 | matrix | 配 env、实现 backend proxy + frontend 页 + sidebar |
+| 4 | 双方 | 联调（按第八章 Demo B） |
 
-整个 spec 的 SkillHub 部分**约 1-1.5 天**；matrix 部分约 2-3 天。两边独立 PR，**SkillHub 先合**（matrix 才有可调用的服务）。
+SkillHub 部分**预计 2-4 小时**（一个 middleware 分支、两个 service 函数、env、4 case 测试）；matrix 部分由 matrix 团队自评。
 
-## 六、测试
+## 七、测试
 
-### SkillHub 单测新增
+### SkillHub 单测新增 4 case
 
-- service account PAT 不带 `X-Acting-User-Sub` → 400
-- service account PAT 带未知 acting sub → 404
-- service account PAT 带合法 acting sub → 请求被当作 acting user 处理（看到 acting user 的 private skill）
-- 普通用户 PAT 带 `X-Acting-User-Sub` → header **被忽略**（不允许 escalation）
+`auth-context.test.ts` 加：
 
-### 联调验收（matrix + SkillHub 都起着）
+- `service token + 合法 X-SSO-SUB（user 已存在）` → 鉴权为该 user
+- `service token + 未知 X-SSO-SUB` → user: null（路由层 401，matrix 端引导首次登录）
+- `service token + 缺 X-SSO-SUB` → user: null
+- `错的 service token + X-SSO-SUB` → 走 cookie 分支（cookie 也无 → user: null），不允许 token 覆盖 cookie
 
-按 overview Demo B：
+### smoke 加章节（手动跑一次确认）
 
-1. Zeo 登录 matrix
-2. 左侧 nav 看到 "Skill 商店"
-3. 点开看到列表 = SkillHub 上当前 Zeo 能看到的所有 skill（含他自己的 private）
-4. 点一条 → 详情 sheet 打开 → SKILL.md 渲染正常
-5. 点 "Install" → 弹出包含 install command 的 dialog → 复制 → 终端粘贴运行成功
+```bash
+# 已登录 SkillHub 的用户，先拿到他的 ssoSub
+SUB=$(curl -fsS -b "$CK" http://localhost:3333/api/users/me | jq -r '.id')
+# (实际 ssoSub 取法看你测试 user，下面以 sso_sub 列值为准)
 
-## 七、配置
+curl -fsS -H "Authorization: Bearer $SKILLHUB_SERVICE_TOKEN" \
+     -H "X-SSO-SUB: $SUB" \
+     http://localhost:3333/api/users/me | jq
+# 期望：200，返回该 user 的行；handle / name / canPublishAs 都正常
 
-### SkillHub side
-
-`trustedOrigins` 加 matrix 的 origin（env `TRUSTED_ORIGINS` 已有，追加即可）。
-
-### matrix side
-
-```env
-SKILLHUB_URL=https://skillhub.mzsjai.com
-SKILLHUB_SERVICE_PAT=...
+# 未知 sub → 401
+curl -sS -o /dev/null -w '%{http_code}\n' \
+     -H "Authorization: Bearer $SKILLHUB_SERVICE_TOKEN" \
+     -H "X-SSO-SUB: never-seen-this-sub" \
+     http://localhost:3333/api/users/me
+# 期望：401
 ```
 
 ## 八、验收（对应 overview 的 Demo B）
 
 **SkillHub 自动化：**
-- [ ] service account 鉴权单测 4 case 全过
-- [ ] CORS 改动后 matrix origin 不再 "Invalid origin"
+- [ ] `auth-context.test.ts` 4 case 全过
+- [ ] `pnpm typecheck && pnpm lint && pnpm test` 全绿
+- [ ] smoke 章节手跑成功
 
 **matrix 端（matrix 团队验收）：**
-- [ ] proxy 转发 GET /api/skills 工作
+- [ ] `/api/skills` proxy 转发 GET / POST / DELETE 全工作
 - [ ] sidebar 出现 "Skill 商店"
-- [ ] Explore.tsx 复用 / Skills.tsx 渲染正常
+- [ ] Skills.tsx 列表 + 详情渲染正常
 
-**联调：**
-- [ ] 在 matrix 内做完一遍上面"Demo B"流程
+**联调（端到端）：**
+- [ ] Zeo 在 matrix 登录（mozia-sso）
+- [ ] 进 "Skill 商店" → 看到的列表 = SkillHub 上 Zeo 能看到的所有 skill（含他自己 private）
+- [ ] 详情页 → SKILL.md 渲染正常
+- [ ] 点 "Install" → 拿到 install command（capability URL，spec 03 已实现）→ 终端粘贴运行成功
 
-## 九、风险 / 已知 trade-off
+## 九、风险
 
 | 风险 | 缓解 |
 |---|---|
-| matrix proxy 是 matrix backend 单点；SkillHub 挂了 matrix skill 商店也挂 | matrix proxy 错误时返"SkillHub 暂时不可用"友好页 |
-| service account PAT 一旦泄露，能 spoof 任何 mozia-sso 用户身份 | PAT 加 IP allowlist（matrix backend 出口 IP）；定期轮换；纳入 secret manager |
-| matrix UI 和 SkillHub UI 双套维护成本 | MVP 阶段接受；后续如果 matrix 内嵌方案足够好用，可以考虑停掉 SkillHub 自家前端，让 matrix 当唯一入口 |
-| acting user 还没在 SkillHub 那边注册（首次访问）→ 404 | middleware 自动 upsert：`X-Acting-User-Sub` 找不到时按 SSO sub 创建 user 行（用 SSO 的 displayName / email） |
+| `SKILLHUB_SERVICE_TOKEN` 泄露 → 攻击者可冒充任意已登录 sso_sub | secret manager；定期轮换；matrix 出口 IP allowlist（生产）；调用日志可审计 |
+| matrix proxy 单点：SkillHub 挂 matrix skill 商店也挂 | matrix 端友好降级页（不阻塞主导航） |
+| 用户首次从 matrix 进 → 401 → 引导到 SkillHub → 体验摩擦 | acceptable（一次性）；Phase 3 加 ssoSub unique index + better-auth user-create hook 后可改成 auto-link |
+| acting user 在 matrix 改了 displayName，SkillHub 这边的 `name` 不会自动同步 | acceptable，用户在 SkillHub 自己 settings 改一次即可 |
 
-## 十、不做
+## 十、长期演进（mozia-api introspect 上线后）
 
-- ❌ "在 matrix 里发布 skill" UI（matrix 内嵌只读，发布去 SkillHub 自家前端）
-- ❌ matrix 项目和 skill 的关联（"这个 app 推荐安装这些 skill"）
-- ❌ 跨产品搜索（matrix 主搜索能搜到 skill）
-- ❌ matrix 和 SkillHub session 真融合（service account proxy 就够；session 融合是 SSO 改造，不是 SkillHub/matrix 单产品能决定的）
+当 mozia-api 暴露 `POST /api/sso/introspect`（Bearer → `{ ssoSub, email, name }`）：
+
+- SkillHub middleware 把 service-token 分支替换成"任何 Bearer → 调 introspect → 拿 ssoSub → 后续相同"
+- matrix proxy 不变（仍带 Bearer + X-SSO-SUB；SkillHub 这边的 X-SSO-SUB 当成 introspect 结果的校验项即可）
+- mclaw / curl / 任何持有 mozia 生态 key 的调用方**自然就能直连 SkillHub**，不再需要走 matrix proxy
+- `SKILLHUB_SERVICE_TOKEN` 退役
+
+这条路径在本 spec 里**只描述、不实现**。Phase 3 / mozia-api owner 排期触发。
+
+## 十一、不做
+
+- ❌ matrix 内发 skill UI（只读嵌入）
+- ❌ matrix project ↔ skill 关联推荐
+- ❌ 跨产品搜索
+- ❌ matrix / SkillHub session 真融合（service proxy 够用）
+- ❌ mozia-api introspect endpoint（不在 SkillHub 团队范围；本 spec 走自签 service token，等生态侧推进）
