@@ -55,76 +55,113 @@ function parseFrontmatter(md: string): Record<string, string> {
 // Type augmentation for HTMLInputElement to include webkitdirectory + webkitRelativePath
 type DirectoryInput = HTMLInputElement & { webkitdirectory?: boolean };
 
-async function processFiles(files: File[]): Promise<SkillFromUpload> {
-  if (files.length === 0) throw new Error('No files selected.');
+// Pure logic extracted for unit testing — given a list of file descriptors
+// (path + name + size; content read on demand via readText), pick SKILL.md
+// and bundle siblings as extras. No File / FileReader API dependency here.
+export interface UploadFileLike {
+  name: string;
+  webkitRelativePath: string;
+  size: number;
+  readText: () => Promise<string>;
+}
 
+export interface PickResult {
+  skillMd: UploadFileLike;
+  skillMdRoot: string;
+  extras: UploadFileLike[];
+  rejected: Array<{ relPath: string; reason: string }>;
+}
+
+export function pickSkillFromFiles(files: UploadFileLike[]): PickResult {
+  if (files.length === 0) throw new Error('No files selected.');
   const totalBytes = files.reduce((acc, f) => acc + f.size, 0);
   if (totalBytes > MAX_TOTAL_BYTES) {
     throw new Error(`Total upload size ${(totalBytes / 1024).toFixed(0)} KB exceeds 1 MB cap.`);
   }
 
-  // Identify SKILL.md. For folder upload, look at relative paths; pick the
-  // shallowest one. For single-file upload, the file must end in .md and we
-  // treat it as the SKILL.md.
-  let skillMdFile: File | null = null;
+  let skillMd: UploadFileLike | null = null;
   let skillMdRoot = '';
-  const extrasRaw: Array<{ relPath: string; file: File }> = [];
+  const candidates: UploadFileLike[] = [];
+  const rejected: Array<{ relPath: string; reason: string }> = [];
 
   for (const file of files) {
-    // webkitRelativePath is set when upload comes from a directory picker; for
-    // drag-drop we'll set our own via processed FileSystemEntry API (not done
-    // here for simplicity — drag-drop currently only supports flat files).
-    const relPath = (file as File & { webkitRelativePath?: string }).webkitRelativePath ?? '';
+    const relPath = file.webkitRelativePath ?? '';
     const segments = relPath.split('/').filter(Boolean);
 
     if (segments.length === 0) {
-      // single file mode — the file itself is the upload. If it ends in .md, treat as SKILL.md.
-      if (file.name.toLowerCase().endsWith('.md')) {
-        if (!skillMdFile) {
-          skillMdFile = file;
-        }
+      // Single-file mode (no folder context): only the file itself qualifies
+      // as SKILL.md if it ends in .md.
+      if (file.name.toLowerCase().endsWith('.md') && !skillMd) {
+        skillMd = file;
+      } else if (!file.name.toLowerCase().endsWith('.md')) {
+        rejected.push({ relPath: file.name, reason: 'not a .md file' });
       }
       continue;
     }
 
-    // folder mode: skip non-content (dotfiles, .DS_Store, etc.)
+    // Reject if any segment is a dotfile/dotdir (e.g. .DS_Store, .git/HEAD).
+    if (segments.some((s) => s.startsWith('.'))) {
+      rejected.push({ relPath, reason: 'dotfile or hidden directory' });
+      continue;
+    }
     const fileName = segments[segments.length - 1] ?? '';
-    if (fileName.startsWith('.')) continue;
 
     if (fileName === 'SKILL.md') {
-      const depth = segments.length;
       const candidateRoot = segments.slice(0, -1).join('/');
-      if (!skillMdFile || depth < skillMdFile.webkitRelativePath.split('/').length) {
-        skillMdFile = file;
+      if (!skillMd || segments.length < skillMd.webkitRelativePath.split('/').length) {
+        skillMd = file;
         skillMdRoot = candidateRoot;
       }
     } else {
-      extrasRaw.push({ relPath, file });
+      candidates.push(file);
     }
   }
 
-  if (!skillMdFile) {
+  if (!skillMd) {
     throw new Error(
       'No SKILL.md found. Upload a single .md file or a folder containing SKILL.md at its root.',
     );
   }
 
-  const skillMdContent = await readText(skillMdFile);
-
-  // Filter extras to only those under the same root as SKILL.md
   const rootPrefix = skillMdRoot ? `${skillMdRoot}/` : '';
+  const extras: UploadFileLike[] = [];
+  for (const c of candidates) {
+    if (rootPrefix && !c.webkitRelativePath.startsWith(rootPrefix)) {
+      rejected.push({ relPath: c.webkitRelativePath, reason: 'outside skill root' });
+      continue;
+    }
+    const subPath = rootPrefix
+      ? c.webkitRelativePath.slice(rootPrefix.length)
+      : c.webkitRelativePath;
+    if (!subPath || subPath.includes('..')) {
+      rejected.push({ relPath: c.webkitRelativePath, reason: 'unsafe path' });
+      continue;
+    }
+    extras.push({ ...c, webkitRelativePath: subPath });
+  }
+
+  return { skillMd, skillMdRoot, extras, rejected };
+}
+
+async function processFiles(files: File[]): Promise<SkillFromUpload> {
+  const adapted: UploadFileLike[] = files.map((f) => ({
+    name: f.name,
+    webkitRelativePath: (f as File & { webkitRelativePath?: string }).webkitRelativePath ?? '',
+    size: f.size,
+    readText: () => readText(f),
+  }));
+  const picked = pickSkillFromFiles(adapted);
+
+  const skillMdContent = await picked.skillMd.readText();
   const extras: Array<{ path: string; content: string }> = [];
-  for (const e of extrasRaw) {
-    if (rootPrefix && !e.relPath.startsWith(rootPrefix)) continue;
-    const subPath = rootPrefix ? e.relPath.slice(rootPrefix.length) : e.relPath;
-    if (!subPath || subPath.includes('..')) continue;
-    extras.push({ path: subPath, content: await readText(e.file) });
+  for (const e of picked.extras) {
+    extras.push({ path: e.webkitRelativePath, content: await e.readText() });
   }
 
   const fm = parseFrontmatter(skillMdContent);
   const fmName = (fm.name ?? '').toLowerCase();
-  const filenameStem = skillMdFile.name.replace(/\.md$/i, '').toLowerCase();
-  const folderName = skillMdRoot.split('/').pop()?.toLowerCase() ?? '';
+  const filenameStem = picked.skillMd.name.replace(/\.md$/i, '').toLowerCase();
+  const folderName = picked.skillMdRoot.split('/').pop()?.toLowerCase() ?? '';
 
   const suggestedSlug =
     [fmName, folderName, filenameStem].find((s) => s && SLUG_RE.test(s)) ?? undefined;
@@ -137,6 +174,8 @@ async function processFiles(files: File[]): Promise<SkillFromUpload> {
     suggestedDescription: fm.description,
   };
 }
+
+export const __test__ = { parseFrontmatter, SLUG_RE };
 
 export function SkillUploader({ onLoaded, compact = false }: SkillUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);

@@ -436,6 +436,38 @@ describe('business API', () => {
       );
       expect(res.status).toBe(400);
     });
+
+    it('round-trips Chinese filename via percent-encoded URL', async () => {
+      const path = 'references/laws/02-中国共产党章程.md';
+      const encoded = path.split('/').map(encodeURIComponent).join('/');
+      const up = await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/files/${encoded}`,
+          OWNER_USER_ID,
+          jsonInit({ content: '# 党章\n' }),
+        ),
+      );
+      expect(up.status).toBe(204);
+      const detail = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`));
+      const body = (await detail.json()) as { files: string[] };
+      expect(body.files).toContain(path);
+    });
+
+    it('round-trips deeply nested path', async () => {
+      const path = 'a/b/c/d/e/file.md';
+      const encoded = path.split('/').map(encodeURIComponent).join('/');
+      const up = await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/files/${encoded}`,
+          OWNER_USER_ID,
+          jsonInit({ content: 'deep' }),
+        ),
+      );
+      expect(up.status).toBe(204);
+      const detail = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`));
+      const body = (await detail.json()) as { files: string[] };
+      expect(body.files).toContain(path);
+    });
   });
 
   describe('DELETE /api/skills/:owner/:slug/files/:path', () => {

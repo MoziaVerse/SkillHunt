@@ -29,6 +29,11 @@ const json = (body: unknown, method: string): RequestInit => ({
   body: JSON.stringify(body),
 });
 
+// Encode each path segment but preserve `/` separators (Hono's `:path{.+}`
+// captures multi-segment, but each segment needs to be percent-encoded for
+// non-ASCII chars like Chinese filenames).
+const encodePath = (p: string) => p.split('/').map(encodeURIComponent).join('/');
+
 export interface ListSkillsParams {
   type?: 'all' | 'owned' | 'referenced';
   q?: string;
@@ -131,14 +136,14 @@ export const apiClient = {
 
   upsertSkillFile(owner: string, slug: string, path: string, content: string): Promise<void> {
     return request<void>(
-      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/files/${path}`,
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/files/${encodePath(path)}`,
       json({ content }, 'POST'),
     );
   },
 
   deleteSkillFile(owner: string, slug: string, path: string): Promise<void> {
     return request<void>(
-      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/files/${path}`,
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/files/${encodePath(path)}`,
       { method: 'DELETE', credentials: 'include' },
     );
   },
