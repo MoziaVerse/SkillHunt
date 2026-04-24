@@ -39,7 +39,7 @@ export function SkillRow({
             {skill.owner.name}
           </span>
           {skill.type === 'owned' && skill.visibility === 'private' && (
-            <Badge variant="warn">private</Badge>
+            <Badge variant="warn">私有</Badge>
           )}
         </div>
         <p className="mt-1 text-[13px] text-neutral-600 line-clamp-2 leading-relaxed">

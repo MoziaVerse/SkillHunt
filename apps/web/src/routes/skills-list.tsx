@@ -22,15 +22,15 @@ function Hero() {
         SkillHub
       </h1>
       <p className="mt-2 text-[17px] text-neutral-600 max-w-xl">
-        The mozia agent skills directory. Install any skill into your local agent with one command.
+        The mozia agent skills 目录。一条命令即可将任意 skill 安装到本地 agent。
       </p>
       <div className="mt-6 max-w-[760px]">
         <InstallCommand command="npx skills add http://localhost:3333 --skill <slug> --agent claude-code -y" />
         <p className="mt-2 font-mono text-[11px] text-neutral-500">
-          Replace <code className="px-1 bg-neutral-100 rounded text-neutral-700">&lt;slug&gt;</code>{' '}
-          with a skill name from the list below. Swap{' '}
-          <code className="px-1 bg-neutral-100 rounded text-neutral-700">claude-code</code> for your
-          preferred agent (cursor / copilot / opencode …).
+          将 <code className="px-1 bg-neutral-100 rounded text-neutral-700">&lt;slug&gt;</code>{' '}
+          替换为下方列表中的 skill 名称。将{' '}
+          <code className="px-1 bg-neutral-100 rounded text-neutral-700">claude-code</code> 替换为你的
+          首选 agent（cursor / copilot / opencode …）。
         </p>
       </div>
     </section>
@@ -143,7 +143,7 @@ export default function SkillsList() {
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search skills by name or description…"
+              placeholder="按名称或描述搜索 skill…"
               className="pl-9"
             />
           </div>
@@ -154,7 +154,7 @@ export default function SkillsList() {
         {allTags.length > 0 && (
           <div className="mt-3 flex items-center gap-2 flex-wrap">
             <span className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-neutral-500">
-              tags
+              标签
             </span>
             {allTags.map((t) => {
               const active = tags.includes(t);
@@ -180,7 +180,7 @@ export default function SkillsList() {
                 onClick={() => setTags([])}
                 className="font-mono text-[11px] uppercase tracking-[0.1em] text-neutral-500 hover:text-neutral-900 ml-1"
               >
-                × clear
+                × 清除
               </button>
             )}
           </div>
@@ -195,14 +195,14 @@ export default function SkillsList() {
       >
         <div>#</div>
         <div>skill</div>
-        <div>source</div>
-        <div>tags</div>
-        <div className="text-right">updated</div>
+        <div>来源</div>
+        <div>标签</div>
+        <div className="text-right">更新时间</div>
       </div>
 
       {error && (
         <div className="min-h-[400px] py-12 text-center font-mono text-[13px] text-red-700">
-          API error: {error.message}. Is the api running on :3333?
+          API 错误：{error.message}。api 是否在 :3333 运行？
         </div>
       )}
 
@@ -215,17 +215,17 @@ export default function SkillsList() {
       {!error && !loading && sorted.length === 0 && (
         <div className="min-h-[400px] py-24 text-center">
           <div className="font-mono text-[12px] uppercase tracking-[0.18em] text-neutral-400 mb-3">
-            no matches
+            无匹配结果
           </div>
           <div className="text-neutral-700 text-[15px]">
-            Try a different query or clear the filters.
+            换个关键词或清除筛选条件试试。
           </div>
           <button
             type="button"
             onClick={reset}
             className="mt-5 font-mono text-[12px] uppercase tracking-[0.1em] border border-neutral-300 px-3 py-1.5 hover:border-neutral-900 transition"
           >
-            reset
+            重置
           </button>
         </div>
       )}
@@ -243,7 +243,7 @@ export default function SkillsList() {
             ))}
           </div>
           <div className="py-8 text-center font-mono text-[11px] uppercase tracking-[0.14em] text-neutral-400">
-            — end of list · {sorted.length} skills —
+            — 列表结束 · 共 {sorted.length} 个 skill —
           </div>
         </>
       )}

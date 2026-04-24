@@ -26,16 +26,16 @@ export default function PublishPage() {
     return (
       <div className="py-24 text-center max-w-md mx-auto">
         <div className="font-mono text-[12px] uppercase tracking-[0.16em] text-neutral-500 mb-3">
-          sign in required
+          需要登录
         </div>
         <p className="text-neutral-700">
-          You need to sign in via mozia-sso before publishing a skill.
+          发布 skill 前请先通过 mozia-sso 登录。
         </p>
         <Link
           to="/"
           className="mt-5 inline-block font-mono text-[12px] uppercase tracking-[0.1em] border border-neutral-300 px-3 py-1.5 hover:border-neutral-900"
         >
-          back home
+          返回首页
         </Link>
       </div>
     );
@@ -55,17 +55,16 @@ export default function PublishPage() {
     return (
       <div className="py-24 text-center max-w-md mx-auto">
         <div className="font-mono text-[12px] uppercase tracking-[0.16em] text-neutral-500 mb-3">
-          handle rename required
+          handle 需要重命名
         </div>
         <p className="text-neutral-700">
-          Your URL handle <code className="font-mono">{me.handle}</code> contains invalid
-          characters. SkillHub URLs require lowercase letters, digits, and dashes only.
+          你的 URL handle <code className="font-mono">{me.handle}</code> 包含非法字符。SkillHub URL 只允许小写字母、数字和连字符。
         </p>
         <Link
           to="/settings/profile"
           className="mt-5 inline-block font-mono text-[12px] uppercase tracking-[0.1em] bg-neutral-900 text-neutral-100 px-3 py-1.5"
         >
-          rename in settings
+          在设置中重命名
         </Link>
       </div>
     );
@@ -108,11 +107,10 @@ export default function PublishPage() {
     <div className="py-10">
       <div className="border-b border-neutral-200 pb-6">
         <h1 className="font-mono text-[28px] tracking-[-0.02em] text-neutral-900 font-medium">
-          Publish a skill
+          发布 skill
         </h1>
         <p className="mt-2 text-[14px] text-neutral-600 max-w-2xl">
-          Upload a local SKILL.md file or a skill folder; we'll auto-fill metadata you can edit
-          before publishing.
+          上传本地 SKILL.md 文件或 skill 文件夹，我们会自动填充元数据，你可以在发布前编辑。
         </p>
       </div>
 
@@ -121,7 +119,7 @@ export default function PublishPage() {
         {extras.length > 0 && (
           <div className="mt-3 font-mono text-[12px] text-neutral-600">
             <div className="uppercase tracking-[0.14em] text-[10.5px] text-neutral-500 mb-1">
-              {extras.length} extra file{extras.length === 1 ? '' : 's'} will be attached
+              {extras.length} 个附加文件将被上传
             </div>
             <ul className="space-y-0.5">
               {extras.map((e) => (

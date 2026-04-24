@@ -72,8 +72,8 @@ export function SkillForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (slugProblem) return setError('Invalid slug format');
-    if (tooShort) return setError('SKILL.md must be at least 20 characters');
+    if (slugProblem) return setError('slug 格式无效');
+    if (tooShort) return setError('SKILL.md 至少需要 20 个字符');
 
     const tags = tagsRaw
       .split(/[,\s]+/)
@@ -107,7 +107,7 @@ export function SkillForm({
     <form onSubmit={handleSubmit} className="max-w-[760px] py-8 space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-[1fr_2fr] gap-4">
         <div>
-          <FieldLabel hint="who publishes this">owner</FieldLabel>
+          <FieldLabel hint="发布者">owner</FieldLabel>
           <select
             disabled={ownerDisabled}
             value={owner}
@@ -123,7 +123,7 @@ export function SkillForm({
           </select>
         </div>
         <div>
-          <FieldLabel hint="lowercase, dashes; URL slug">slug</FieldLabel>
+          <FieldLabel hint="小写字母和连字符；URL slug">slug</FieldLabel>
           <Input
             value={slug}
             disabled={slugDisabled}
@@ -135,7 +135,7 @@ export function SkillForm({
       </div>
 
       <div>
-        <FieldLabel hint="display name (defaults to slug)">name</FieldLabel>
+        <FieldLabel hint="显示名称（默认为 slug）">名称</FieldLabel>
         <Input
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -144,18 +144,18 @@ export function SkillForm({
       </div>
 
       <div>
-        <FieldLabel hint="one-liner shown in lists; ≤500 chars">description</FieldLabel>
+        <FieldLabel hint="列表中显示的一句话简介；≤500 字符">描述</FieldLabel>
         <textarea
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={2}
-          placeholder="What this skill does, in one sentence."
+          placeholder="这个 skill 的功能，一句话概括。"
           className="w-full text-[14px] border border-neutral-300 px-3 py-2 leading-relaxed"
         />
       </div>
 
       <div>
-        <FieldLabel hint="comma-separated; max 10">tags</FieldLabel>
+        <FieldLabel hint="逗号分隔；最多 10 个">标签</FieldLabel>
         <Input
           value={tagsRaw}
           onChange={(e) => setTagsRaw(e.target.value)}
@@ -164,7 +164,7 @@ export function SkillForm({
       </div>
 
       <div>
-        <FieldLabel>visibility</FieldLabel>
+        <FieldLabel>可见性</FieldLabel>
         <div className="flex gap-3">
           <label className="flex items-center gap-2 font-mono text-[13px] cursor-pointer">
             <input
@@ -172,7 +172,7 @@ export function SkillForm({
               checked={visibility === 'private'}
               onChange={() => setVisibility('private')}
             />
-            <span>private — only you can see + install</span>
+            <span>private — 仅自己可见和安装</span>
           </label>
         </div>
         <div className="mt-2">
@@ -182,7 +182,7 @@ export function SkillForm({
               checked={visibility === 'public'}
               onChange={() => setVisibility('public')}
             />
-            <span>public — visible to all visitors and crawlable via well-known</span>
+            <span>public — 所有访客可见，可通过 well-known 爬取</span>
           </label>
         </div>
       </div>
@@ -213,7 +213,7 @@ export function SkillForm({
           disabled={submitting}
           className="font-mono text-[12px] uppercase tracking-[0.1em] bg-neutral-900 text-neutral-100 px-4 py-2 disabled:opacity-50"
         >
-          {submitting ? '…' : (submitLabel ?? (mode === 'create' ? 'Publish' : 'Save'))}
+          {submitting ? '…' : (submitLabel ?? (mode === 'create' ? '发布' : '保存'))}
         </button>
         {onCancel && (
           <button
@@ -221,7 +221,7 @@ export function SkillForm({
             onClick={onCancel}
             className="font-mono text-[12px] uppercase tracking-[0.1em] text-neutral-500 hover:text-neutral-900 px-3"
           >
-            Cancel
+            取消
           </button>
         )}
       </div>

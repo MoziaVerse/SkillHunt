@@ -226,11 +226,11 @@ export function SkillUploader({ onLoaded, compact = false }: SkillUploaderProps)
         )}
       >
         <div className="font-mono text-[12px] uppercase tracking-[0.16em] text-neutral-500 mb-2">
-          {busy ? 'reading…' : 'drop SKILL.md or skill folder here'}
+          {busy ? '读取中…' : '拖放 SKILL.md 或 skill 文件夹到此处'}
         </div>
         {!compact && (
           <div className="font-mono text-[11px] text-neutral-400 mb-4">
-            single .md file → fills SKILL.md · folder → SKILL.md at root + sibling files as extras
+            单个 .md 文件 → 填充 SKILL.md · 文件夹 → 根目录 SKILL.md + 同级文件作为附件
           </div>
         )}
         <div className="flex gap-2 items-center justify-center">
@@ -240,7 +240,7 @@ export function SkillUploader({ onLoaded, compact = false }: SkillUploaderProps)
             disabled={busy}
             className="font-mono text-[12px] uppercase tracking-[0.1em] px-3 py-1.5 border border-neutral-300 hover:border-neutral-900 transition disabled:opacity-50"
           >
-            pick file
+            选择文件
           </button>
           <span className="text-neutral-300">|</span>
           <button

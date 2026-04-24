@@ -62,7 +62,7 @@ export function InstallCommand({
               : 'border-neutral-700 text-neutral-400 hover:text-neutral-100 hover:border-neutral-500',
           )}
         >
-          {copied ? 'copied' : 'copy'}
+          {copied ? '已复制' : '复制'}
         </button>
       </div>
       <div className="px-3 py-3 overflow-x-auto">

@@ -34,11 +34,11 @@ export default function SettingsProfilePage() {
     if (!me) return;
 
     if (!name.trim()) {
-      setSaveError('Display name cannot be empty');
+      setSaveError('显示名称不能为空');
       return;
     }
     if (!HANDLE_RE.test(handle)) {
-      setSaveError('Handle must be lowercase letters/digits/dashes, 1–32 chars');
+      setSaveError('handle 只能包含小写字母、数字和连字符，长度 1–32');
       return;
     }
 
@@ -46,7 +46,7 @@ export default function SettingsProfilePage() {
     if (name.trim() !== me.name) patch.name = name.trim();
     if (handle !== me.handle) patch.handle = handle;
     if (Object.keys(patch).length === 0) {
-      setSaveError('Nothing to save');
+      setSaveError('没有需要保存的更改');
       return;
     }
 
@@ -74,14 +74,14 @@ export default function SettingsProfilePage() {
     return (
       <div className="py-24 text-center max-w-md mx-auto">
         <div className="font-mono text-[12px] uppercase tracking-[0.16em] text-neutral-500 mb-3">
-          sign in required
+          需要登录
         </div>
-        <p className="text-neutral-700">You need to sign in via mozia-sso.</p>
+        <p className="text-neutral-700">请先通过 mozia-sso 登录。</p>
         <Link
           to="/"
           className="mt-5 inline-block font-mono text-[12px] uppercase tracking-[0.1em] border border-neutral-300 px-3 py-1.5 hover:border-neutral-900"
         >
-          back home
+          返回首页
         </Link>
       </div>
     );
@@ -100,32 +100,32 @@ export default function SettingsProfilePage() {
     <div className="py-10 max-w-2xl">
       <div className="border-b border-neutral-200 pb-6 mb-8">
         <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-neutral-500 mb-2 flex items-center gap-3">
-          <span>settings</span>
+          <span>设置</span>
           <span className="text-neutral-300">/</span>
-          <span className="text-neutral-900">profile</span>
+          <span className="text-neutral-900">个人资料</span>
         </div>
         <h1 className="font-mono text-[28px] tracking-[-0.02em] text-neutral-900 font-medium">
-          Profile
+          个人资料
         </h1>
       </div>
 
       <dl className="space-y-3 mb-10 font-mono text-[13px]">
-        <Row label="email">{me.email}</Row>
-        <Row label="user id">{me.id}</Row>
+        <Row label="邮箱">{me.email}</Row>
+        <Row label="用户 ID">{me.id}</Row>
         {me.canPublishAs.length > 0 && (
-          <Row label="can publish as">{me.canPublishAs.join(', ')}</Row>
+          <Row label="可发布为">{me.canPublishAs.join(', ')}</Row>
         )}
       </dl>
 
       <form onSubmit={handleSave} className="space-y-5">
         <div>
           <div className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-neutral-500 mb-1.5">
-            display name
+            显示名称
             <span className="ml-2 normal-case tracking-normal text-neutral-400">
-              (anything — Chinese, spaces, mixed case OK)
+              （任意内容——中文、空格、大小写均可）
             </span>
           </div>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="你的名字" />
         </div>
 
         <div>
@@ -143,7 +143,7 @@ export default function SettingsProfilePage() {
           />
           {handleChanged && (
             <p className="mt-1 font-mono text-[11px] text-amber-700">
-              ⚠ changing your handle breaks all existing /u/ and /skills/ URLs that point at you.
+              ⚠ 修改 handle 会导致所有指向你的 /u/ 和 /skills/ URL 失效。
             </p>
           )}
         </div>
@@ -154,14 +154,14 @@ export default function SettingsProfilePage() {
           </div>
         )}
         {saved && !saveError && (
-          <div className="font-mono text-[12px] text-emerald-700">Saved.</div>
+          <div className="font-mono text-[12px] text-emerald-700">已保存。</div>
         )}
         <button
           type="submit"
           disabled={saving || (name === me.name && handle === me.handle)}
           className="font-mono text-[12px] uppercase tracking-[0.1em] bg-neutral-900 text-neutral-100 px-4 py-2 disabled:opacity-50"
         >
-          {saving ? '…' : 'Save'}
+          {saving ? '…' : '保存'}
         </button>
       </form>
     </div>

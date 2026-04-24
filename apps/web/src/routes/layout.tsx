@@ -95,7 +95,7 @@ function SessionWidget() {
           to="/publish"
           className="px-2 py-1 bg-neutral-900 text-neutral-100 hover:bg-neutral-700 transition"
         >
-          + Publish
+          + 发布
         </Link>
         <span className="text-neutral-300">|</span>
         <Link
@@ -109,9 +109,9 @@ function SessionWidget() {
         <Link
           to="/settings/profile"
           className="text-neutral-500 hover:text-neutral-900 transition"
-          title="Profile"
+          title="个人资料"
         >
-          settings
+          设置
         </Link>
         <span className="text-neutral-300">·</span>
         <button
@@ -119,7 +119,7 @@ function SessionWidget() {
           onClick={signOut}
           className="text-neutral-500 hover:text-neutral-900 transition"
         >
-          sign out
+          退出登录
         </button>
       </span>
     );
@@ -129,9 +129,9 @@ function SessionWidget() {
     return (
       <span
         className="font-mono text-[12.5px] px-3 py-1.5 border border-dashed border-neutral-300 rounded text-neutral-400 cursor-not-allowed"
-        title="mozia-sso not configured. Fill OIDC_CLIENT_ID/SECRET in apps/api/.env and restart the api."
+        title="mozia-sso 未配置。请在 apps/api/.env 中填写 OIDC_CLIENT_ID/SECRET 并重启 api。"
       >
-        Sign in (sso unconfigured)
+        登录（sso 未配置）
       </span>
     );
   }
@@ -143,7 +143,7 @@ function SessionWidget() {
         onClick={signIn}
         className="font-mono text-[12.5px] px-3 py-1.5 border border-neutral-300 rounded text-neutral-900 hover:bg-neutral-100 transition"
       >
-        Sign in
+        登录
       </button>
       {state.error ? (
         <span
@@ -181,7 +181,7 @@ function TopNav() {
               !onDocs ? 'text-neutral-900' : 'text-neutral-500 hover:text-neutral-900',
             )}
           >
-            Skills
+            skill 列表
           </Link>
           <Link
             to="/docs"
@@ -190,7 +190,7 @@ function TopNav() {
               onDocs ? 'text-neutral-900' : 'text-neutral-500 hover:text-neutral-900',
             )}
           >
-            Docs
+            文档
           </Link>
           <SessionWidget />
         </nav>

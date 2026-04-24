@@ -32,7 +32,7 @@ function DetailHeader({
         to="/"
         className="font-mono text-[11.5px] uppercase tracking-[0.14em] text-neutral-500 hover:text-neutral-900"
       >
-        ← all skills
+        ← 全部 skill
       </Link>
       <div className="mt-5 flex items-start justify-between gap-6 flex-wrap">
         <div className="min-w-0">
@@ -47,7 +47,7 @@ function DetailHeader({
             {skill.name}
           </h1>
           <div className="mt-2 font-mono text-[12px] text-neutral-500">
-            <span className="text-neutral-400">by </span>
+            <span className="text-neutral-400">作者：</span>
             <Link to={`/u/${skill.owner.handle}`} className="text-neutral-700 hover:underline">
               {skill.owner.name}
             </Link>
@@ -130,14 +130,13 @@ function PrivateInstallSection({
   return (
     <div className="border border-amber-200 bg-amber-50 p-4">
       <div className="font-mono text-[12px] text-amber-900 mb-2">
-        🔒 Private skill — anyone with the install command can pull a copy. Generate a one-time
-        token below; it expires in 24h or after first use.
+        🔒 私有 skill——任何持有安装命令的人都可以拉取副本。在下方生成一次性 token，24 小时或首次使用后过期。
       </div>
       {grant ? (
         <>
           <InstallCommand command={grant.installCommand} />
           <p className="mt-2 font-mono text-[11px] text-amber-800">
-            Token expires {new Date(grant.expiresAt).toLocaleString()} · {grant.maxUses} use(s)
+            Token 过期时间：{new Date(grant.expiresAt).toLocaleString()} · 可用次数：{grant.maxUses}
           </p>
         </>
       ) : (
@@ -163,7 +162,7 @@ function PrivateInstallSection({
             disabled={busy}
             className="font-mono text-[12px] uppercase tracking-[0.1em] bg-neutral-900 text-neutral-100 px-3 py-1.5 disabled:opacity-50"
           >
-            {busy ? '…' : 'Generate one-time install command'}
+            {busy ? '…' : '生成一次性安装命令'}
           </button>
           {error && <p className="mt-2 font-mono text-[11.5px] text-red-700">{error}</p>}
         </div>
@@ -191,7 +190,7 @@ function OwnedDetail({
               <OwnerActions owner={skill.owner.handle} slug={skill.slug} onDeleted={onDeleted} />
             )}
             <div className="font-mono text-[11px] text-neutral-500 text-right">
-              updated
+              更新时间
               <div className="text-neutral-900 text-[13px] mt-0.5">
                 {formatRelative(skill.updatedAt)}
               </div>
@@ -203,7 +202,7 @@ function OwnedDetail({
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-10 pt-8">
         <div className="min-w-0">
           <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-neutral-500 mb-3">
-            install
+            安装
           </div>
           {skill.visibility === 'private' ? (
             <PrivateInstallSection skill={skill} />
@@ -232,22 +231,22 @@ function OwnedDetail({
           <div className="border border-neutral-200 bg-white">
             <div className="px-4 py-3 border-b border-neutral-100">
               <div className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-neutral-500">
-                metadata
+                元数据
               </div>
             </div>
             <div className="px-4 py-2">
-              <MetaRow label="type">{skill.type}</MetaRow>
-              <MetaRow label="visibility">{skill.visibility}</MetaRow>
+              <MetaRow label="类型">{skill.type}</MetaRow>
+              <MetaRow label="可见性">{skill.visibility}</MetaRow>
               <MetaRow label="slug">{skill.slug}</MetaRow>
-              <MetaRow label="created">{formatRelative(skill.createdAt)}</MetaRow>
-              <MetaRow label="updated">{formatRelative(skill.updatedAt)}</MetaRow>
+              <MetaRow label="创建时间">{formatRelative(skill.createdAt)}</MetaRow>
+              <MetaRow label="更新时间">{formatRelative(skill.updatedAt)}</MetaRow>
             </div>
           </div>
 
           <div className="mt-5 border border-neutral-200 bg-white">
             <div className="px-4 py-3 border-b border-neutral-100">
               <div className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-neutral-500">
-                files · {skill.files.length}
+                文件 · {skill.files.length}
               </div>
             </div>
             <ul className="px-4 py-2 font-mono text-[12.5px]">
@@ -286,7 +285,7 @@ function ReferencedDetail({ skill }: { skill: Extract<SkillDetail, { type: 'refe
         skill={skill}
         right={
           <div className="font-mono text-[11px] text-neutral-500 text-right">
-            updated
+            更新时间
             <div className="text-neutral-900 text-[13px] mt-0.5">
               {formatRelative(skill.updatedAt)}
             </div>
@@ -297,16 +296,15 @@ function ReferencedDetail({ skill }: { skill: Extract<SkillDetail, { type: 'refe
       <div className="pt-8 max-w-3xl">
         <div className="border-l-2 border-neutral-900 pl-4 mb-8">
           <div className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-neutral-500 mb-1">
-            referenced skill
+            引用 skill
           </div>
           <p className="text-[14px] text-neutral-700 leading-relaxed">
-            This skill is maintained by <span className="font-mono">{skill.sourceRepo}</span>. We
-            don't host its content — install directly from the origin:
+            此 skill 由 <span className="font-mono">{skill.sourceRepo}</span> 维护。我们不托管其内容——请直接从源头安装：
           </p>
         </div>
 
         <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-neutral-500 mb-3">
-          install
+          安装
         </div>
         <InstallCommand command={skill.sourceInstallCommand} />
 
@@ -323,11 +321,11 @@ function ReferencedDetail({ skill }: { skill: Extract<SkillDetail, { type: 'refe
 
         <div className="mt-10 border border-neutral-200 bg-neutral-50 px-5 py-4">
           <div className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-neutral-500 mb-2">
-            metadata
+            元数据
           </div>
           <div>
-            <MetaRow label="type">referenced</MetaRow>
-            <MetaRow label="source">{skill.sourceRepo}</MetaRow>
+            <MetaRow label="类型">referenced</MetaRow>
+            <MetaRow label="来源">{skill.sourceRepo}</MetaRow>
             <MetaRow label="skill">{skill.sourceSkillName}</MetaRow>
             <MetaRow label="slug">{skill.slug}</MetaRow>
           </div>
@@ -385,13 +383,13 @@ export default function SkillDetailPage() {
           <code className="font-mono">
             {owner}/{slug}
           </code>{' '}
-          not found.
+          不存在。
         </div>
         <Link
           to="/"
           className="mt-5 inline-block font-mono text-[12px] uppercase tracking-[0.1em] border border-neutral-300 px-3 py-1.5 hover:border-neutral-900"
         >
-          ← back to list
+          ← 返回列表
         </Link>
       </div>
     );

@@ -32,9 +32,9 @@ export default function SkillEditPage() {
   if (error)
     return (
       <div className="py-24 text-center text-neutral-700">
-        Cannot load skill ({error}).{' '}
+        无法加载 skill（{error}）。{' '}
         <Link to="/" className="underline">
-          back home
+          返回首页
         </Link>
       </div>
     );
@@ -49,9 +49,9 @@ export default function SkillEditPage() {
   if (skill.type !== 'owned')
     return (
       <div className="py-24 text-center text-neutral-700">
-        Only owned skills can be edited.{' '}
+        只有自有 skill 才能编辑。{' '}
         <Link to={`/skills/${owner}/${slug}`} className="underline">
-          back
+          返回
         </Link>
       </div>
     );
@@ -88,7 +88,7 @@ export default function SkillEditPage() {
     <div className="py-10">
       <div className="border-b border-neutral-200 pb-6 flex items-baseline justify-between">
         <h1 className="font-mono text-[24px] tracking-[-0.02em] text-neutral-900 font-medium">
-          Edit{' '}
+          编辑{' '}
           <span className="text-neutral-500">
             {owner}/{slug}
           </span>
@@ -97,20 +97,19 @@ export default function SkillEditPage() {
           to={`/skills/${owner}/${slug}`}
           className="font-mono text-[11px] uppercase tracking-[0.14em] text-neutral-500 hover:text-neutral-900"
         >
-          ← back to detail
+          ← 返回详情
         </Link>
       </div>
 
       <details className="mt-6 border border-neutral-200 px-4 py-3">
         <summary className="font-mono text-[11.5px] uppercase tracking-[0.14em] text-neutral-600 cursor-pointer">
-          Replace from local file / folder
+          从本地文件 / 文件夹替换
         </summary>
         <div className="mt-3">
           <SkillUploader onLoaded={handleUpload} compact />
           {extras.length > 0 && (
             <div className="mt-3 font-mono text-[11.5px] text-neutral-600">
-              {extras.length} extra file{extras.length === 1 ? '' : 's'} will be added/replaced on
-              save: {extras.map((e) => e.path).join(', ')}
+              {extras.length} 个附加文件将在保存时添加/替换：{extras.map((e) => e.path).join(', ')}
             </div>
           )}
         </div>
@@ -131,7 +130,7 @@ export default function SkillEditPage() {
         }}
         onSubmit={handleSubmit}
         onCancel={() => navigate(`/skills/${owner}/${slug}`)}
-        submitLabel="Save changes"
+        submitLabel="保存更改"
       />
     </div>
   );

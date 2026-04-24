@@ -35,13 +35,13 @@ export default function UserPage() {
           404
         </div>
         <div className="text-neutral-700">
-          User <code className="font-mono">{owner}</code> not found.
+          用户 <code className="font-mono">{owner}</code> 不存在。
         </div>
         <Link
           to="/"
           className="mt-5 inline-block font-mono text-[12px] uppercase tracking-[0.1em] border border-neutral-300 px-3 py-1.5 hover:border-neutral-900"
         >
-          back home
+          返回首页
         </Link>
       </div>
     );
@@ -58,21 +58,21 @@ export default function UserPage() {
     <>
       <section className="py-12 border-b border-neutral-200">
         <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-neutral-500 mb-3">
-          author
+          作者
         </div>
         <h1 className="font-mono text-[36px] tracking-[-0.02em] text-neutral-900 font-medium">
           {data.owner.name}
         </h1>
         <p className="mt-1 font-mono text-[13px] text-neutral-500">@{data.owner.handle}</p>
         <p className="mt-2 font-mono text-[12.5px] text-neutral-500">
-          {data.total} skill{data.total === 1 ? '' : 's'}
+          {data.total} 个 skill
         </p>
       </section>
 
       {data.items.length === 0 ? (
         <div className="py-24 text-center text-neutral-500">
           <div className="font-mono text-[12px] uppercase tracking-[0.18em] text-neutral-400 mb-3">
-            no skills yet
+            暂无 skill
           </div>
         </div>
       ) : (
@@ -85,9 +85,9 @@ export default function UserPage() {
           >
             <div>#</div>
             <div>skill</div>
-            <div>source</div>
-            <div>tags</div>
-            <div className="text-right">updated</div>
+            <div>来源</div>
+            <div>标签</div>
+            <div className="text-right">更新时间</div>
           </div>
           <div>
             {data.items.map((s, i) => (

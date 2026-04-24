@@ -142,7 +142,7 @@ graph TB
 - [x] **01 · visibility cleanup** — enum 简化、清理 Phase 1 残留
 - [x] **02 · user upload** — schema 扩展、CRUD、命名空间、handle 拆分、上传 UI
 - [x] **03 · CLI 私域安装** — capability URL（CLI 透明）、详情页"一次性安装命令"
-- [ ] **04 · matrix embed + 中央鉴权** — matrix backend proxy + frontend skill 商店；SkillHub Bearer auth → matrix token introspect
+- [ ] **04 · matrix embed + S2S 身份透传** — matrix backend proxy + frontend skill 商店；SkillHub 加 service-token middleware，matrix 调用时带 `Authorization: Bearer <SKILLHUB_SERVICE_TOKEN>` + `X-SSO-SUB: <用户 sub>`，复用 mozia 生态既有的 S2S 模式（matrix 调 mozia-api 已经在用）
 
 > **关于工作量：** 具体日历时间会因 AI 辅助效率波动，按里程碑通报，不锁定预估。matrix 团队的具体投入由他们自己评估。
 
@@ -150,7 +150,7 @@ graph TB
 
 - **Demo A · 用户上传 + 私域分发** ✓ 已通过：登录 → `/publish` 拖入 skill 文件夹 → 自动填表选 private → 详情页 "Generate one-time install command" → 终端粘贴 → SKILL.md 落 `~/.claude/skills/<owner>/<slug>/`
 - **Demo B · matrix 嵌入式 skill 商店** ⏳ 待 spec 04：matrix 左侧 nav "Skill 商店" → 列表（matrix 视觉风格）→ 详情 + 安装命令
-- **Demo C · 跨产品身份统一** ⏳ 待 spec 04：用户在 matrix 已有 UI 创建一把 token → mclaw / 任何脚本拿这把 token 调 SkillHub `/api/users/me/skills` → 拿到该用户的 skill 列表
+- **Demo C · 跨产品身份透传** ⏳ 待 spec 04：matrix backend 带 service token + `X-SSO-SUB` 调 SkillHub `/api/users/me/skills` → 拿到目标用户的 skill 列表（matrix 用户在 matrix UI 里是 mozia-sso 登录，ssoSub 直接透传）
 
 ### 同期推进的运维事项
 
@@ -176,24 +176,19 @@ graph TB
 
 ### 🟦 matrix（重头戏）
 
-matrix 在 Mozia 生态里承担两个对 SkillHub 关键的角色：
-
-1. **应用入口** —— 用户在 matrix 里看到 "Skill 商店" tab，无缝浏览/安装 SkillHub 的内容
-2. **中央密钥发放** —— Mozia 各产品的 Bearer 鉴权统一到 matrix 已有的 token 系统（mclaw 调模型 API 用的就是这套 key），形成"身份走 mozia-sso、密钥走 matrix"的双引擎
+matrix 在 Mozia 生态里对 SkillHub 的定位是**嵌入式应用入口**——用户在 matrix 里看到 "Skill 商店" tab，无缝浏览/安装 SkillHub 的内容；数据实时从 SkillHub backend 拉，身份靠 mozia 生态已经在用的 S2S pattern 透传。
 
 **Phase 2 spec 04 期需要 matrix 团队配合的事**：
 
 | 任务 | 谁动 |
 |---|---|
-| backend 加 `/api/skills*` proxy router（acting-user header passthrough）| matrix 工程师 |
+| backend 加 `/api/skills*` proxy router（带 `Authorization: Bearer <service-token>` + `X-SSO-SUB` 透传）| matrix 工程师 |
 | 把现有 `Explore.tsx` 抽成可复用组件 / 复制为 `Skills.tsx` | matrix 工程师 |
 | sidebar 加 "Skill 商店" 入口 | matrix 工程师 |
-| **暴露 token introspect 能力**：给 SkillHub 提供 "用 Bearer token 查 ssoSub" 的接口（或确认现有 token 系统的可用方式） | matrix + mozia-api 团队 |
+| 配置 `SKILLHUB_URL` + `SKILLHUB_SERVICE_TOKEN`（由 SkillHub 这边签发） | matrix devops |
 | 联调 | 双方 |
 
-**spec 04 启动前需要 matrix owner 拍板**：
-- (a) skill 商店嵌入用 backend proxy + `X-Acting-User-Sub` header（推荐，避免跨域 cookie），还是其他方案
-- (b) introspect endpoint 的形态——SkillHub 拿 Bearer token 后怎么验出用户身份。可能方案：(i) matrix 提供 `/api/auth/introspect`；(ii) SkillHub 直调 mozia-api 的 token 验证接口；(iii) 沿用 matrix 现有 admin-token + `X-SSO-SUB` 机制
+> 💡 **为什么不等 matrix / mozia-api 加 introspect endpoint：** 摸底 matrix 代码发现它已经在用 mozia 生态的 S2S pattern 调 mozia-api（`Bearer <admin-token>` + `X-SSO-SUB`）。SkillHub 加一个**对称的** service-token middleware，matrix 调 SkillHub 就和它调 mozia-api 完全同构，团队零学习成本。以后 introspect 端点真上线了，SkillHub middleware 里把"string equals"换成"调 introspect"即可，matrix 一行不改。这是**演进明确的过渡方案**，不是技术债。
 
 ### ⏸️ mclaw
 
@@ -241,14 +236,18 @@ matrix 在 Mozia 生态里承担两个对 SkillHub 关键的角色：
 - 单次 + 24h TTL，泄露面最小
 - server-minted、server-tracked，不是用户自管的长效 token——和 matrix 中央密钥不重叠
 
-### 决策 5 · SkillHub 不自建用户长效 token，forward 到 matrix 中央密钥
+### 决策 5 · SkillHub 不自建用户 PAT 系统，复用 mozia 生态 S2S pattern
 
-> 💡 **核心决策：身份走 mozia-sso、密钥走 matrix 是 Mozia 生态既定原则。** 用户在 matrix 已有的 token 管理 UI 创建一次 key，通行所有产品（mclaw 调模型 API 已经在用）。
+> 💡 **核心决策：不重复造 matrix 已经在做的事。** matrix 已经替 mclaw 管模型 API key 了；SkillHub 需要的"受信方代用户调"能力通过 matrix 走 S2S 透传就够，不自己再搭一份 PAT 表 / 轮换 UI / 审计体系。
 
-SkillHub 接入 spec 04 时加一层 middleware：识别 `Authorization: Bearer <matrix-token>` → forward 到 matrix introspect 端点拿 ssoSub → 查本地 `skillhub.user`。
+**当前方案（spec 04 落地）：** SkillHub 加一个 service-token middleware：
+- matrix backend 调 SkillHub 时带 `Authorization: Bearer <SKILLHUB_SERVICE_TOKEN>` + `X-SSO-SUB: <用户 ssoSub>`
+- SkillHub middleware 先验 service token（env 里的固定 secret），通过后把 `X-SSO-SUB` 作为 acting user 解出来查本地 `skillhub.user`
+- 调用形态和 matrix 现在调 mozia-api（`Bearer <admin-token>` + `X-SSO-SUB`）**完全同构**，matrix 工程师零学习成本
 
-**好处：** 用户体验一致（一把 key 通行）、SkillHub 不需要维护额外的 token 表/UI/轮换流程。
-**副作用：** 每次 auth 多一跳网络往返，需要内存 LRU 缓存（短 TTL）平衡。
+**演进路径：** 未来 mozia-api 真上了 introspect endpoint，SkillHub middleware 内部把"string equals service token"换成"调 introspect 拿 ssoSub"即可，调用方（matrix）一行代码不改。这是过渡方案，但过渡出口清晰。
+
+**副作用：** SkillHub 这边新增一个 env 变量 `SKILLHUB_SERVICE_TOKEN`（由 SkillHub 团队签发给受信调用方，当前仅 matrix 一个；不进 DB 不要 UI，生产走 secret manager）。
 
 ### 决策 6 · matrix 集成走 backend proxy + acting-user header，不走前端直连
 
@@ -271,8 +270,8 @@ SkillHub 接入 spec 04 时加一层 middleware：识别 `Authorization: Bearer 
 | 风险 | 影响 | 缓解措施 |
 |---|---|---|
 | matrix proxy 是单点；SkillHub 挂了 matrix skill 商店也挂 | 中 | matrix proxy 降级时返"暂时不可用"友好页 |
-| matrix forward 鉴权：每次 SkillHub auth 多一跳网络往返 | 中 | spec 04 设计时加内存 LRU 缓存（短 TTL，几秒到几十秒） |
-| matrix admin token / SkillHub 调 matrix 用的凭证泄露 | 高 | secret manager；定期轮换；调用日志可审计 |
+| `SKILLHUB_SERVICE_TOKEN` 泄露 → 受信方身份被冒充（配合伪造 `X-SSO-SUB` 可冒充任何用户） | 高 | 放 secret manager、定期轮换；调用日志记 client IP + acting sub；中长期 introspect 端点上线后改成"service + user token 双重验证" |
+| matrix 用户首次访问 skill 商店时 SkillHub 没该用户 → 401 | 中 | matrix frontend 拿到 401 显示"请先完成一次 SkillHub 访问 [→ 跳转]"，mozia-sso 已登 → OIDC 一次重定向即回 |
 | skill 跑在用户终端有 agent 完整权限 → 恶意 skill 可执行任意代码 | 高 | "对齐市场"模式：CLI 输出 warning（已有）；事后举报 + admin 下架（Phase 3）|
 | 测试套件 TRUNCATE 表 → 误在生产跑测试会冲数据 | 高 | 已隔离独立 `mozia_skillhub_test` DB；部署机器不跑测试 |
 
@@ -283,8 +282,8 @@ SkillHub 接入 spec 04 时加一层 middleware：识别 `Authorization: Bearer 
 | # | 议题 | 待决方 | 阻塞性 |
 |---|---|---|---|
 | 1 | 生产域名（`skillhub.mzsjai.com`？）| 业务方 | 测试服可先用 IP，但 SSO 注册和 cookie 域名最终需要 |
-| 2 | matrix introspect 端点形态（决策 5 的具体落地路径） | matrix owner + mozia-api 团队 | spec 04 启动前必须 |
-| 3 | matrix 嵌入是否走 backend proxy + acting-user header（推荐方案） | matrix owner | spec 04 设计 |
+| 2 | `SKILLHUB_SERVICE_TOKEN` 的轮换节奏和交付渠道（SkillHub 签发后如何安全传给 matrix） | SkillHub + matrix + secret manager owner | spec 04 启动前 |
+| 3 | mozia-api introspect 端点上线时间 —— 决定决策 5 过渡方案什么时候退役 | mozia-api 团队 | 不阻塞 spec 04；影响中期演进 |
 | 4 | mclaw 团队接 SkillHub 的优先级 | mclaw owner | spec 04 完成后接 |
 | 5 | 内容运营：谁负责给 Mozia 第一方账号上传 5-10 条真实 skill | 业务方 | Demo 完整性 |
 | 6 | 是否做"跨团队 organization"概念（让 matrix / mclaw 也能以机构身份发 skill）| Phase 3 决定 | 不阻塞 Phase 2 |
@@ -298,8 +297,8 @@ SkillHub 接入 spec 04 时加一层 middleware：识别 `Authorization: Bearer 
 | 资源 | 阶段 | 量 |
 |---|---|---|
 | SkillHub 工程 | spec 04 + 部署 | 一人推进，AI 辅助；按里程碑通报 |
-| matrix 工程 | Spec 04 协同 | 由 matrix 团队自评（含 introspect 端点 + 商店嵌入 UI） |
-| mozia-api / 中央 token 服务 | spec 04 introspect 接口 | 视现状评估：可能只需暴露/确认现有接口 |
+| matrix 工程 | Spec 04 协同 | 由 matrix 团队自评（backend proxy + Skills.tsx + sidebar）|
+| mozia-api / 中央 token 服务 | 中长期（决策 5 演进出口） | 现状仅需沿用 S2S pattern；introspect 端点上线后 SkillHub 无痛切换 |
 | 测试服 / 生产服 PG 实例 | 部署期 | 1 个 PG database（建议复用 mozia-sso 同实例的不同 db）|
 | 域名 | 部署期 | `skillhub-test.mzsjai.com` + 后期 `skillhub.mzsjai.com`（HTTPS 必需）|
 | 内容 | 上线前 | 5-10 条真实 owned skill 内容（业务/运营产出）|
@@ -332,7 +331,8 @@ SkillHub 接入 spec 04 时加一层 middleware：识别 `Authorization: Bearer 
 | **handle** | 用户的 URL 段 / 命名空间标识（lowercase + dashes，全局唯一）。出现在 `/u/:handle`、`/skills/:handle/:slug` |
 | **display name** | 用户的展示名（任意字符）。出现在列表 "by xxx"、详情页头、settings 等 UI 位 |
 | **capability URL** | server-minted 一次性 URL，URL 本身就是凭据；用于 CLI 安装 private skill。和"用户长效 token"是不同机制 |
-| **matrix-managed token** | 用户在 matrix UI 创建的 Bearer token；统一通行 Mozia 各产品（mclaw 调模型、SkillHub 调 API 都用它）。SkillHub 通过 introspect 流程接入 |
+| **SKILLHUB_SERVICE_TOKEN** | SkillHub 签发给受信内部服务（当前仅 matrix）的固定 secret，env 里一条；服务端对服务端调用用它 + `X-SSO-SUB` header 透传用户身份。不给终端用户 |
+| **S2S pattern** | mozia 生态 service-to-service 调用约定：`Authorization: Bearer <service-token>` + `X-SSO-SUB: <用户 ssoSub>`。matrix 调 mozia-api 和 matrix 调 SkillHub 都走这套 |
 | **`mozia` virtual user** | user 表里 `is_virtual=true` 的聚合身份，代表 "Mozia 团队"；具有发布权限的工程师在 `canPublishAs=['mozia']` 列表里，能发 `mozia/<slug>` |
 | **mozia-sso** | Mozia 团队的统一身份提供商，基于 Casdoor fork |
 | **matrix** | Mozia 旗下应用入口平台；含应用商店、用户 token 管理 |
