@@ -155,7 +155,6 @@ graph TB
 ### 同期推进的运维事项
 
 - **测试服部署**（同域反代避免跨域 cookie）
-- **撤掉调试日志**（auth.ts 里的 `[oidc-profile-debug]` 必须在生产前删除，防 PII 泄露）
 - **真实 owned skill 内容补 5-10 条**（通过 `/publish` 上传或 seed JSON + git PR）
 
 ---
@@ -276,7 +275,6 @@ SkillHub 接入 spec 04 时加一层 middleware：识别 `Authorization: Bearer 
 | matrix admin token / SkillHub 调 matrix 用的凭证泄露 | 高 | secret manager；定期轮换；调用日志可审计 |
 | skill 跑在用户终端有 agent 完整权限 → 恶意 skill 可执行任意代码 | 高 | "对齐市场"模式：CLI 输出 warning（已有）；事后举报 + admin 下架（Phase 3）|
 | 测试套件 TRUNCATE 表 → 误在生产跑测试会冲数据 | 高 | 已隔离独立 `mozia_skillhub_test` DB；部署机器不跑测试 |
-| 调试日志（`auth.ts` 里 `[oidc-profile-debug]`）会打印 OIDC profile 全字段 | 高（PII）| 上线前必须撤掉（已记入"同期推进"清单） |
 
 ### ❓ 未决项（需要决策）
 
