@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "pnpm --parallel -r dev",
     "dev:api": "pnpm --filter @mozia/skillhub-api dev",
+    "dev:api:bridge": "pnpm --filter @mozia/skillhub-api dev:bridge",
     "dev:web": "pnpm --filter @mozia/skillhub-web dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
@@ -15,7 +16,8 @@
     "seed:referenced": "pnpm --filter @mozia/skillhub-scripts run seed:referenced",
     "seed:all": "pnpm seed:referenced && pnpm seed:owned",
     "db:migrate": "pnpm --filter @mozia/skillhub-api run db:migrate",
-    "db:migrate:test": "pnpm --filter @mozia/skillhub-api run db:migrate:test"
+    "db:migrate:test": "pnpm --filter @mozia/skillhub-api run db:migrate:test",
+    "db:migrate:bridge": "pnpm --filter @mozia/skillhub-api run db:migrate:bridge"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.0",

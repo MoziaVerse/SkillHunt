@@ -5,6 +5,8 @@ dist/
 .env.local
 .env.test
 .env.test.local
+.env.testbridge
+.env.testbridge.local
 .DS_Store
 *.log
 .vite/

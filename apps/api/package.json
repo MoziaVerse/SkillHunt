@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun --watch src/index.ts",
+    "dev:bridge": "bun --watch --env-file=.env.testbridge src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun",
     "start": "bun dist/index.js",
     "test": "bun --env-file=.env.test test",
@@ -12,6 +13,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "bun run src/db/migrate.ts",
     "db:migrate:test": "bun --env-file=.env.test run src/db/migrate.ts",
+    "db:migrate:bridge": "bun --env-file=.env.testbridge run src/db/migrate.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
