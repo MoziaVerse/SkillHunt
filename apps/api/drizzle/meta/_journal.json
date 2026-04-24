@@ -8,6 +8,27 @@
       "when": 1776840511229,
       "tag": "0000_wild_santa_claus",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776907437102,
+      "tag": "0001_curved_red_shift",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777529900000,
+      "tag": "0002_visibility_public_private",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1777534800000,
+      "tag": "0003_owner_user_id",
+      "breakpoints": true
     }
   ]
 }

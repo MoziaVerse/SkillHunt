@@ -1,5 +1,5 @@
 import { and, arrayOverlaps, eq, ilike, or, sql } from 'drizzle-orm';
-import { db, skillFiles, skills } from '../db';
+import { db, skillFiles, skills, user } from '../db';
 
 // ─── Well-known ───────────────────────────────────────────────────────
 
@@ -44,25 +44,60 @@ export async function getSkillFileContent(skillId: string, path: string): Promis
 
 // ─── Business API ─────────────────────────────────────────────────────
 
+export interface OwnerInfo {
+  id: string;
+  name: string;
+  image: string | null;
+}
+
+export interface SkillWithOwner {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  type: 'owned' | 'referenced';
+  visibility: 'public' | 'private';
+  tags: string[];
+  sourceRepo: string | null;
+  sourceSkillName: string | null;
+  sourceInstallCommand: string | null;
+  sourceUrl: string | null;
+  frontmatter: Record<string, unknown> | null;
+  ownerUserId: string;
+  createdAt: Date;
+  updatedAt: Date;
+  owner: OwnerInfo;
+}
+
 export interface ListSkillsOptions {
   type: 'owned' | 'referenced' | 'all';
   q?: string;
   tags: string[];
-  includeInternal: boolean;
+  /**
+   * Currently logged-in user's id, or null for anonymous.
+   * Used so that the viewer can see their own private skills in the list.
+   */
+  viewerUserId: string | null;
 }
 
-export async function listSkillsForApi(opts: ListSkillsOptions) {
+export async function listSkillsForApi(opts: ListSkillsOptions): Promise<SkillWithOwner[]> {
   const conditions = [];
 
   if (opts.type !== 'all') {
     conditions.push(eq(skills.type, opts.type));
   }
 
-  if (!opts.includeInternal) {
-    // Public visibility, OR referenced (referenced is always visible).
-    const cond = or(eq(skills.visibility, 'public'), eq(skills.type, 'referenced'));
-    if (cond) conditions.push(cond);
-  }
+  // Visibility: public + referenced are visible to everyone. A logged-in
+  // viewer additionally sees their own private skills.
+  const ownPrivate = opts.viewerUserId
+    ? and(eq(skills.visibility, 'private'), eq(skills.ownerUserId, opts.viewerUserId))
+    : undefined;
+  const visibilityCond = or(
+    eq(skills.visibility, 'public'),
+    eq(skills.type, 'referenced'),
+    ...(ownPrivate ? [ownPrivate] : []),
+  );
+  if (visibilityCond) conditions.push(visibilityCond);
 
   if (opts.q) {
     const pattern = `%${opts.q}%`;
@@ -71,20 +106,42 @@ export async function listSkillsForApi(opts: ListSkillsOptions) {
   }
 
   if (opts.tags.length > 0) {
-    // text[] overlap: matches if any tag intersects.
     conditions.push(arrayOverlaps(skills.tags, opts.tags));
   }
 
-  return db
-    .select()
+  const rows = await db
+    .select({ skill: skills, owner: { id: user.id, name: user.name, image: user.image } })
     .from(skills)
+    .innerJoin(user, eq(skills.ownerUserId, user.id))
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(sql`${skills.updatedAt} DESC`);
+
+  return rows.map((r) => ({ ...r.skill, owner: r.owner }));
 }
 
-export async function findSkillBySlug(slug: string) {
-  const rows = await db.select().from(skills).where(eq(skills.slug, slug)).limit(1);
-  return rows[0] ?? null;
+export async function findSkillBySlug(slug: string): Promise<SkillWithOwner | null> {
+  const rows = await db
+    .select({ skill: skills, owner: { id: user.id, name: user.name, image: user.image } })
+    .from(skills)
+    .innerJoin(user, eq(skills.ownerUserId, user.id))
+    .where(eq(skills.slug, slug))
+    .limit(1);
+  const r = rows[0];
+  return r ? { ...r.skill, owner: r.owner } : null;
+}
+
+export async function findSkillByOwnerAndSlug(
+  ownerName: string,
+  slug: string,
+): Promise<SkillWithOwner | null> {
+  const rows = await db
+    .select({ skill: skills, owner: { id: user.id, name: user.name, image: user.image } })
+    .from(skills)
+    .innerJoin(user, eq(skills.ownerUserId, user.id))
+    .where(and(eq(user.name, ownerName), eq(skills.slug, slug)))
+    .limit(1);
+  const r = rows[0];
+  return r ? { ...r.skill, owner: r.owner } : null;
 }
 
 export async function listSkillFilesWithContent(skillId: string) {
@@ -95,9 +152,14 @@ export async function listSkillFilesWithContent(skillId: string) {
 }
 
 export async function listAllTags(): Promise<string[]> {
+  // Public + referenced rows only — private rows' tags are owner-private
+  // and shouldn't leak through the global tag cloud.
   const rows = await db.execute<{ tag: string }>(
-    sql`SELECT DISTINCT unnest(tags) AS tag FROM skillhub.skills WHERE cardinality(tags) > 0 ORDER BY tag`,
+    sql`SELECT DISTINCT unnest(tags) AS tag
+        FROM skillhub.skills
+        WHERE cardinality(tags) > 0
+          AND (type = 'referenced' OR visibility = 'public')
+        ORDER BY tag`,
   );
-  // postgres-js driver returns an array-like result of rows.
   return Array.from(rows, (r: { tag: string }) => r.tag);
 }

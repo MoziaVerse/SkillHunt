@@ -1,6 +1,140 @@
 import { Logo } from '@/components/logo';
+import { type SessionUser, apiClient } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
+import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router';
+
+function SessionWidget() {
+  const [state, setState] = useState<{
+    loading: boolean;
+    user: SessionUser | null;
+    ssoConfigured: boolean;
+    providerId: string;
+    error: string | null;
+  }>({ loading: true, user: null, ssoConfigured: false, providerId: 'mozia-sso', error: null });
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([apiClient.getSession(), apiClient.getAuthStatus()])
+      .then(([user, status]) => {
+        if (!cancelled)
+          setState({
+            loading: false,
+            user,
+            ssoConfigured: status.ssoConfigured,
+            providerId: status.providerId,
+            error: null,
+          });
+      })
+      .catch(() => {
+        if (!cancelled)
+          setState({
+            loading: false,
+            user: null,
+            ssoConfigured: false,
+            providerId: 'mozia-sso',
+            error: null,
+          });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (state.loading) {
+    return <span className="font-mono text-[12.5px] text-neutral-400">…</span>;
+  }
+
+  const signIn = async () => {
+    setState((s) => ({ ...s, error: null }));
+    try {
+      const res = await fetch('/api/auth/sign-in/oauth2', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'include',
+        // callbackURL is resolved relative to better-auth's baseURL (the api on
+        // :3333), so we pass the full web origin to land back on the web app.
+        body: JSON.stringify({
+          providerId: state.providerId,
+          callbackURL: window.location.origin + window.location.pathname,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`${res.status}: ${body || res.statusText}`);
+      }
+      const data = (await res.json().catch(() => null)) as { url?: string } | null;
+      if (data?.url) {
+        window.location.assign(data.url);
+        return;
+      }
+      throw new Error('no redirect URL in response');
+    } catch (err) {
+      setState((s) => ({
+        ...s,
+        error: err instanceof Error ? err.message : 'sign-in failed',
+      }));
+    }
+  };
+
+  const signOut = async () => {
+    await fetch('/api/auth/sign-out', { method: 'POST', credentials: 'include' });
+    setState({
+      loading: false,
+      user: null,
+      ssoConfigured: state.ssoConfigured,
+      providerId: state.providerId,
+      error: null,
+    });
+  };
+
+  if (state.user) {
+    return (
+      <span className="font-mono text-[12.5px] text-neutral-700 flex items-center gap-2">
+        <span className="text-neutral-900">{state.user.name}</span>
+        <span className="text-neutral-300">·</span>
+        <button
+          type="button"
+          onClick={signOut}
+          className="text-neutral-500 hover:text-neutral-900 transition"
+        >
+          sign out
+        </button>
+      </span>
+    );
+  }
+
+  if (!state.ssoConfigured) {
+    return (
+      <span
+        className="font-mono text-[12.5px] px-3 py-1.5 border border-dashed border-neutral-300 rounded text-neutral-400 cursor-not-allowed"
+        title="mozia-sso not configured. Fill OIDC_CLIENT_ID/SECRET in apps/api/.env and restart the api."
+      >
+        Sign in (sso unconfigured)
+      </span>
+    );
+  }
+
+  return (
+    <span className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={signIn}
+        className="font-mono text-[12.5px] px-3 py-1.5 border border-neutral-300 rounded text-neutral-900 hover:bg-neutral-100 transition"
+      >
+        Sign in
+      </button>
+      {state.error ? (
+        <span
+          className="font-mono text-[11px] text-red-600 max-w-[260px] truncate"
+          title={state.error}
+        >
+          {state.error}
+        </span>
+      ) : null}
+    </span>
+  );
+}
 
 function TopNav() {
   const { pathname } = useLocation();
@@ -18,7 +152,7 @@ function TopNav() {
             · mozia
           </span>
         </Link>
-        <nav className="flex items-center gap-1 font-mono text-[12.5px]">
+        <nav className="flex items-center gap-3 font-mono text-[12.5px]">
           <Link
             to="/"
             className={cn(
@@ -37,6 +171,7 @@ function TopNav() {
           >
             Docs
           </Link>
+          <SessionWidget />
         </nav>
       </div>
     </header>

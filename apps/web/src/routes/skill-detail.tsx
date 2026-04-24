@@ -38,14 +38,18 @@ function DetailHeader({
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-2">
             <SourceBadge skill={skill} />
-            {skill.type === 'owned' && skill.visibility === 'internal' && (
-              <Badge variant="warn">internal</Badge>
+            {skill.type === 'owned' && skill.visibility === 'private' && (
+              <Badge variant="warn">private</Badge>
             )}
             <Badge variant="subtle">{skill.type}</Badge>
           </div>
           <h1 className="font-mono text-[36px] leading-[1.05] tracking-[-0.02em] text-neutral-900 font-medium">
             {skill.name}
           </h1>
+          <div className="mt-2 font-mono text-[12px] text-neutral-500">
+            <span className="text-neutral-400">by </span>
+            <span className="text-neutral-700">{skill.owner.name}</span>
+          </div>
           <p className="mt-3 text-[16px] text-neutral-600 max-w-2xl leading-relaxed">
             {skill.description}
           </p>

@@ -24,8 +24,14 @@ function Hero() {
       <p className="mt-2 text-[17px] text-neutral-600 max-w-xl">
         The mozia agent skills directory. Install any skill into your local agent with one command.
       </p>
-      <div className="mt-6 max-w-[640px]">
-        <InstallCommand command="npx skills add http://localhost:3333 <skill>" />
+      <div className="mt-6 max-w-[760px]">
+        <InstallCommand command="npx skills add http://localhost:3333 --skill <slug> --agent claude-code -y" />
+        <p className="mt-2 font-mono text-[11px] text-neutral-500">
+          Replace <code className="px-1 bg-neutral-100 rounded text-neutral-700">&lt;slug&gt;</code>{' '}
+          with a skill name from the list below. Swap{' '}
+          <code className="px-1 bg-neutral-100 rounded text-neutral-700">claude-code</code> for your
+          preferred agent (cursor / copilot / opencode …).
+        </p>
       </div>
     </section>
   );
@@ -90,11 +96,10 @@ export default function SkillsList() {
   const [tags, setTags] = useState<string[]>([]);
   const [sort, setSort] = useState<SortMode>('recent');
 
-  const { items, loading, error } = useSkills({
+  const { items, loading, fetching, error } = useSkills({
     type,
     q: query.trim() ? query.trim() : undefined,
     tag: tags,
-    includeInternal: true,
   });
   const allTags = useTags();
 
@@ -196,19 +201,19 @@ export default function SkillsList() {
       </div>
 
       {error && (
-        <div className="py-12 text-center font-mono text-[13px] text-red-700">
+        <div className="min-h-[400px] py-12 text-center font-mono text-[13px] text-red-700">
           API error: {error.message}. Is the api running on :3333?
         </div>
       )}
 
       {!error && loading && (
-        <div className="py-12 text-center font-mono text-[11.5px] uppercase tracking-[0.14em] text-neutral-400">
+        <div className="min-h-[400px] py-12 text-center font-mono text-[11.5px] uppercase tracking-[0.14em] text-neutral-400">
           loading…
         </div>
       )}
 
       {!error && !loading && sorted.length === 0 && (
-        <div className="py-24 text-center">
+        <div className="min-h-[400px] py-24 text-center">
           <div className="font-mono text-[12px] uppercase tracking-[0.18em] text-neutral-400 mb-3">
             no matches
           </div>
@@ -227,7 +232,12 @@ export default function SkillsList() {
 
       {!error && !loading && sorted.length > 0 && (
         <>
-          <div>
+          <div
+            className={cn(
+              'transition-opacity duration-150',
+              fetching ? 'opacity-60' : 'opacity-100',
+            )}
+          >
             {sorted.map((s, i) => (
               <SkillRow key={s.slug} skill={s} index={i} />
             ))}

@@ -19,6 +19,7 @@ async function resetAndSeed() {
       visibility: 'public',
       tags: [],
       frontmatter: { name: 'test-owned-public' },
+      ownerUserId: 'mozia-virtual',
     })
     .returning();
   if (!ownedPublic) throw new Error('seed: ownedPublic insert failed');
@@ -32,24 +33,25 @@ async function resetAndSeed() {
     { skillId: ownedPublic.id, path: 'extra.md', content: '# extra\n' },
   ]);
 
-  const [ownedInternal] = await db
+  const [ownedPriv] = await db
     .insert(skills)
     .values({
-      slug: 'test-owned-internal',
-      name: 'test-owned-internal',
-      description: 'owned + internal for testing',
+      slug: 'test-owned-private',
+      name: 'test-owned-private',
+      description: 'owned + private for testing',
       type: 'owned',
-      visibility: 'internal',
+      visibility: 'private',
       tags: [],
-      frontmatter: { name: 'test-owned-internal' },
+      frontmatter: { name: 'test-owned-private' },
+      ownerUserId: 'mozia-virtual',
     })
     .returning();
-  if (!ownedInternal) throw new Error('seed: ownedInternal insert failed');
+  if (!ownedPriv) throw new Error('seed: ownedPriv insert failed');
 
   await db.insert(skillFiles).values({
-    skillId: ownedInternal.id,
+    skillId: ownedPriv.id,
     path: 'SKILL.md',
-    content: '---\nname: test-owned-internal\ndescription: x\n---\n# internal\n',
+    content: '---\nname: test-owned-private\ndescription: x\n---\n# private\n',
   });
 
   await db.insert(skills).values({
@@ -63,6 +65,7 @@ async function resetAndSeed() {
     sourceSkillName: 'test-ref',
     sourceInstallCommand: 'npx skills add test/repo --skill test-ref',
     sourceUrl: 'https://example.com',
+    ownerUserId: 'mozia-virtual',
   });
 }
 
@@ -117,9 +120,9 @@ describe('well-known endpoint', () => {
     expect(body).toContain('extra');
   });
 
-  it('internal skill returns 404', async () => {
+  it('private skill returns 404', async () => {
     const res = await app.fetch(
-      new Request('http://localhost/.well-known/agent-skills/test-owned-internal/SKILL.md'),
+      new Request('http://localhost/.well-known/agent-skills/test-owned-private/SKILL.md'),
     );
     expect(res.status).toBe(404);
   });

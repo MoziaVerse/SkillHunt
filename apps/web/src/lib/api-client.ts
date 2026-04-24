@@ -14,7 +14,17 @@ export interface ListSkillsParams {
   type?: 'all' | 'owned' | 'referenced';
   q?: string;
   tag?: string[];
-  includeInternal?: boolean;
+}
+
+export interface SessionUser {
+  id: string;
+  email: string;
+  name: string;
+  image?: string | null;
+}
+
+export interface SessionResponse {
+  user: SessionUser | null;
 }
 
 export const apiClient = {
@@ -23,16 +33,43 @@ export const apiClient = {
     if (params.type) usp.set('type', params.type);
     if (params.q) usp.set('q', params.q);
     if (params.tag) for (const t of params.tag) usp.append('tag', t);
-    if (params.includeInternal) usp.set('includeInternal', 'true');
     const qs = usp.toString();
-    return request<ListSkillsResponse>(`/skills${qs ? `?${qs}` : ''}`);
+    return request<ListSkillsResponse>(`/skills${qs ? `?${qs}` : ''}`, { credentials: 'include' });
   },
 
   getSkill(slug: string): Promise<SkillDetail> {
-    return request<SkillDetail>(`/skills/${encodeURIComponent(slug)}`);
+    return request<SkillDetail>(`/skills/${encodeURIComponent(slug)}`, { credentials: 'include' });
   },
 
   listTags(): Promise<ListTagsResponse> {
-    return request<ListTagsResponse>('/tags');
+    return request<ListTagsResponse>('/tags', { credentials: 'include' });
+  },
+
+  // better-auth returns { session, user } when authenticated, or null otherwise.
+  async getSession(): Promise<SessionUser | null> {
+    const res = await fetch(`${BASE}/auth/get-session`, { credentials: 'include' });
+    if (!res.ok) return null;
+    const text = await res.text();
+    if (!text) return null;
+    try {
+      const body = JSON.parse(text) as { user?: SessionUser } | null;
+      return body?.user ?? null;
+    } catch {
+      return null;
+    }
+  },
+
+  async getAuthStatus(): Promise<{
+    ssoConfigured: boolean;
+    issuer: string | null;
+    providerId: string;
+  }> {
+    const res = await fetch(`${BASE}/auth-status`);
+    if (!res.ok) return { ssoConfigured: false, issuer: null, providerId: 'mozia-sso' };
+    return (await res.json()) as {
+      ssoConfigured: boolean;
+      issuer: string | null;
+      providerId: string;
+    };
   },
 };

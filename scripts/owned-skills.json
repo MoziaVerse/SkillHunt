@@ -27,9 +27,9 @@
     "slug": "internal-rfc-writer",
     "name": "internal-rfc-writer",
     "description": "按 Mozia 内部 RFC 模板起草设计文档:问题、选型、决策、权衡、rollback 计划。",
-    "visibility": "internal",
+    "visibility": "public",
     "tags": ["writing", "rfc", "architecture"],
-    "skillMd": "---\nname: internal-rfc-writer\ndescription: 按内部 RFC 模板起草设计文档\nvisibility: internal\n---\n\n# Internal RFC Writer\n\n## When to Use\n\n起草一份内部 RFC / 设计文档。这个 skill 只对 Mozia 成员开放,\n因为模板包含内部链接和术语。\n\n## Template\n\n关键章节:\n1. Context / 背景\n2. Goals & Non-goals\n3. Options Considered\n4. Decision\n5. Tradeoffs\n6. Rollback Plan\n7. Open Questions\n\n## Style Rules\n\n- 不用市场语言(\"赋能\"、\"闭环\"、\"抓手\")\n- 每个 Option 至少列一个反方论点\n- Decision 一定要给理由,不要只说\"选 A\"\n"
+    "skillMd": "---\nname: internal-rfc-writer\ndescription: 按内部 RFC 模板起草设计文档\n---\n\n# Internal RFC Writer\n\n## When to Use\n\n起草一份内部 RFC / 设计文档。\n\n## Template\n\n关键章节:\n1. Context / 背景\n2. Goals & Non-goals\n3. Options Considered\n4. Decision\n5. Tradeoffs\n6. Rollback Plan\n7. Open Questions\n\n## Style Rules\n\n- 不用市场语言(\"赋能\"、\"闭环\"、\"抓手\")\n- 每个 Option 至少列一个反方论点\n- Decision 一定要给理由,不要只说\"选 A\"\n"
   },
   {
     "slug": "commit-message-cn",

@@ -1,16 +1,66 @@
-import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { sql } from 'drizzle-orm';
 import { Hono } from 'hono';
-import { db, skillFiles, skills } from '../db';
+import { db, skillFiles, skills, user } from '../db';
+import type { AuthContext } from '../lib/auth-context';
 import { skillListItemSchema } from '../lib/dto';
-import { apiRoute } from './api';
 
-const app = new Hono().route('/api', apiRoute);
+const OWNER_USER_ID = 'test-owner';
+const OTHER_USER_ID = 'test-other';
+
+// Per-request injected auth — read a custom test header so individual cases
+// can simulate "no session" vs "logged in".
+//   x-test-user: <id>      → logged-in user with that id
+//   (header absent)        → anonymous
+const HEADER = 'x-test-user';
+
+mock.module('../lib/auth-context', () => ({
+  getAuthContext: async (c: {
+    req: { header: (k: string) => string | undefined };
+  }): Promise<AuthContext> => {
+    const userId = c.req.header(HEADER);
+    if (!userId) return { user: null };
+    return {
+      user: {
+        id: userId,
+        email: `${userId}@example.com`,
+        name: userId,
+        ssoSub: `sso-${userId}`,
+      },
+    };
+  },
+}));
+
+let app: Hono;
+
+beforeAll(async () => {
+  const { apiRoute } = await import('./api');
+  app = new Hono().route('/api', apiRoute);
+});
 
 async function resetAndSeed() {
   await db.execute(sql`TRUNCATE TABLE skillhub.skills RESTART IDENTITY CASCADE`);
+  await db.execute(
+    sql`DELETE FROM skillhub."user" WHERE id IN (${OWNER_USER_ID}, ${OTHER_USER_ID})`,
+  );
 
-  // owned + public, tag=['design']
+  // Two test users: an owner of the private skill, and an unrelated user.
+  await db.insert(user).values([
+    {
+      id: OWNER_USER_ID,
+      name: 'tester',
+      email: 'tester@example.com',
+      emailVerified: true,
+    },
+    {
+      id: OTHER_USER_ID,
+      name: 'other',
+      email: 'other@example.com',
+      emailVerified: true,
+    },
+  ]);
+
+  // owned + public, tag=['design'], owner = tester
   const [ownedPub] = await db
     .insert(skills)
     .values({
@@ -21,6 +71,7 @@ async function resetAndSeed() {
       visibility: 'public',
       tags: ['design'],
       frontmatter: { name: 'test-owned-pub' },
+      ownerUserId: OWNER_USER_ID,
     })
     .returning();
   if (!ownedPub) throw new Error('seed: ownedPub insert failed');
@@ -30,27 +81,28 @@ async function resetAndSeed() {
     content: '---\nname: test-owned-pub\n---\n# body\n',
   });
 
-  // owned + internal, tag=['writing']
-  const [ownedInt] = await db
+  // owned + private, tag=['writing'], owner = tester. Tester can see this; nobody else.
+  const [ownedPriv] = await db
     .insert(skills)
     .values({
-      slug: 'test-owned-int',
-      name: 'test-owned-int',
-      description: 'internal only',
+      slug: 'test-owned-priv',
+      name: 'test-owned-priv',
+      description: 'private only',
       type: 'owned',
-      visibility: 'internal',
+      visibility: 'private',
       tags: ['writing'],
-      frontmatter: { name: 'test-owned-int' },
+      frontmatter: { name: 'test-owned-priv' },
+      ownerUserId: OWNER_USER_ID,
     })
     .returning();
-  if (!ownedInt) throw new Error('seed: ownedInt insert failed');
+  if (!ownedPriv) throw new Error('seed: ownedPriv insert failed');
   await db.insert(skillFiles).values({
-    skillId: ownedInt.id,
+    skillId: ownedPriv.id,
     path: 'SKILL.md',
-    content: '---\nname: test-owned-int\n---\n# internal body\n',
+    content: '---\nname: test-owned-priv\n---\n# private body\n',
   });
 
-  // referenced, tag=['tooling']
+  // referenced, tag=['tooling'], owner = other (referenced is always public regardless of owner)
   await db.insert(skills).values({
     slug: 'test-ref',
     name: 'test-ref',
@@ -62,20 +114,28 @@ async function resetAndSeed() {
     sourceSkillName: 'test-ref',
     sourceInstallCommand: 'npx skills add acme/repo --skill test-ref',
     sourceUrl: 'https://github.com/acme/repo',
+    ownerUserId: OTHER_USER_ID,
   });
 }
 
 async function cleanup() {
   await db.execute(sql`TRUNCATE TABLE skillhub.skills RESTART IDENTITY CASCADE`);
+  await db.execute(
+    sql`DELETE FROM skillhub."user" WHERE id IN (${OWNER_USER_ID}, ${OTHER_USER_ID})`,
+  );
 }
+
+const reqAnon = (path: string) => new Request(`http://localhost${path}`);
+const reqAsUser = (path: string, userId: string) =>
+  new Request(`http://localhost${path}`, { headers: { [HEADER]: userId } });
 
 describe('business API', () => {
   beforeEach(resetAndSeed);
   afterAll(cleanup);
 
   describe('GET /api/skills', () => {
-    it('default excludes internal skills', async () => {
-      const res = await app.fetch(new Request('http://localhost/api/skills'));
+    it('anonymous: sees only public + referenced (private hidden)', async () => {
+      const res = await app.fetch(reqAnon('/api/skills'));
       expect(res.status).toBe(200);
       const body = (await res.json()) as { items: Array<{ slug: string }>; total: number };
       expect(body.items).toHaveLength(2);
@@ -83,42 +143,63 @@ describe('business API', () => {
       expect(body.total).toBe(2);
     });
 
-    it('includeInternal=true exposes internal skills', async () => {
-      const res = await app.fetch(new Request('http://localhost/api/skills?includeInternal=true'));
-      const body = (await res.json()) as { items: unknown[] };
-      expect(body.items).toHaveLength(3);
+    it('non-owner logged-in user: still cannot see other people private', async () => {
+      const res = await app.fetch(reqAsUser('/api/skills', OTHER_USER_ID));
+      const body = (await res.json()) as { items: Array<{ slug: string }> };
+      expect(body.items).toHaveLength(2);
+      expect(body.items.map((i) => i.slug)).not.toContain('test-owned-priv');
+    });
+
+    it('owner sees their own private skill in list', async () => {
+      const res = await app.fetch(reqAsUser('/api/skills', OWNER_USER_ID));
+      const body = (await res.json()) as { items: Array<{ slug: string }> };
+      expect(body.items.map((i) => i.slug).sort()).toEqual([
+        'test-owned-priv',
+        'test-owned-pub',
+        'test-ref',
+      ]);
+    });
+
+    it('every list item carries owner info', async () => {
+      const res = await app.fetch(reqAnon('/api/skills'));
+      const body = (await res.json()) as {
+        items: Array<{ slug: string; owner: { id: string; name: string } }>;
+      };
+      for (const it of body.items) {
+        expect(it.owner).toBeDefined();
+        expect(typeof it.owner.id).toBe('string');
+        expect(typeof it.owner.name).toBe('string');
+      }
     });
 
     it('type=owned filters to owned only', async () => {
-      const res = await app.fetch(
-        new Request('http://localhost/api/skills?type=owned&includeInternal=true'),
-      );
+      const res = await app.fetch(reqAnon('/api/skills?type=owned'));
       const body = (await res.json()) as { items: Array<{ type: string }> };
       expect(body.items.length).toBeGreaterThan(0);
       for (const it of body.items) expect(it.type).toBe('owned');
     });
 
     it('type=referenced filters to referenced only', async () => {
-      const res = await app.fetch(new Request('http://localhost/api/skills?type=referenced'));
+      const res = await app.fetch(reqAnon('/api/skills?type=referenced'));
       const body = (await res.json()) as { items: Array<{ type: string }> };
       expect(body.items.length).toBeGreaterThan(0);
       for (const it of body.items) expect(it.type).toBe('referenced');
     });
 
     it('q filters by name / description (ILIKE)', async () => {
-      const res = await app.fetch(new Request('http://localhost/api/skills?q=magical'));
+      const res = await app.fetch(reqAnon('/api/skills?q=magical'));
       const body = (await res.json()) as { items: Array<{ slug: string }> };
       expect(body.items).toHaveLength(1);
       expect(body.items[0]?.slug).toBe('test-owned-pub');
     });
 
     it('tag filters by array overlap', async () => {
-      const res = await app.fetch(new Request('http://localhost/api/skills?tag=design'));
+      const res = await app.fetch(reqAnon('/api/skills?tag=design'));
       const body = (await res.json()) as { items: Array<{ slug: string }> };
       expect(body.items).toHaveLength(1);
       expect(body.items[0]?.slug).toBe('test-owned-pub');
 
-      const res2 = await app.fetch(new Request('http://localhost/api/skills?tag=tooling'));
+      const res2 = await app.fetch(reqAnon('/api/skills?tag=tooling'));
       const body2 = (await res2.json()) as { items: Array<{ slug: string }> };
       expect(body2.items).toHaveLength(1);
       expect(body2.items[0]?.slug).toBe('test-ref');
@@ -129,7 +210,7 @@ describe('business API', () => {
       await db.execute(
         sql`UPDATE skillhub.skills SET description = 'touched' WHERE slug = 'test-ref'`,
       );
-      const res = await app.fetch(new Request('http://localhost/api/skills'));
+      const res = await app.fetch(reqAnon('/api/skills'));
       const body = (await res.json()) as { items: Array<{ slug: string; updatedAt: string }> };
       expect(body.items[0]?.slug).toBe('test-ref');
       const times = body.items.map((i) => new Date(i.updatedAt).getTime());
@@ -141,7 +222,7 @@ describe('business API', () => {
     });
 
     it('response items match discriminated union schema', async () => {
-      const res = await app.fetch(new Request('http://localhost/api/skills?includeInternal=true'));
+      const res = await app.fetch(reqAnon('/api/skills'));
       const body = (await res.json()) as { items: unknown[] };
       for (const item of body.items) {
         const parsed = skillListItemSchema.safeParse(item);
@@ -151,8 +232,8 @@ describe('business API', () => {
   });
 
   describe('GET /api/skills/:slug', () => {
-    it('owned skill returns skillMdContent + installCommand', async () => {
-      const res = await app.fetch(new Request('http://localhost/api/skills/test-owned-pub'));
+    it('owned public skill returns skillMdContent + installCommand', async () => {
+      const res = await app.fetch(reqAnon('/api/skills/test-owned-pub'));
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
         type: string;
@@ -162,12 +243,14 @@ describe('business API', () => {
       };
       expect(body.type).toBe('owned');
       expect(body.skillMdContent).toContain('body');
-      expect(body.installCommand).toMatch(/^npx skills add http:\/\/.+ --skill test-owned-pub$/);
+      expect(body.installCommand).toMatch(
+        /^npx skills add http:\/\/.+ --skill test-owned-pub --agent claude-code -y$/,
+      );
       expect(body.files).toContain('SKILL.md');
     });
 
     it('referenced skill returns sourceInstallCommand + sourceUrl', async () => {
-      const res = await app.fetch(new Request('http://localhost/api/skills/test-ref'));
+      const res = await app.fetch(reqAnon('/api/skills/test-ref'));
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
         type: string;
@@ -179,18 +262,42 @@ describe('business API', () => {
       expect(body.sourceUrl).toBe('https://github.com/acme/repo');
     });
 
+    it('private skill returns 404 to anonymous (leak-prevention)', async () => {
+      const res = await app.fetch(reqAnon('/api/skills/test-owned-priv'));
+      expect(res.status).toBe(404);
+    });
+
+    it('private skill returns 404 to a logged-in non-owner (leak-prevention)', async () => {
+      const res = await app.fetch(reqAsUser('/api/skills/test-owned-priv', OTHER_USER_ID));
+      expect(res.status).toBe(404);
+    });
+
+    it('private skill returns 200 to its owner', async () => {
+      const res = await app.fetch(reqAsUser('/api/skills/test-owned-priv', OWNER_USER_ID));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        type: string;
+        visibility: string;
+        owner: { id: string };
+      };
+      expect(body.type).toBe('owned');
+      expect(body.visibility).toBe('private');
+      expect(body.owner.id).toBe(OWNER_USER_ID);
+    });
+
     it('non-existent slug returns 404', async () => {
-      const res = await app.fetch(new Request('http://localhost/api/skills/no-such'));
+      const res = await app.fetch(reqAnon('/api/skills/no-such'));
       expect(res.status).toBe(404);
     });
   });
 
   describe('GET /api/tags', () => {
-    it('returns distinct tag set', async () => {
-      const res = await app.fetch(new Request('http://localhost/api/tags'));
+    it('returns tags from public + referenced only (private tags hidden)', async () => {
+      const res = await app.fetch(reqAnon('/api/tags'));
       expect(res.status).toBe(200);
       const body = (await res.json()) as { tags: string[] };
-      expect(body.tags.sort()).toEqual(['design', 'tooling', 'writing']);
+      expect(body.tags.sort()).toEqual(['design', 'tooling']);
+      expect(body.tags).not.toContain('writing');
     });
   });
 });

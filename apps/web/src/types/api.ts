@@ -1,3 +1,9 @@
+export interface OwnerInfo {
+  id: string;
+  name: string;
+  image: string | null;
+}
+
 export interface BaseSkill {
   slug: string;
   name: string;
@@ -5,11 +11,12 @@ export interface BaseSkill {
   tags: string[];
   createdAt: string;
   updatedAt: string;
+  owner: OwnerInfo;
 }
 
 export interface OwnedSkillListItem extends BaseSkill {
   type: 'owned';
-  visibility: 'public' | 'internal';
+  visibility: 'public' | 'private';
 }
 
 export interface ReferencedSkillListItem extends BaseSkill {

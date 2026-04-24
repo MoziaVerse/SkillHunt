@@ -6,7 +6,7 @@ if (!url) {
 }
 
 export default {
-  schema: './src/db/schema.ts',
+  schema: ['./src/db/schema.ts', './src/db/auth-schema.ts'],
   out: './drizzle',
   dialect: 'postgresql',
   schemaFilter: ['skillhub'],

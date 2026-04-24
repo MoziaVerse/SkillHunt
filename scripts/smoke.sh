@@ -3,7 +3,7 @@
 # ---
 # Assumes:
 #   - `pnpm dev` is already running (api on :3333, web on :5180)
-#   - Seeds have been loaded (`pnpm seed:all`): 5 owned (4 public + 1 internal) + 4 referenced
+#   - Seeds have been loaded (`pnpm seed:all`): 5 owned (all public) + 4 referenced
 #
 # Usage:
 #   ./scripts/smoke.sh                       # API + protocol checks
@@ -62,9 +62,9 @@ check "web / exposes SkillHub title"    bash -c "curl -fsS $WEB/ | grep -q 'Skil
 
 cyan "═══ 2. Business API ═══"
 jq_check "/api/skills → items is array"              "$API/api/skills"                             ".items | type == \"array\""
-jq_check "/api/skills default count = 8 (excl internal)"  "$API/api/skills"                        ".items | length == 8"
-jq_check "/api/skills?includeInternal=true count = 9" "$API/api/skills?includeInternal=true"        ".items | length == 9"
-jq_check "/api/skills?type=owned (incl internal) = 5" "$API/api/skills?type=owned&includeInternal=true" ".items | length == 5"
+# Phase 2-01: visibility is public/private; all 9 seeded rows are public, anon sees them all.
+jq_check "/api/skills total = 9 (all seeded)"             "$API/api/skills"                              ".items | length == 9"
+jq_check "/api/skills?type=owned = 5"                     "$API/api/skills?type=owned"                   ".items | length == 5"
 jq_check "/api/skills?type=referenced = 4"           "$API/api/skills?type=referenced"              ".items | length == 4"
 jq_check "/api/skills?q=design returns ≥ 1"          "$API/api/skills?q=design"                     ".items | length >= 1"
 jq_check "/api/tags → tags is array"                 "$API/api/tags"                                ".tags | type == \"array\""
@@ -78,22 +78,22 @@ check   "/api/skills/no-such → 404"                  bash -c "[ \$(curl -sS -o
 cyan "═══ 3. Well-Known Protocol ═══"
 jq_check "index.json accessible"                     "$API/.well-known/agent-skills/index.json"  ". != null"
 jq_check "index.json { skills: [...] } shape"        "$API/.well-known/agent-skills/index.json"  ".skills | type == \"array\""
-jq_check "index.json exposes 4 (only owned+public)"  "$API/.well-known/agent-skills/index.json"  ".skills | length == 4"
+jq_check "index.json exposes 5 (all owned + public)" "$API/.well-known/agent-skills/index.json"  ".skills | length == 5"
 jq_check "every entry has name/description/files"    "$API/.well-known/agent-skills/index.json"  'all(.skills[]; has("name") and has("description") and has("files"))'
 jq_check "every entry files contains SKILL.md"       "$API/.well-known/agent-skills/index.json"  'all(.skills[]; .files | any(. == "SKILL.md"))'
 
 FIRST_SLUG=$(curl -fsS "$API/.well-known/agent-skills/index.json" | jq -r '.skills[0].name')
 check "first owned SKILL.md starts with frontmatter" \
   bash -c "curl -fsS $API/.well-known/agent-skills/$FIRST_SLUG/SKILL.md | head -1 | grep -q '^---'"
-check "internal skill hidden from well-known (404)" \
-  bash -c "[ \$(curl -sS -o /dev/null -w '%{http_code}' $API/.well-known/agent-skills/internal-rfc-writer/SKILL.md) = '404' ]"
+check "previously-internal skill is now public (200)" \
+  bash -c "[ \$(curl -sS -o /dev/null -w '%{http_code}' $API/.well-known/agent-skills/internal-rfc-writer/SKILL.md) = '200' ]"
 check "referenced skill hidden from well-known (404)" \
   bash -c "[ \$(curl -sS -o /dev/null -w '%{http_code}' $API/.well-known/agent-skills/frontend-design/SKILL.md) = '404' ]"
 check "path traversal rejected (400 or 404)" \
   bash -c "code=\$(curl -sS -o /dev/null -w '%{http_code}' $API/.well-known/agent-skills/$FIRST_SLUG/..%2Fetc%2Fpasswd); [ \$code = '400' ] || [ \$code = '404' ]"
 
 cyan "═══ 4. Vite Proxy (web → api) ═══"
-jq_check "web /api/skills proxied to api"            "$WEB/api/skills"                              ".items | length == 8"
+jq_check "web /api/skills proxied to api"            "$WEB/api/skills"                              ".items | length == 9"
 jq_check "web /api/tags proxied"                     "$WEB/api/tags"                                ".tags | type == \"array\""
 
 if [ "$SKIP_CLI" != "1" ]; then

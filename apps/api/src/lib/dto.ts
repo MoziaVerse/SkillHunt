@@ -12,14 +12,17 @@ export const listSkillsQuerySchema = z.object({
     .union([z.string(), z.array(z.string())])
     .optional()
     .transform((v) => (v === undefined ? [] : Array.isArray(v) ? v : [v])),
-
-  // Opt-in to see internal skills. Phase 0 defaults to false.
-  includeInternal: z
-    .enum(['true', 'false'])
-    .optional()
-    .default('false')
-    .transform((v) => v === 'true'),
 });
+
+// ─── Owner ─────────────────────────────────────────────────────────────
+
+export const ownerInfoSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  image: z.string().nullable(),
+});
+
+export type OwnerInfo = z.infer<typeof ownerInfoSchema>;
 
 // ─── List item ─────────────────────────────────────────────────────────
 
@@ -30,11 +33,12 @@ const baseSkillDto = z.object({
   tags: z.array(z.string()),
   createdAt: z.string(),
   updatedAt: z.string(),
+  owner: ownerInfoSchema,
 });
 
 export const ownedSkillListItemSchema = baseSkillDto.extend({
   type: z.literal('owned'),
-  visibility: z.enum(['public', 'internal']),
+  visibility: z.enum(['public', 'private']),
 });
 
 export const referencedSkillListItemSchema = baseSkillDto.extend({

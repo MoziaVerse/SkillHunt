@@ -34,8 +34,12 @@ export function SkillRow({
           <span className="font-mono text-[15px] font-medium text-neutral-900 group-hover:underline decoration-neutral-400 underline-offset-4">
             {skill.name}
           </span>
-          {skill.type === 'owned' && skill.visibility === 'internal' && (
-            <Badge variant="warn">internal</Badge>
+          <span className="font-mono text-[11px] text-neutral-500">
+            <span className="text-neutral-400">by </span>
+            {skill.owner.name}
+          </span>
+          {skill.type === 'owned' && skill.visibility === 'private' && (
+            <Badge variant="warn">private</Badge>
           )}
         </div>
         <p className="mt-1 text-[13px] text-neutral-600 line-clamp-2 leading-relaxed">

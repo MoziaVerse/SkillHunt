@@ -1,6 +1,12 @@
 @import "tailwindcss";
 
 @layer base {
+  html {
+    /* Reserve the vertical scrollbar gutter on every page, so navigating
+       between Skills <-> Docs (which have different content heights) doesn't
+       shift the layout horizontally as the scrollbar appears or disappears. */
+    scrollbar-gutter: stable;
+  }
   html,
   body {
     background: #fafafa;
