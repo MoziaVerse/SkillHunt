@@ -13,7 +13,9 @@
     "typecheck": "pnpm -r typecheck",
     "seed:owned": "pnpm --filter @mozia/skillhub-scripts run seed:owned",
     "seed:referenced": "pnpm --filter @mozia/skillhub-scripts run seed:referenced",
-    "seed:all": "pnpm seed:referenced && pnpm seed:owned"
+    "seed:all": "pnpm seed:referenced && pnpm seed:owned",
+    "db:migrate": "pnpm --filter @mozia/skillhub-api run db:migrate",
+    "db:migrate:test": "pnpm --filter @mozia/skillhub-api run db:migrate:test"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.0",

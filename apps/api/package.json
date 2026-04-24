@@ -7,10 +7,11 @@
     "dev": "bun --watch src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun",
     "start": "bun dist/index.js",
-    "test": "bun test",
+    "test": "bun --env-file=.env.test test",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "bun run src/db/migrate.ts",
+    "db:migrate:test": "bun --env-file=.env.test run src/db/migrate.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
