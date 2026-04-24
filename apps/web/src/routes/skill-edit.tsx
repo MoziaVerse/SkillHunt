@@ -119,7 +119,7 @@ export default function SkillEditPage() {
       <SkillForm
         key={formKey}
         mode="edit"
-        ownerOptions={[owner]}
+        ownerOptions={[{ handle: owner, displayName: skill.owner.name }]}
         initial={{
           owner,
           slug,

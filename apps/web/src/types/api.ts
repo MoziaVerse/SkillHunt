@@ -1,6 +1,9 @@
 export interface OwnerInfo {
   id: string;
+  /** Display name — anything (Chinese, spaces, mixed case) */
   name: string;
+  /** URL handle — lowercase + dashes; used in /u/:handle */
+  handle: string;
   image: string | null;
 }
 

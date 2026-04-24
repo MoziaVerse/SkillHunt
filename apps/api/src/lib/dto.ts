@@ -18,7 +18,10 @@ export const listSkillsQuerySchema = z.object({
 
 export const ownerInfoSchema = z.object({
   id: z.string(),
+  // Display name (free-form, may contain Chinese / spaces / mixed case)
   name: z.string(),
+  // URL handle (lowercase + dashes); used in /u/:handle
+  handle: z.string(),
   image: z.string().nullable(),
 });
 
@@ -82,6 +85,8 @@ export const slugSegmentSchema = z
   .regex(/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/, 'must be lowercase alphanumeric with dashes');
 
 export const createSkillSchema = z.object({
+  // owner = the publishing user's URL handle (or a virtual handle from
+  // canPublishAs, e.g. "mozia"). Must satisfy SLUG_RE.
   owner: slugSegmentSchema,
   slug: slugSegmentSchema,
   name: z.string().min(1).max(120),
@@ -119,6 +124,7 @@ export const upsertFileBodySchema = z.object({
 export const userPublicSchema = z.object({
   id: z.string(),
   name: z.string(),
+  handle: z.string(),
   email: z.string().nullable(),
   image: z.string().nullable(),
   isVirtual: z.boolean(),
@@ -127,9 +133,34 @@ export const userPublicSchema = z.object({
 
 export type UserPublic = z.infer<typeof userPublicSchema>;
 
-// PATCH /api/users/me/profile — for now only name is editable.
-export const updateProfileSchema = z.object({
-  name: slugSegmentSchema,
-});
+// Reserved handles — collide with route prefixes or have admin connotations.
+export const RESERVED_HANDLES = new Set([
+  'admin',
+  'anonymous',
+  'api',
+  'auth',
+  'docs',
+  'publish',
+  'root',
+  'settings',
+  'skills',
+  'system',
+  'u',
+  'www',
+]);
+
+// PATCH /api/users/me/profile — both name (display) and handle (URL) editable,
+// either independently. handle goes through SLUG_RE; name has no charset rule
+// beyond a length cap.
+export const updateProfileSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80).optional(),
+    handle: slugSegmentSchema
+      .refine((h) => !RESERVED_HANDLES.has(h), 'this handle is reserved')
+      .optional(),
+  })
+  .refine((v) => v.name !== undefined || v.handle !== undefined, {
+    message: 'at least one of name / handle is required',
+  });
 
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

@@ -11,7 +11,7 @@ export async function listPublicOwnedSkills() {
       slug: skills.slug,
       name: skills.name,
       description: skills.description,
-      ownerName: user.name,
+      ownerHandle: user.handle,
     })
     .from(skills)
     .innerJoin(user, eq(skills.ownerUserId, user.id))
@@ -35,14 +35,14 @@ export async function findPublicOwnedSkillBySlug(slug: string) {
   return rows[0] ?? null;
 }
 
-export async function findPublicOwnedSkillByOwnerAndSlug(ownerName: string, slug: string) {
+export async function findPublicOwnedSkillByOwnerAndSlug(ownerHandle: string, slug: string) {
   const rows = await db
     .select({ skill: skills })
     .from(skills)
     .innerJoin(user, eq(skills.ownerUserId, user.id))
     .where(
       and(
-        eq(user.name, ownerName),
+        eq(user.handle, ownerHandle),
         eq(skills.slug, slug),
         eq(skills.type, 'owned'),
         eq(skills.visibility, 'public'),
@@ -65,9 +65,19 @@ export async function getSkillFileContent(skillId: string, path: string): Promis
 
 export interface OwnerInfo {
   id: string;
+  /** Display name (anything goes — Chinese, mixed case, etc.) */
   name: string;
+  /** URL handle (lowercase + dashes) */
+  handle: string;
   image: string | null;
 }
+
+const ownerSelect = {
+  id: user.id,
+  name: user.name,
+  handle: user.handle,
+  image: user.image,
+};
 
 export interface SkillWithOwner {
   id: string;
@@ -129,7 +139,7 @@ export async function listSkillsForApi(opts: ListSkillsOptions): Promise<SkillWi
   }
 
   const rows = await db
-    .select({ skill: skills, owner: { id: user.id, name: user.name, image: user.image } })
+    .select({ skill: skills, owner: ownerSelect })
     .from(skills)
     .innerJoin(user, eq(skills.ownerUserId, user.id))
     .where(conditions.length ? and(...conditions) : undefined)
@@ -140,7 +150,7 @@ export async function listSkillsForApi(opts: ListSkillsOptions): Promise<SkillWi
 
 export async function findSkillBySlug(slug: string): Promise<SkillWithOwner | null> {
   const rows = await db
-    .select({ skill: skills, owner: { id: user.id, name: user.name, image: user.image } })
+    .select({ skill: skills, owner: ownerSelect })
     .from(skills)
     .innerJoin(user, eq(skills.ownerUserId, user.id))
     .where(eq(skills.slug, slug))
@@ -150,14 +160,14 @@ export async function findSkillBySlug(slug: string): Promise<SkillWithOwner | nu
 }
 
 export async function findSkillByOwnerAndSlug(
-  ownerName: string,
+  ownerHandle: string,
   slug: string,
 ): Promise<SkillWithOwner | null> {
   const rows = await db
-    .select({ skill: skills, owner: { id: user.id, name: user.name, image: user.image } })
+    .select({ skill: skills, owner: ownerSelect })
     .from(skills)
     .innerJoin(user, eq(skills.ownerUserId, user.id))
-    .where(and(eq(user.name, ownerName), eq(skills.slug, slug)))
+    .where(and(eq(user.handle, ownerHandle), eq(skills.slug, slug)))
     .limit(1);
   const r = rows[0];
   return r ? { ...r.skill, owner: r.owner } : null;
@@ -188,70 +198,65 @@ export async function listAllTags(): Promise<string[]> {
 export interface UserRow {
   id: string;
   name: string;
+  handle: string;
   email: string;
   image: string | null;
   isVirtual: boolean;
   canPublishAs: string[];
 }
 
+const userRowSelect = {
+  id: user.id,
+  name: user.name,
+  handle: user.handle,
+  email: user.email,
+  image: user.image,
+  isVirtual: user.isVirtual,
+  canPublishAs: user.canPublishAs,
+};
+
 export async function findUserById(id: string): Promise<UserRow | null> {
-  const rows = await db
-    .select({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      image: user.image,
-      isVirtual: user.isVirtual,
-      canPublishAs: user.canPublishAs,
-    })
-    .from(user)
-    .where(eq(user.id, id))
-    .limit(1);
+  const rows = await db.select(userRowSelect).from(user).where(eq(user.id, id)).limit(1);
   return rows[0] ?? null;
 }
 
-export async function findUserByName(name: string): Promise<UserRow | null> {
-  const rows = await db
-    .select({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      image: user.image,
-      isVirtual: user.isVirtual,
-      canPublishAs: user.canPublishAs,
-    })
-    .from(user)
-    .where(eq(user.name, name))
-    .limit(1);
+export async function findUserByHandle(handle: string): Promise<UserRow | null> {
+  const rows = await db.select(userRowSelect).from(user).where(eq(user.handle, handle)).limit(1);
   return rows[0] ?? null;
 }
 
-export async function updateUserName(userId: string, newName: string): Promise<void> {
-  await db.update(user).set({ name: newName, updatedAt: new Date() }).where(eq(user.id, userId));
+export async function updateUserProfile(
+  userId: string,
+  patch: { name?: string; handle?: string },
+): Promise<void> {
+  const set: Record<string, unknown> = { updatedAt: new Date() };
+  if (patch.name !== undefined) set.name = patch.name;
+  if (patch.handle !== undefined) set.handle = patch.handle;
+  await db.update(user).set(set).where(eq(user.id, userId));
 }
 
 // ─── User-scoped skill listing ────────────────────────────────────────
 
-/** All skills owned by this user, including private. */
-export async function listSkillsByOwner(ownerName: string): Promise<SkillWithOwner[]> {
+/** All skills owned by this user (by handle), including private. */
+export async function listSkillsByOwner(ownerHandle: string): Promise<SkillWithOwner[]> {
   const rows = await db
-    .select({ skill: skills, owner: { id: user.id, name: user.name, image: user.image } })
+    .select({ skill: skills, owner: ownerSelect })
     .from(skills)
     .innerJoin(user, eq(skills.ownerUserId, user.id))
-    .where(eq(user.name, ownerName))
+    .where(eq(user.handle, ownerHandle))
     .orderBy(sql`${skills.updatedAt} DESC`);
   return rows.map((r) => ({ ...r.skill, owner: r.owner }));
 }
 
-/** Public-only skills owned by this user. */
-export async function listPublicSkillsByOwner(ownerName: string): Promise<SkillWithOwner[]> {
+/** Public-only skills owned by this user (by handle). */
+export async function listPublicSkillsByOwner(ownerHandle: string): Promise<SkillWithOwner[]> {
   const rows = await db
-    .select({ skill: skills, owner: { id: user.id, name: user.name, image: user.image } })
+    .select({ skill: skills, owner: ownerSelect })
     .from(skills)
     .innerJoin(user, eq(skills.ownerUserId, user.id))
     .where(
       and(
-        eq(user.name, ownerName),
+        eq(user.handle, ownerHandle),
         or(eq(skills.visibility, 'public'), eq(skills.type, 'referenced')),
       ),
     )
@@ -312,7 +317,7 @@ export async function createOwnedSkill(input: CreateSkillData): Promise<SkillWit
       .values({ skillId: row.id, path: 'SKILL.md', content: input.skillMdContent });
 
     const [ownerRow] = await tx
-      .select({ id: user.id, name: user.name, image: user.image })
+      .select(ownerSelect)
       .from(user)
       .where(eq(user.id, input.ownerUserId))
       .limit(1);
@@ -362,7 +367,7 @@ export async function updateOwnedSkill(
     }
 
     const [ownerRow] = await tx
-      .select({ id: user.id, name: user.name, image: user.image })
+      .select(ownerSelect)
       .from(user)
       .where(eq(user.id, row.ownerUserId))
       .limit(1);

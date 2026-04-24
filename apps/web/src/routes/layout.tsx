@@ -1,5 +1,5 @@
 import { Logo } from '@/components/logo';
-import { type SessionUser, apiClient } from '@/lib/api-client';
+import { type MeResponse, apiClient } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router';
@@ -7,20 +7,20 @@ import { Link, Outlet, useLocation } from 'react-router';
 function SessionWidget() {
   const [state, setState] = useState<{
     loading: boolean;
-    user: SessionUser | null;
+    me: MeResponse | null;
     ssoConfigured: boolean;
     providerId: string;
     error: string | null;
-  }>({ loading: true, user: null, ssoConfigured: false, providerId: 'mozia-sso', error: null });
+  }>({ loading: true, me: null, ssoConfigured: false, providerId: 'mozia-sso', error: null });
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([apiClient.getSession(), apiClient.getAuthStatus()])
-      .then(([user, status]) => {
+    Promise.all([apiClient.getMe().catch(() => null), apiClient.getAuthStatus()])
+      .then(([me, status]) => {
         if (!cancelled)
           setState({
             loading: false,
-            user,
+            me,
             ssoConfigured: status.ssoConfigured,
             providerId: status.providerId,
             error: null,
@@ -30,7 +30,7 @@ function SessionWidget() {
         if (!cancelled)
           setState({
             loading: false,
-            user: null,
+            me: null,
             ssoConfigured: false,
             providerId: 'mozia-sso',
             error: null,
@@ -81,14 +81,14 @@ function SessionWidget() {
     await fetch('/api/auth/sign-out', { method: 'POST', credentials: 'include' });
     setState({
       loading: false,
-      user: null,
+      me: null,
       ssoConfigured: state.ssoConfigured,
       providerId: state.providerId,
       error: null,
     });
   };
 
-  if (state.user) {
+  if (state.me) {
     return (
       <span className="font-mono text-[12.5px] text-neutral-700 flex items-center gap-2">
         <Link
@@ -99,10 +99,11 @@ function SessionWidget() {
         </Link>
         <span className="text-neutral-300">|</span>
         <Link
-          to={`/u/${encodeURIComponent(state.user.name)}`}
+          to={`/u/${encodeURIComponent(state.me.handle)}`}
           className="text-neutral-900 hover:underline"
+          title={`@${state.me.handle}`}
         >
-          {state.user.name}
+          {state.me.name}
         </Link>
         <span className="text-neutral-300">·</span>
         <Link

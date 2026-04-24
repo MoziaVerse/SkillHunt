@@ -63,6 +63,7 @@ export default function UserPage() {
         <h1 className="font-mono text-[36px] tracking-[-0.02em] text-neutral-900 font-medium">
           {data.owner.name}
         </h1>
+        <p className="mt-1 font-mono text-[13px] text-neutral-500">@{data.owner.handle}</p>
         <p className="mt-2 font-mono text-[12.5px] text-neutral-500">
           {data.total} skill{data.total === 1 ? '' : 's'}
         </p>

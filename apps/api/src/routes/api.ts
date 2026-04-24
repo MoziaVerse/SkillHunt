@@ -18,15 +18,15 @@ import {
   deleteSkillFile,
   findSkillByOwnerAndSlug,
   findSkillBySlug,
+  findUserByHandle,
   findUserById,
-  findUserByName,
   listAllTags,
   listPublicSkillsByOwner,
   listSkillFilesWithContent,
   listSkillsByOwner,
   listSkillsForApi,
   updateOwnedSkill,
-  updateUserName,
+  updateUserProfile,
   upsertSkillFile,
 } from '../services/skill-service';
 
@@ -103,10 +103,10 @@ apiRoute.get('/tags', async (c) => {
 
 // Canonical: /api/skills/:owner/:slug
 apiRoute.get('/skills/:owner/:slug', async (c) => {
-  const ownerName = c.req.param('owner');
+  const ownerHandle = c.req.param('owner');
   const slug = c.req.param('slug');
   const { user } = await getAuthContext(c);
-  const skill = await findSkillByOwnerAndSlug(ownerName, slug);
+  const skill = await findSkillByOwnerAndSlug(ownerHandle, slug);
   if (!skill) return c.json({ error: 'Not Found' }, 404);
   const isOwner = !!user && skill.ownerUserId === user.id;
   if (skill.type === 'owned' && skill.visibility === 'private' && !isOwner) {
@@ -125,22 +125,22 @@ apiRoute.get('/skills/:slug', async (c) => {
   const skill = await findSkillBySlug(slug);
   if (!skill) return c.json({ error: 'Not Found' }, 404);
   const url = new URL(c.req.url);
-  url.pathname = `/api/skills/${skill.owner.name}/${skill.slug}`;
+  url.pathname = `/api/skills/${skill.owner.handle}/${skill.slug}`;
   return c.redirect(url.toString(), 302);
 });
 
 // ─── Mutations: skills ────────────────────────────────────────────────
 
-async function authorizeOwner(actor: { id: string } | null, ownerName: string) {
+async function authorizeOwner(actor: { id: string } | null, ownerHandle: string) {
   if (!actor)
     return { ok: false as const, status: 401 as const, message: 'Authentication required' };
   const actorRow = await findUserById(actor.id);
   if (!actorRow)
     return { ok: false as const, status: 401 as const, message: 'Authenticated user not found' };
-  const ownerRow = await findUserByName(ownerName);
+  const ownerRow = await findUserByHandle(ownerHandle);
   if (!ownerRow) return { ok: false as const, status: 404 as const, message: 'Owner not found' };
-  if (actorRow.name === ownerName) return { ok: true as const, ownerRow, actorRow };
-  if (actorRow.canPublishAs.includes(ownerName)) return { ok: true as const, ownerRow, actorRow };
+  if (actorRow.handle === ownerHandle) return { ok: true as const, ownerRow, actorRow };
+  if (actorRow.canPublishAs.includes(ownerHandle)) return { ok: true as const, ownerRow, actorRow };
   return { ok: false as const, status: 403 as const, message: 'Forbidden' };
 }
 
@@ -171,14 +171,14 @@ apiRoute.post('/skills', zValidator('json', createSkillSchema), async (c) => {
 });
 
 apiRoute.put('/skills/:owner/:slug', zValidator('json', updateSkillSchema), async (c) => {
-  const ownerName = c.req.param('owner');
+  const ownerHandle = c.req.param('owner');
   const slug = c.req.param('slug');
   const input = c.req.valid('json');
   const { user } = await getAuthContext(c);
-  const auth = await authorizeOwner(user, ownerName);
+  const auth = await authorizeOwner(user, ownerHandle);
   if (!auth.ok) return c.json({ error: auth.message }, auth.status);
 
-  const skill = await findSkillByOwnerAndSlug(ownerName, slug);
+  const skill = await findSkillByOwnerAndSlug(ownerHandle, slug);
   if (!skill) return c.json({ error: 'Not Found' }, 404);
   if (skill.type !== 'owned') return c.json({ error: 'Cannot edit referenced skill' }, 400);
 
@@ -192,13 +192,13 @@ apiRoute.put('/skills/:owner/:slug', zValidator('json', updateSkillSchema), asyn
 });
 
 apiRoute.delete('/skills/:owner/:slug', async (c) => {
-  const ownerName = c.req.param('owner');
+  const ownerHandle = c.req.param('owner');
   const slug = c.req.param('slug');
   const { user } = await getAuthContext(c);
-  const auth = await authorizeOwner(user, ownerName);
+  const auth = await authorizeOwner(user, ownerHandle);
   if (!auth.ok) return c.json({ error: auth.message }, auth.status);
 
-  const skill = await findSkillByOwnerAndSlug(ownerName, slug);
+  const skill = await findSkillByOwnerAndSlug(ownerHandle, slug);
   if (!skill) return c.json({ error: 'Not Found' }, 404);
 
   const ok = await deleteSkill(skill.id);
@@ -211,17 +211,17 @@ apiRoute.post(
   '/skills/:owner/:slug/files/:path{.+}',
   zValidator('json', upsertFileBodySchema),
   async (c) => {
-    const ownerName = c.req.param('owner');
+    const ownerHandle = c.req.param('owner');
     const slug = c.req.param('slug');
     const filePath = c.req.param('path');
     const pathParse = filePathSchema.safeParse(filePath);
     if (!pathParse.success) return c.json({ error: 'Invalid path' }, 400);
 
     const { user } = await getAuthContext(c);
-    const auth = await authorizeOwner(user, ownerName);
+    const auth = await authorizeOwner(user, ownerHandle);
     if (!auth.ok) return c.json({ error: auth.message }, auth.status);
 
-    const skill = await findSkillByOwnerAndSlug(ownerName, slug);
+    const skill = await findSkillByOwnerAndSlug(ownerHandle, slug);
     if (!skill) return c.json({ error: 'Not Found' }, 404);
     if (skill.type !== 'owned')
       return c.json({ error: 'Cannot attach files to referenced skill' }, 400);
@@ -233,7 +233,7 @@ apiRoute.post(
 );
 
 apiRoute.delete('/skills/:owner/:slug/files/:path{.+}', async (c) => {
-  const ownerName = c.req.param('owner');
+  const ownerHandle = c.req.param('owner');
   const slug = c.req.param('slug');
   const filePath = c.req.param('path');
   const pathParse = filePathSchema.safeParse(filePath);
@@ -242,10 +242,10 @@ apiRoute.delete('/skills/:owner/:slug/files/:path{.+}', async (c) => {
     return c.json({ error: 'Cannot delete SKILL.md (delete the skill instead)' }, 400);
 
   const { user } = await getAuthContext(c);
-  const auth = await authorizeOwner(user, ownerName);
+  const auth = await authorizeOwner(user, ownerHandle);
   if (!auth.ok) return c.json({ error: auth.message }, auth.status);
 
-  const skill = await findSkillByOwnerAndSlug(ownerName, slug);
+  const skill = await findSkillByOwnerAndSlug(ownerHandle, slug);
   if (!skill) return c.json({ error: 'Not Found' }, 404);
 
   const ok = await deleteSkillFile(skill.id, pathParse.data);
@@ -262,6 +262,7 @@ apiRoute.get('/users/me', async (c) => {
   return c.json({
     id: row.id,
     name: row.name,
+    handle: row.handle,
     email: row.email,
     image: row.image,
     isVirtual: row.isVirtual,
@@ -272,10 +273,14 @@ apiRoute.get('/users/me', async (c) => {
 apiRoute.patch('/users/me/profile', zValidator('json', updateProfileSchema), async (c) => {
   const { user } = await getAuthContext(c);
   if (!user) return c.json({ error: 'Authentication required' }, 401);
-  const { name } = c.req.valid('json');
-  const taken = await findUserByName(name);
-  if (taken && taken.id !== user.id) return c.json({ error: 'Name already taken' }, 409);
-  await updateUserName(user.id, name);
+  const { name, handle } = c.req.valid('json');
+
+  if (handle !== undefined) {
+    const taken = await findUserByHandle(handle);
+    if (taken && taken.id !== user.id) return c.json({ error: 'Handle already taken' }, 409);
+  }
+
+  await updateUserProfile(user.id, { name, handle });
   const updated = await findUserById(user.id);
   return c.json(updated);
 });
@@ -285,25 +290,30 @@ apiRoute.get('/users/me/skills', async (c) => {
   if (!user) return c.json({ error: 'Authentication required' }, 401);
   const me = await findUserById(user.id);
   if (!me) return c.json({ error: 'Not Found' }, 404);
-  const rows = await listSkillsByOwner(me.name);
+  const rows = await listSkillsByOwner(me.handle);
   const items = rows.map(toListItem);
   return c.json({ items, total: items.length });
 });
 
 apiRoute.get('/users/:owner/skills', async (c) => {
-  const ownerName = c.req.param('owner');
-  const ownerRow = await findUserByName(ownerName);
+  const ownerHandle = c.req.param('owner');
+  const ownerRow = await findUserByHandle(ownerHandle);
   if (!ownerRow) return c.json({ error: 'Not Found' }, 404);
   const { user } = await getAuthContext(c);
   // If the viewer IS this owner, give them the full list (incl private).
   // Otherwise only public.
   const rows =
     user && user.id === ownerRow.id
-      ? await listSkillsByOwner(ownerName)
-      : await listPublicSkillsByOwner(ownerName);
+      ? await listSkillsByOwner(ownerHandle)
+      : await listPublicSkillsByOwner(ownerHandle);
   const items = rows.map(toListItem);
   return c.json({
-    owner: { id: ownerRow.id, name: ownerRow.name, image: ownerRow.image },
+    owner: {
+      id: ownerRow.id,
+      name: ownerRow.name,
+      handle: ownerRow.handle,
+      image: ownerRow.image,
+    },
     items,
     total: items.length,
   });

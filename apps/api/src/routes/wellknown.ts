@@ -23,7 +23,7 @@ wellknownRoute.get('/agent-skills/index.json', async (c) => {
 
   const entries = await Promise.all(
     rows.map(async (s) => {
-      const protocolName = s.ownerName === MOZIA_OWNER ? s.slug : `${s.ownerName}/${s.slug}`;
+      const protocolName = s.ownerHandle === MOZIA_OWNER ? s.slug : `${s.ownerHandle}/${s.slug}`;
       return {
         name: protocolName,
         description: s.description,

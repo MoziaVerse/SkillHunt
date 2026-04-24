@@ -50,12 +50,14 @@ async function resetAndSeed() {
     {
       id: OWNER_USER_ID,
       name: OWNER_NAME,
+      handle: OWNER_NAME,
       email: 'tester@example.com',
       emailVerified: true,
     },
     {
       id: OTHER_USER_ID,
       name: OTHER_NAME,
+      handle: OTHER_NAME,
       email: 'other@example.com',
       emailVerified: true,
     },
@@ -516,29 +518,61 @@ describe('business API', () => {
   });
 
   describe('PATCH /api/users/me/profile', () => {
-    it('renames the user', async () => {
+    it('updates display name to anything (including spaces, mixed case)', async () => {
       const res = await app.fetch(
-        reqAsUser('/api/users/me/profile', OWNER_USER_ID, jsonInit({ name: 'newname' }, 'PATCH')),
+        reqAsUser('/api/users/me/profile', OWNER_USER_ID, jsonInit({ name: '张三 Mr.' }, 'PATCH')),
       );
       expect(res.status).toBe(200);
-      const body = (await res.json()) as { name: string };
-      expect(body.name).toBe('newname');
+      const body = (await res.json()) as { name: string; handle: string };
+      expect(body.name).toBe('张三 Mr.');
+      expect(body.handle).toBe(OWNER_NAME); // handle unchanged
     });
 
-    it('409 when name taken', async () => {
-      const res = await app.fetch(
-        reqAsUser('/api/users/me/profile', OWNER_USER_ID, jsonInit({ name: OTHER_NAME }, 'PATCH')),
-      );
-      expect(res.status).toBe(409);
-    });
-
-    it('400 for invalid name', async () => {
+    it('updates handle to a new url-safe value', async () => {
       const res = await app.fetch(
         reqAsUser(
           '/api/users/me/profile',
           OWNER_USER_ID,
-          jsonInit({ name: 'Has Spaces' }, 'PATCH'),
+          jsonInit({ handle: 'newhandle' }, 'PATCH'),
         ),
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { handle: string };
+      expect(body.handle).toBe('newhandle');
+    });
+
+    it('409 when handle taken', async () => {
+      const res = await app.fetch(
+        reqAsUser(
+          '/api/users/me/profile',
+          OWNER_USER_ID,
+          jsonInit({ handle: OTHER_NAME }, 'PATCH'),
+        ),
+      );
+      expect(res.status).toBe(409);
+    });
+
+    it('400 for invalid handle', async () => {
+      const res = await app.fetch(
+        reqAsUser(
+          '/api/users/me/profile',
+          OWNER_USER_ID,
+          jsonInit({ handle: 'Has Spaces' }, 'PATCH'),
+        ),
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('400 for reserved handle', async () => {
+      const res = await app.fetch(
+        reqAsUser('/api/users/me/profile', OWNER_USER_ID, jsonInit({ handle: 'admin' }, 'PATCH')),
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('400 when neither name nor handle provided', async () => {
+      const res = await app.fetch(
+        reqAsUser('/api/users/me/profile', OWNER_USER_ID, jsonInit({}, 'PATCH')),
       );
       expect(res.status).toBe(400);
     });

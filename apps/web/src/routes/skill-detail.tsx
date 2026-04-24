@@ -48,7 +48,10 @@ function DetailHeader({
           </h1>
           <div className="mt-2 font-mono text-[12px] text-neutral-500">
             <span className="text-neutral-400">by </span>
-            <span className="text-neutral-700">{skill.owner.name}</span>
+            <Link to={`/u/${skill.owner.handle}`} className="text-neutral-700 hover:underline">
+              {skill.owner.name}
+            </Link>
+            <span className="text-neutral-400"> · @{skill.owner.handle}</span>
           </div>
           <p className="mt-3 text-[16px] text-neutral-600 max-w-2xl leading-relaxed">
             {skill.description}
@@ -338,7 +341,7 @@ export default function SkillDetailPage() {
     <OwnedDetail
       skill={skill}
       isOwner={isOwner}
-      onDeleted={() => navigate(`/u/${skill.owner.name}`)}
+      onDeleted={() => navigate(`/u/${skill.owner.handle}`)}
     />
   ) : (
     <ReferencedDetail skill={skill} />

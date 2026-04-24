@@ -29,6 +29,13 @@
       "when": 1777534800000,
       "tag": "0003_owner_user_id",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777538400000,
+      "tag": "0004_user_handle",
+      "breakpoints": true
     }
   ]
 }

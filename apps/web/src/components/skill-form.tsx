@@ -13,10 +13,17 @@ export interface SkillFormValues {
   skillMdContent: string;
 }
 
+export interface OwnerOption {
+  /** URL handle, sent as `owner` in API */
+  handle: string;
+  /** Optional display name shown alongside */
+  displayName?: string;
+}
+
 export interface SkillFormProps {
   mode: 'create' | 'edit';
   // Owners the current user can publish as. First is highlighted as default.
-  ownerOptions: string[];
+  ownerOptions: OwnerOption[];
   initial?: Partial<SkillFormValues>;
   onSubmit: (values: SkillFormValues) => Promise<void>;
   onCancel?: () => void;
@@ -44,7 +51,7 @@ export function SkillForm({
   onCancel,
   submitLabel,
 }: SkillFormProps) {
-  const [owner, setOwner] = useState(initial?.owner ?? ownerOptions[0] ?? '');
+  const [owner, setOwner] = useState(initial?.owner ?? ownerOptions[0]?.handle ?? '');
   const [slug, setSlug] = useState(initial?.slug ?? '');
   const [name, setName] = useState(initial?.name ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
@@ -108,8 +115,9 @@ export function SkillForm({
             className="w-full font-mono text-[13px] border border-neutral-300 px-2 py-1.5 bg-white disabled:bg-neutral-100 disabled:text-neutral-500"
           >
             {ownerOptions.map((o) => (
-              <option key={o} value={o}>
-                {o}
+              <option key={o.handle} value={o.handle}>
+                {o.handle}
+                {o.displayName && o.displayName !== o.handle ? ` (${o.displayName})` : ''}
               </option>
             ))}
           </select>

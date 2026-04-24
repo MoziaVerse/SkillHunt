@@ -53,7 +53,10 @@ export interface SessionResponse {
 
 export interface MeResponse {
   id: string;
+  /** Display name (anything goes) */
   name: string;
+  /** URL handle (lowercase + dashes) */
+  handle: string;
   email: string;
   image: string | null;
   isVirtual: boolean;
@@ -154,7 +157,7 @@ export const apiClient = {
     return request<MeResponse>('/users/me', { credentials: 'include' });
   },
 
-  updateProfile(input: { name: string }): Promise<MeResponse> {
+  updateProfile(input: { name?: string; handle?: string }): Promise<MeResponse> {
     return request<MeResponse>('/users/me/profile', json(input, 'PATCH'));
   },
 

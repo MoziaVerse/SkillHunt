@@ -8,7 +8,11 @@ import { skillhubSchema } from './schema';
 
 export const user = skillhubSchema.table('user', {
   id: text('id').primaryKey(),
+  // Display name — anything goes (Chinese, spaces, mixed case). Distinct from
+  // `handle` which is the URL-safe identifier (lowercase + dashes).
   name: text('name').notNull(),
+  // URL handle — globally unique, used in /u/:handle and /skills/:handle/:slug.
+  handle: text('handle').notNull().unique(),
   email: text('email').notNull().unique(),
   emailVerified: boolean('email_verified').notNull().default(false),
   image: text('image'),

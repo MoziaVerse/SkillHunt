@@ -19,7 +19,7 @@ export function SkillRow({
 }) {
   return (
     <Link
-      to={`/skills/${skill.owner.name}/${skill.slug}`}
+      to={`/skills/${skill.owner.handle}/${skill.slug}`}
       className={cn(
         'group grid items-start border-b border-neutral-100 hover:bg-neutral-50 transition px-1 py-5',
         showTagsCol ? GRID_WITH_TAGS : GRID_WITHOUT_TAGS,
@@ -34,7 +34,7 @@ export function SkillRow({
           <span className="font-mono text-[15px] font-medium text-neutral-900 group-hover:underline decoration-neutral-400 underline-offset-4">
             {skill.name}
           </span>
-          <span className="font-mono text-[11px] text-neutral-500">
+          <span className="font-mono text-[11px] text-neutral-500" title={`@${skill.owner.handle}`}>
             <span className="text-neutral-400">by </span>
             {skill.owner.name}
           </span>

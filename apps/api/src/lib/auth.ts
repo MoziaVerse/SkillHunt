@@ -43,10 +43,10 @@ export const OIDC_PROVIDER_ID = process.env.OIDC_PROVIDER_ID ?? 'mozia-sso';
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 
-// Mozia user.name doubles as the URL handle (e.g. /u/zeo, /skills/zeo/foo)
-// and must satisfy SLUG_RE. SSO commonly returns mixed-case (e.g. "Zeo") or
-// has whitespace / underscores. Sanitize to lowercase + dash form on
-// account creation; users can still rename in /settings/profile.
+// `handle` is the URL-safe identifier used in /u/:handle and
+// /skills/:handle/:slug. SSO names ("Zeo", "John Smith", "张三") get
+// sanitized to lowercase + dashes for the handle; the original name is kept
+// as-is in user.name for display.
 function sanitizeHandle(input: string | undefined, sub: string): string {
   if (!input) return `user-${sub.slice(0, 8)}`;
   const cleaned = input
@@ -68,6 +68,7 @@ export const auth = betterAuth({
   user: {
     additionalFields: {
       ssoSub: { type: 'string', required: false },
+      handle: { type: 'string', required: false, input: false },
     },
   },
   plugins: [
@@ -91,15 +92,21 @@ export const auth = betterAuth({
               /* keep default */
             }
             const email = str(profile.email) ?? `${sub}@no-email.${issuerHost}`;
+            // Display name: keep SSO original (mixed case, Chinese, etc.).
             const rawName =
-              str(profile.preferred_username) ??
-              str(profile.name) ??
               str(profile.displayName) ??
-              str(profile.email)?.split('@')[0];
+              str(profile.name) ??
+              str(profile.preferred_username) ??
+              str(profile.email)?.split('@')[0] ??
+              sub;
+            // URL handle: prefer the explicit handle/username from SSO if it's
+            // already URL-safe; otherwise derive from displayName.
+            const handleSeed = str(profile.preferred_username) ?? rawName;
             return {
               ssoSub: str(profile.sub),
               email,
-              name: sanitizeHandle(rawName, sub),
+              name: rawName,
+              handle: sanitizeHandle(handleSeed, sub),
               image: str(profile.picture) ?? str(profile.avatar),
             };
           },
