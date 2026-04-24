@@ -130,7 +130,7 @@ function OwnedDetail({
         right={
           <div className="flex flex-col items-end gap-3">
             {isOwner && (
-              <OwnerActions owner={skill.owner.name} slug={skill.slug} onDeleted={onDeleted} />
+              <OwnerActions owner={skill.owner.handle} slug={skill.slug} onDeleted={onDeleted} />
             )}
             <div className="font-mono text-[11px] text-neutral-500 text-right">
               updated

@@ -101,7 +101,7 @@ export default function PublishPage() {
     if (failures.length) {
       window.alert(`Skill created but some extra files failed:\n${failures.join('\n')}`);
     }
-    navigate(`/skills/${created.owner.name}/${created.slug}`);
+    navigate(`/skills/${created.owner.handle}/${created.slug}`);
   };
 
   return (
