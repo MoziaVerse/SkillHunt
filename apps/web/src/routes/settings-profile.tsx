@@ -103,10 +103,6 @@ export default function SettingsProfilePage() {
           <span>settings</span>
           <span className="text-neutral-300">/</span>
           <span className="text-neutral-900">profile</span>
-          <span className="text-neutral-300">·</span>
-          <Link to="/settings/tokens" className="text-neutral-500 hover:text-neutral-900">
-            tokens
-          </Link>
         </div>
         <h1 className="font-mono text-[28px] tracking-[-0.02em] text-neutral-900 font-medium">
           Profile

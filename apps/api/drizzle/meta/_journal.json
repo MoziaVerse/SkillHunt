@@ -43,6 +43,13 @@
       "when": 1777542000000,
       "tag": "0005_pat_and_install_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777545600000,
+      "tag": "0006_drop_pat",
+      "breakpoints": true
     }
   ]
 }

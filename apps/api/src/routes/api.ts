@@ -4,7 +4,6 @@ import { getAuthContext } from '../lib/auth-context';
 import {
   type SkillDetail,
   type SkillListItem,
-  createPatSchema,
   createSkillSchema,
   filePathSchema,
   listSkillsQuerySchema,
@@ -14,7 +13,6 @@ import {
   upsertFileBodySchema,
 } from '../lib/dto';
 import { mintGrant } from '../services/install-grant-service';
-import { createPat, listPats, revokePat } from '../services/pat-service';
 import {
   type SkillWithOwner,
   createOwnedSkill,
@@ -323,36 +321,6 @@ apiRoute.get('/users/:owner/skills', async (c) => {
     items,
     total: items.length,
   });
-});
-
-// ─── Personal access tokens ──────────────────────────────────────────
-
-apiRoute.post('/personal-access-tokens', zValidator('json', createPatSchema), async (c) => {
-  const { user } = await getAuthContext(c);
-  if (!user) return c.json({ error: 'Authentication required' }, 401);
-  const input = c.req.valid('json');
-  const result = await createPat({
-    userId: user.id,
-    name: input.name,
-    expiresInDays: input.expiresInDays,
-  });
-  // Token plaintext is returned ONLY here — never again.
-  return c.json(result, 201);
-});
-
-apiRoute.get('/personal-access-tokens', async (c) => {
-  const { user } = await getAuthContext(c);
-  if (!user) return c.json({ error: 'Authentication required' }, 401);
-  const items = await listPats(user.id);
-  return c.json({ items });
-});
-
-apiRoute.delete('/personal-access-tokens/:id', async (c) => {
-  const { user } = await getAuthContext(c);
-  if (!user) return c.json({ error: 'Authentication required' }, 401);
-  const id = c.req.param('id');
-  const ok = await revokePat(user.id, id);
-  return ok ? c.body(null, 204) : c.json({ error: 'Not Found' }, 404);
 });
 
 // ─── Capability URL: mint install token ──────────────────────────────

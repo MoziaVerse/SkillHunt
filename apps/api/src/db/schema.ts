@@ -84,22 +84,10 @@ export type NewSkill = typeof skills.$inferInsert;
 export type SkillFile = typeof skillFiles.$inferSelect;
 export type NewSkillFile = typeof skillFiles.$inferInsert;
 
-// ─── Phase 2 spec 03 · PAT + capability URL ───────────────────────────
-
-export const personalAccessTokens = skillhubSchema.table(
-  'personal_access_tokens',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    userId: text('user_id').notNull(),
-    name: text('name').notNull(),
-    tokenHash: text('token_hash').notNull(),
-    tokenPrefix: text('token_prefix').notNull(),
-    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
-    expiresAt: timestamp('expires_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [index('pat_user_idx').on(t.userId), index('pat_token_prefix_idx').on(t.tokenPrefix)],
-);
+// ─── Phase 2 spec 03 · capability URL (single-shot install grant) ─────
+//
+// PAT was removed in 0006 — Bearer auth is forwarded to matrix's central
+// key system in spec 04 instead of maintaining a parallel SkillHub table.
 
 export const installGrants = skillhubSchema.table(
   'install_grants',
@@ -133,5 +121,4 @@ export const installGrantUses = skillhubSchema.table(
   ],
 );
 
-export type PersonalAccessToken = typeof personalAccessTokens.$inferSelect;
 export type InstallGrant = typeof installGrants.$inferSelect;
