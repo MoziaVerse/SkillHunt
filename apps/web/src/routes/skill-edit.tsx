@@ -1,4 +1,5 @@
 import { SkillForm, type SkillFormValues } from '@/components/skill-form';
+import { type SkillFromUpload, SkillUploader } from '@/components/skill-uploader';
 import { apiClient } from '@/lib/api-client';
 import type { SkillDetail } from '@/types/api';
 import { useEffect, useState } from 'react';
@@ -9,6 +10,9 @@ export default function SkillEditPage() {
   const navigate = useNavigate();
   const [skill, setSkill] = useState<SkillDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [formKey, setFormKey] = useState(0);
+  const [extras, setExtras] = useState<Array<{ path: string; content: string }>>([]);
+  const [overrideSkillMd, setOverrideSkillMd] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,6 +56,12 @@ export default function SkillEditPage() {
       </div>
     );
 
+  const handleUpload = (data: SkillFromUpload) => {
+    setOverrideSkillMd(data.skillMdContent);
+    setExtras(data.extras);
+    setFormKey((k) => k + 1);
+  };
+
   const handleSubmit = async (values: SkillFormValues) => {
     await apiClient.updateSkill(owner, slug, {
       name: values.name,
@@ -60,6 +70,17 @@ export default function SkillEditPage() {
       visibility: values.visibility,
       skillMdContent: values.skillMdContent,
     });
+    const failures: string[] = [];
+    for (const f of extras) {
+      try {
+        await apiClient.upsertSkillFile(owner, slug, f.path, f.content);
+      } catch (e) {
+        failures.push(`${f.path}: ${e instanceof Error ? e.message : 'unknown'}`);
+      }
+    }
+    if (failures.length) {
+      window.alert(`Saved but some extra files failed:\n${failures.join('\n')}`);
+    }
     navigate(`/skills/${owner}/${slug}`);
   };
 
@@ -79,7 +100,24 @@ export default function SkillEditPage() {
           ← back to detail
         </Link>
       </div>
+
+      <details className="mt-6 border border-neutral-200 px-4 py-3">
+        <summary className="font-mono text-[11.5px] uppercase tracking-[0.14em] text-neutral-600 cursor-pointer">
+          Replace from local file / folder
+        </summary>
+        <div className="mt-3">
+          <SkillUploader onLoaded={handleUpload} compact />
+          {extras.length > 0 && (
+            <div className="mt-3 font-mono text-[11.5px] text-neutral-600">
+              {extras.length} extra file{extras.length === 1 ? '' : 's'} will be added/replaced on
+              save: {extras.map((e) => e.path).join(', ')}
+            </div>
+          )}
+        </div>
+      </details>
+
       <SkillForm
+        key={formKey}
         mode="edit"
         ownerOptions={[owner]}
         initial={{
@@ -89,7 +127,7 @@ export default function SkillEditPage() {
           description: skill.description,
           tags: skill.tags,
           visibility: skill.visibility,
-          skillMdContent: skill.skillMdContent,
+          skillMdContent: overrideSkillMd ?? skill.skillMdContent,
         }}
         onSubmit={handleSubmit}
         onCancel={() => navigate(`/skills/${owner}/${slug}`)}

@@ -1,4 +1,5 @@
 import { SkillForm, type SkillFormValues } from '@/components/skill-form';
+import { type SkillFromUpload, SkillUploader } from '@/components/skill-uploader';
 import { type MeResponse, apiClient } from '@/lib/api-client';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
@@ -6,18 +7,22 @@ import { Link, useNavigate } from 'react-router';
 export default function PublishPage() {
   const navigate = useNavigate();
   const [me, setMe] = useState<MeResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // formKey bumps to remount SkillForm with fresh initial values on each upload.
+  const [formKey, setFormKey] = useState(0);
+  const [initial, setInitial] = useState<Partial<SkillFormValues> | undefined>(undefined);
+  const [extras, setExtras] = useState<Array<{ path: string; content: string }>>([]);
 
   useEffect(() => {
     apiClient
       .getMe()
       .then(setMe)
       .catch((e: unknown) => {
-        setError(e instanceof Error ? e.message : 'failed to load profile');
+        setLoadError(e instanceof Error ? e.message : 'failed to load profile');
       });
   }, []);
 
-  if (error) {
+  if (loadError) {
     return (
       <div className="py-24 text-center max-w-md mx-auto">
         <div className="font-mono text-[12px] uppercase tracking-[0.16em] text-neutral-500 mb-3">
@@ -36,12 +41,41 @@ export default function PublishPage() {
     );
   }
 
-  if (!me) return <Spinner />;
+  if (!me) {
+    return (
+      <div className="py-24 text-center font-mono text-[11.5px] uppercase tracking-[0.14em] text-neutral-400">
+        loading…
+      </div>
+    );
+  }
 
   const ownerOptions = [me.name, ...me.canPublishAs];
 
+  const handleUpload = (data: SkillFromUpload) => {
+    setInitial({
+      slug: data.suggestedSlug ?? '',
+      name: data.suggestedName ?? '',
+      description: data.suggestedDescription ?? '',
+      skillMdContent: data.skillMdContent,
+    });
+    setExtras(data.extras);
+    setFormKey((k) => k + 1);
+  };
+
   const handleSubmit = async (values: SkillFormValues) => {
     const created = await apiClient.createSkill(values);
+    // Attach extras after the skill exists; failure here is non-fatal but reported.
+    const failures: string[] = [];
+    for (const f of extras) {
+      try {
+        await apiClient.upsertSkillFile(values.owner, values.slug, f.path, f.content);
+      } catch (e) {
+        failures.push(`${f.path}: ${e instanceof Error ? e.message : 'unknown'}`);
+      }
+    }
+    if (failures.length) {
+      window.alert(`Skill created but some extra files failed:\n${failures.join('\n')}`);
+    }
     navigate(`/skills/${created.owner.name}/${created.slug}`);
   };
 
@@ -52,25 +86,40 @@ export default function PublishPage() {
           Publish a skill
         </h1>
         <p className="mt-2 text-[14px] text-neutral-600 max-w-2xl">
-          Owned skills live in SkillHub's database. Others can install yours via{' '}
-          <code className="font-mono bg-neutral-100 px-1 rounded">npx skills add</code> if you mark
-          it public.
+          Upload a local SKILL.md file or a skill folder; we'll auto-fill metadata you can edit
+          before publishing.
         </p>
       </div>
+
+      <div className="mt-8">
+        <SkillUploader onLoaded={handleUpload} />
+        {extras.length > 0 && (
+          <div className="mt-3 font-mono text-[12px] text-neutral-600">
+            <div className="uppercase tracking-[0.14em] text-[10.5px] text-neutral-500 mb-1">
+              {extras.length} extra file{extras.length === 1 ? '' : 's'} will be attached
+            </div>
+            <ul className="space-y-0.5">
+              {extras.map((e) => (
+                <li key={e.path} className="flex justify-between gap-3 max-w-md">
+                  <span className="truncate text-neutral-700">{e.path}</span>
+                  <span className="text-neutral-400 shrink-0">
+                    {e.content.length.toLocaleString()} chars
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
       <SkillForm
+        key={formKey}
         mode="create"
         ownerOptions={ownerOptions}
+        initial={initial}
         onSubmit={handleSubmit}
         onCancel={() => navigate(-1)}
       />
-    </div>
-  );
-}
-
-function Spinner() {
-  return (
-    <div className="py-24 text-center font-mono text-[11.5px] uppercase tracking-[0.14em] text-neutral-400">
-      loading…
     </div>
   );
 }
