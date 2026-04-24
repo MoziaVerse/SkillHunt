@@ -64,6 +64,7 @@ describe('seed-owned', () => {
       sourceSkillName: 'x',
       sourceInstallCommand: 'npx skills add a/b --skill x',
       sourceUrl: null,
+      ownerUserId: 'mozia-virtual',
     });
 
     const entries = await loadOwnedEntries();

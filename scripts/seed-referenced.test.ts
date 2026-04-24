@@ -47,6 +47,7 @@ describe('seed-referenced', () => {
       visibility: 'public',
       tags: [],
       frontmatter: { n: 'x' },
+      ownerUserId: 'mozia-virtual',
     });
 
     const entries = await loadReferencedEntries();

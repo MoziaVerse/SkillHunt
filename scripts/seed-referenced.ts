@@ -2,8 +2,10 @@
 // Idempotent: upserts by slug. Refuses to overwrite owned slugs.
 
 import { readFile } from 'node:fs/promises';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db, skills } from '../apps/api/src/db';
+
+const SEED_OWNER_ID = 'mozia-virtual';
 
 export interface ReferencedEntry {
   slug: string;
@@ -31,7 +33,11 @@ export async function seedReferenced(
   let skipped = 0;
 
   for (const entry of entries) {
-    const existing = await db.select().from(skills).where(eq(skills.slug, entry.slug)).limit(1);
+    const existing = await db
+      .select()
+      .from(skills)
+      .where(and(eq(skills.slug, entry.slug), eq(skills.ownerUserId, SEED_OWNER_ID)))
+      .limit(1);
 
     if (existing[0] && existing[0].type !== 'referenced') {
       log(`[seed-referenced] skip '${entry.slug}': already exists as ${existing[0].type}`);
@@ -52,9 +58,10 @@ export async function seedReferenced(
         sourceSkillName: entry.sourceSkillName,
         sourceInstallCommand: entry.sourceInstallCommand,
         sourceUrl: entry.sourceUrl,
+        ownerUserId: SEED_OWNER_ID,
       })
       .onConflictDoUpdate({
-        target: skills.slug,
+        target: [skills.ownerUserId, skills.slug],
         set: {
           name: entry.name,
           description: entry.description,

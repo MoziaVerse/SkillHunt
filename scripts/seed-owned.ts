@@ -3,14 +3,18 @@
 // Idempotent: upserts by slug, fully replaces skill_files rows.
 
 import { readFile } from 'node:fs/promises';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db, skillFiles, skills } from '../apps/api/src/db';
+
+// All seed-driven owned skills are attributed to the `mozia` virtual user
+// (created by migration 0003). Phase 2 pass 2 will allow per-entry overrides.
+const SEED_OWNER_ID = 'mozia-virtual';
 
 export interface OwnedEntry {
   slug: string;
   name: string;
   description: string;
-  visibility: 'public' | 'internal';
+  visibility: 'public' | 'private';
   tags: string[];
   skillMd: string;
   extraFiles?: Array<{ path: string; content: string }>;
@@ -58,7 +62,11 @@ export async function seedOwned(
       throw new Error(`[seed-owned] missing skillMd for slug '${entry.slug}'`);
     }
 
-    const existing = await db.select().from(skills).where(eq(skills.slug, entry.slug)).limit(1);
+    const existing = await db
+      .select()
+      .from(skills)
+      .where(and(eq(skills.slug, entry.slug), eq(skills.ownerUserId, SEED_OWNER_ID)))
+      .limit(1);
 
     if (existing[0] && existing[0].type !== 'owned') {
       throw new Error(
@@ -78,9 +86,10 @@ export async function seedOwned(
         visibility: entry.visibility,
         tags: entry.tags,
         frontmatter,
+        ownerUserId: SEED_OWNER_ID,
       })
       .onConflictDoUpdate({
-        target: skills.slug,
+        target: [skills.ownerUserId, skills.slug],
         set: {
           name: entry.name,
           description: entry.description,
