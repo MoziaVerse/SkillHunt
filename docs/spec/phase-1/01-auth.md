@@ -3,6 +3,14 @@
 > 依赖：Phase 0 全部 + mozia-sso (`:8778`) 本机/线上可用
 > 产出：better-auth + OIDC 接入 mozia-sso；`internal` visibility skill 只对 Mozia 成员可见（浏览器场景），公开 skill 零影响
 
+> **状态：已实现** — Phase 1-01 已落到 SkillHub 主分支；mozia-sso 侧改动详见 [`mozia-sso/docs/skillhub-onboarding.md`](../../../../mozia-sso/docs/skillhub-onboarding.md)（分支 `feat/skillhub-onboarding-doc`）。
+>
+> **实现与本 spec 的偏差**（已落地版本）：
+> - **groups 存到 `skillhub.user.groups` 而非 `session.additionalFields`**。better-auth 在每次 OAuth 登录都执行 `mapProfileToUser`，user 行被刷新，与 7 天 session 的过期窗口等价；放 user 表省去 `databaseHooks.session.create.before` 的额外 hook。
+> - **未实现 `apps/api/test-support/mock-sso.ts`**。改用 `bun:test` 的 `mock.module()` 在 `routes/api.test.ts` 顶部把 `getAuthContext` 替换成读 `x-test-auth-groups` header 的 fake。auth-context 的纯逻辑通过 `computeCanSeeInternal` 单独单测。整套 OIDC 端到端待真做协同方案再加 mock-sso。
+> - **callback URL = `/api/auth/oauth2/callback/mozia-sso`**（better-auth genericOAuth 的实际路径），spec 之前写的 `/api/auth/callback/mozia-sso` 仅为 Phase 0 设想。
+> - **better-auth 版本**：`^1.6.7`（peer dep `better-call` 期望 zod@4，本仓库 zod@3，不影响运行）。
+
 ---
 
 ## 一、目标
@@ -311,10 +319,14 @@ BETTER_AUTH_SECRET=<openssl rand -hex 32>
 INTERNAL_GROUPS=mozia-members
 ```
 
-**mozia-sso 侧要做的准备工作**（给 Zeo 的清单，不属于本 spec 代码改动）：
+**mozia-sso 侧要做的准备工作** —— 已经写成手册：[`mozia-sso/docs/skillhub-onboarding.md`](../../../../mozia-sso/docs/skillhub-onboarding.md)（分支 `feat/skillhub-onboarding-doc`）。摘要：
 
-- Casdoor 注册一个新 application 叫 `skillhub`，redirect_uri `http://localhost:3333/api/auth/callback/mozia-sso`（开发）+ `https://skillhub.mzsjai.com/...`（生产）
-- 确认 Casdoor 在 userinfo 里返 `groups: string[]` 或等价 claim；若 claim 名不同，spec 加一个 `INTERNAL_GROUP_CLAIM` env var 切换
+- Casdoor 后台注册 application `skillhub`，redirect URIs：
+  - `http://localhost:3333/api/auth/oauth2/callback/mozia-sso`（开发）
+  - `https://skillhub.mzsjai.com/api/auth/oauth2/callback/mozia-sso`（生产）
+- 建 group `mozia-members`（与 SkillHub `INTERNAL_GROUPS` 默认值对齐），把内部成员加入
+- Casdoor 默认就在 JWT/userinfo 里返 `groups` claim（`object/token_jwt.go:146,297`），**不需要改 Go 源码**
+- 把 Casdoor 给的 client_id / secret 填到 SkillHub `apps/api/.env` 的 `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`
 
 ---
 
