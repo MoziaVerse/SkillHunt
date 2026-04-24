@@ -38,6 +38,7 @@ import {
 export const apiRoute = new Hono();
 
 const baseFromRow = (r: SkillWithOwner) => ({
+  id: r.id,
   slug: r.slug,
   name: r.name,
   description: r.description,

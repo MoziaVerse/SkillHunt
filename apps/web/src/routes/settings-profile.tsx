@@ -99,8 +99,14 @@ export default function SettingsProfilePage() {
   return (
     <div className="py-10 max-w-2xl">
       <div className="border-b border-neutral-200 pb-6 mb-8">
-        <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-neutral-500 mb-2">
-          settings
+        <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-neutral-500 mb-2 flex items-center gap-3">
+          <span>settings</span>
+          <span className="text-neutral-300">/</span>
+          <span className="text-neutral-900">profile</span>
+          <span className="text-neutral-300">·</span>
+          <Link to="/settings/tokens" className="text-neutral-500 hover:text-neutral-900">
+            tokens
+          </Link>
         </div>
         <h1 className="font-mono text-[28px] tracking-[-0.02em] text-neutral-900 font-medium">
           Profile

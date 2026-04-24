@@ -7,6 +7,7 @@ import WhatIsASkill from './routes/docs/what-is-a-skill';
 import Layout from './routes/layout';
 import PublishPage from './routes/publish';
 import SettingsProfilePage from './routes/settings-profile';
+import SettingsTokensPage from './routes/settings-tokens';
 import SkillDetail from './routes/skill-detail';
 import SkillEditPage from './routes/skill-edit';
 import SkillsList from './routes/skills-list';
@@ -30,6 +31,7 @@ const router = createBrowserRouter([
       { path: 'publish', element: <PublishPage /> },
       { path: 'u/:owner', element: <UserPage /> },
       { path: 'settings/profile', element: <SettingsProfilePage /> },
+      { path: 'settings/tokens', element: <SettingsTokensPage /> },
       {
         path: 'docs',
         element: <DocsLayout />,

@@ -63,6 +63,32 @@ export interface MeResponse {
   canPublishAs: string[];
 }
 
+export interface PatRow {
+  id: string;
+  name: string;
+  tokenPrefix: string;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+export interface CreatePatResult {
+  id: string;
+  name: string;
+  /** Plaintext — only available at creation. */
+  token: string;
+  tokenPrefix: string;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+export interface MintTokenResult {
+  token: string;
+  expiresAt: string;
+  maxUses: number;
+  installCommand: string;
+}
+
 export interface OwnerSkillsResponse {
   owner: OwnerInfo;
   items: import('@/types/api').SkillListItem[];
@@ -169,6 +195,33 @@ export const apiClient = {
     return request<OwnerSkillsResponse>(`/users/${encodeURIComponent(ownerName)}/skills`, {
       credentials: 'include',
     });
+  },
+
+  // ─── Personal Access Tokens ──────────────────────────────────────────
+
+  listPats(): Promise<{ items: PatRow[] }> {
+    return request<{ items: PatRow[] }>('/personal-access-tokens', { credentials: 'include' });
+  },
+
+  createPat(input: { name: string; expiresInDays?: number }): Promise<CreatePatResult> {
+    return request<CreatePatResult>('/personal-access-tokens', json(input, 'POST'));
+  },
+
+  revokePat(id: string): Promise<void> {
+    return request<void>(`/personal-access-tokens/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+  },
+
+  // ─── Capability URL ──────────────────────────────────────────────────
+
+  mintInstallToken(input: {
+    skillId: string;
+    expiresInHours?: number;
+    maxUses?: number;
+  }): Promise<MintTokenResult> {
+    return request<MintTokenResult>('/install-tokens', json(input, 'POST'));
   },
 
   // ─── Auth status ─────────────────────────────────────────────────────

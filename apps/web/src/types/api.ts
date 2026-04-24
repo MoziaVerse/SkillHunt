@@ -8,6 +8,7 @@ export interface OwnerInfo {
 }
 
 export interface BaseSkill {
+  id: string;
   slug: string;
   name: string;
   description: string;

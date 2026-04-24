@@ -114,6 +114,64 @@ function OwnerActions({
   );
 }
 
+function PrivateInstallSection({
+  skill,
+}: {
+  skill: Extract<SkillDetail, { type: 'owned' }>;
+}) {
+  const [grant, setGrant] = useState<{
+    installCommand: string;
+    expiresAt: string;
+    maxUses: number;
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <div className="border border-amber-200 bg-amber-50 p-4">
+      <div className="font-mono text-[12px] text-amber-900 mb-2">
+        🔒 Private skill — anyone with the install command can pull a copy. Generate a one-time
+        token below; it expires in 24h or after first use.
+      </div>
+      {grant ? (
+        <>
+          <InstallCommand command={grant.installCommand} />
+          <p className="mt-2 font-mono text-[11px] text-amber-800">
+            Token expires {new Date(grant.expiresAt).toLocaleString()} · {grant.maxUses} use(s)
+          </p>
+        </>
+      ) : (
+        <div>
+          <button
+            type="button"
+            onClick={async () => {
+              setError(null);
+              setBusy(true);
+              try {
+                const r = await apiClient.mintInstallToken({
+                  skillId: skill.id,
+                  expiresInHours: 24,
+                  maxUses: 1,
+                });
+                setGrant(r);
+              } catch (e) {
+                setError(e instanceof Error ? e.message : 'mint failed');
+              } finally {
+                setBusy(false);
+              }
+            }}
+            disabled={busy}
+            className="font-mono text-[12px] uppercase tracking-[0.1em] bg-neutral-900 text-neutral-100 px-3 py-1.5 disabled:opacity-50"
+          >
+            {busy ? '…' : 'Generate one-time install command'}
+          </button>
+          {error && <p className="mt-2 font-mono text-[11.5px] text-red-700">{error}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OwnedDetail({
   skill,
   isOwner,
@@ -147,7 +205,11 @@ function OwnedDetail({
           <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-neutral-500 mb-3">
             install
           </div>
-          <InstallCommand command={skill.installCommand} />
+          {skill.visibility === 'private' ? (
+            <PrivateInstallSection skill={skill} />
+          ) : (
+            <InstallCommand command={skill.installCommand} />
+          )}
 
           <div className="mt-10">
             <div className="flex items-center justify-between mb-3">

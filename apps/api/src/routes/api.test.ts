@@ -207,15 +207,18 @@ describe('business API', () => {
   });
 
   describe('GET /api/skills/:owner/:slug (canonical)', () => {
-    it('owned public skill returns skillMdContent + installCommand', async () => {
+    it('owned public skill returns skillMdContent + installCommand + id', async () => {
       const res = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`));
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
+        id: string;
         type: string;
         skillMdContent: string;
         installCommand: string;
         files: string[];
       };
+      expect(body.id).toBeDefined();
+      expect(typeof body.id).toBe('string');
       expect(body.type).toBe('owned');
       expect(body.skillMdContent).toContain('body');
       expect(body.installCommand).toMatch(

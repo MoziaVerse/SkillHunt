@@ -30,6 +30,7 @@ export type OwnerInfo = z.infer<typeof ownerInfoSchema>;
 // ─── List item ─────────────────────────────────────────────────────────
 
 const baseSkillDto = z.object({
+  id: z.string(),
   slug: z.string(),
   name: z.string(),
   description: z.string(),
