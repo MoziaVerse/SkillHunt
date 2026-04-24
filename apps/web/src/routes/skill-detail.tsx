@@ -2,11 +2,11 @@ import { InstallCommand } from '@/components/install-command';
 import { MarkdownView } from '@/components/markdown-view';
 import { SourceBadge } from '@/components/source-badge';
 import { Badge } from '@/components/ui/badge';
-import { apiClient } from '@/lib/api-client';
+import { type MeResponse, apiClient } from '@/lib/api-client';
 import { formatRelative } from '@/lib/format';
 import type { SkillDetail } from '@/types/api';
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useNavigate, useParams } from 'react-router';
 
 function MetaRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -70,16 +70,70 @@ function DetailHeader({
   );
 }
 
-function OwnedDetail({ skill }: { skill: Extract<SkillDetail, { type: 'owned' }> }) {
+function OwnerActions({
+  owner,
+  slug,
+  onDeleted,
+}: {
+  owner: string;
+  slug: string;
+  onDeleted: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const handleDelete = async () => {
+    if (!window.confirm(`Delete ${owner}/${slug}? This cannot be undone.`)) return;
+    setBusy(true);
+    try {
+      await apiClient.deleteSkill(owner, slug);
+      onDeleted();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'delete failed');
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex gap-2 items-center">
+      <Link
+        to={`/skills/${owner}/${slug}/edit`}
+        className="font-mono text-[11px] uppercase tracking-[0.1em] px-2.5 py-1 border border-neutral-300 hover:border-neutral-900 transition"
+      >
+        edit
+      </Link>
+      <button
+        type="button"
+        onClick={handleDelete}
+        disabled={busy}
+        className="font-mono text-[11px] uppercase tracking-[0.1em] px-2.5 py-1 border border-red-300 text-red-700 hover:border-red-700 transition disabled:opacity-50"
+      >
+        {busy ? '…' : 'delete'}
+      </button>
+    </div>
+  );
+}
+
+function OwnedDetail({
+  skill,
+  isOwner,
+  onDeleted,
+}: {
+  skill: Extract<SkillDetail, { type: 'owned' }>;
+  isOwner: boolean;
+  onDeleted: () => void;
+}) {
   return (
     <>
       <DetailHeader
         skill={skill}
         right={
-          <div className="font-mono text-[11px] text-neutral-500 text-right">
-            updated
-            <div className="text-neutral-900 text-[13px] mt-0.5">
-              {formatRelative(skill.updatedAt)}
+          <div className="flex flex-col items-end gap-3">
+            {isOwner && (
+              <OwnerActions owner={skill.owner.name} slug={skill.slug} onDeleted={onDeleted} />
+            )}
+            <div className="font-mono text-[11px] text-neutral-500 text-right">
+              updated
+              <div className="text-neutral-900 text-[13px] mt-0.5">
+                {formatRelative(skill.updatedAt)}
+              </div>
             </div>
           </div>
         }
@@ -220,20 +274,21 @@ function ReferencedDetail({ skill }: { skill: Extract<SkillDetail, { type: 'refe
 
 export default function SkillDetailPage() {
   const { owner = '', slug = '' } = useParams<{ owner: string; slug: string }>();
+  const navigate = useNavigate();
   const [skill, setSkill] = useState<SkillDetail | null>(null);
+  const [me, setMe] = useState<MeResponse | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    apiClient
-      .getSkill(owner, slug)
-      .then((s) => {
-        if (!cancelled) {
-          setSkill(s);
-          setError(null);
-        }
+    Promise.all([apiClient.getSkill(owner, slug), apiClient.getMe().catch(() => null)])
+      .then(([s, m]) => {
+        if (cancelled) return;
+        setSkill(s);
+        setMe(m);
+        setError(null);
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(e instanceof Error ? e : new Error(String(e)));
@@ -277,8 +332,14 @@ export default function SkillDetailPage() {
     );
   }
 
+  const isOwner = !!me && me.id === skill.owner.id;
+
   return skill.type === 'owned' ? (
-    <OwnedDetail skill={skill} />
+    <OwnedDetail
+      skill={skill}
+      isOwner={isOwner}
+      onDeleted={() => navigate(`/u/${skill.owner.name}`)}
+    />
   ) : (
     <ReferencedDetail skill={skill} />
   );

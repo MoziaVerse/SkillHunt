@@ -5,8 +5,12 @@ import DocsIndex from './routes/docs/index';
 import DocsLayout from './routes/docs/layout';
 import WhatIsASkill from './routes/docs/what-is-a-skill';
 import Layout from './routes/layout';
+import PublishPage from './routes/publish';
+import SettingsProfilePage from './routes/settings-profile';
 import SkillDetail from './routes/skill-detail';
+import SkillEditPage from './routes/skill-edit';
 import SkillsList from './routes/skills-list';
+import UserPage from './routes/user';
 
 // Phase 2: legacy /skills/:slug → redirect to /skills/mozia/:slug.
 // Older bookmarks and links keep working without users seeing 404.
@@ -21,7 +25,11 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <SkillsList /> },
       { path: 'skills/:owner/:slug', element: <SkillDetail /> },
+      { path: 'skills/:owner/:slug/edit', element: <SkillEditPage /> },
       { path: 'skills/:slug', element: <LegacySkillRedirect /> },
+      { path: 'publish', element: <PublishPage /> },
+      { path: 'u/:owner', element: <UserPage /> },
+      { path: 'settings/profile', element: <SettingsProfilePage /> },
       {
         path: 'docs',
         element: <DocsLayout />,

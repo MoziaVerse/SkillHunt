@@ -91,7 +91,27 @@ function SessionWidget() {
   if (state.user) {
     return (
       <span className="font-mono text-[12.5px] text-neutral-700 flex items-center gap-2">
-        <span className="text-neutral-900">{state.user.name}</span>
+        <Link
+          to="/publish"
+          className="px-2 py-1 bg-neutral-900 text-neutral-100 hover:bg-neutral-700 transition"
+        >
+          + Publish
+        </Link>
+        <span className="text-neutral-300">|</span>
+        <Link
+          to={`/u/${encodeURIComponent(state.user.name)}`}
+          className="text-neutral-900 hover:underline"
+        >
+          {state.user.name}
+        </Link>
+        <span className="text-neutral-300">·</span>
+        <Link
+          to="/settings/profile"
+          className="text-neutral-500 hover:text-neutral-900 transition"
+          title="Profile"
+        >
+          settings
+        </Link>
         <span className="text-neutral-300">·</span>
         <button
           type="button"
