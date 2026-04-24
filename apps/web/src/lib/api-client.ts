@@ -37,8 +37,21 @@ export const apiClient = {
     return request<ListSkillsResponse>(`/skills${qs ? `?${qs}` : ''}`, { credentials: 'include' });
   },
 
-  getSkill(slug: string): Promise<SkillDetail> {
-    return request<SkillDetail>(`/skills/${encodeURIComponent(slug)}`, { credentials: 'include' });
+  // Canonical detail by (owner, slug). For legacy single-slug callers,
+  // use `getSkillBySlug`, which goes through the 302 redirect.
+  getSkill(owner: string, slug: string): Promise<SkillDetail> {
+    return request<SkillDetail>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}`,
+      { credentials: 'include' },
+    );
+  },
+
+  // Legacy: hits /api/skills/:slug → 302 → followed by fetch.
+  getSkillBySlug(slug: string): Promise<SkillDetail> {
+    return request<SkillDetail>(`/skills/${encodeURIComponent(slug)}`, {
+      credentials: 'include',
+      redirect: 'follow',
+    });
   },
 
   listTags(): Promise<ListTagsResponse> {

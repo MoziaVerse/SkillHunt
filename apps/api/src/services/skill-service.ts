@@ -11,8 +11,10 @@ export async function listPublicOwnedSkills() {
       slug: skills.slug,
       name: skills.name,
       description: skills.description,
+      ownerName: user.name,
     })
     .from(skills)
+    .innerJoin(user, eq(skills.ownerUserId, user.id))
     .where(and(eq(skills.type, 'owned'), eq(skills.visibility, 'public')));
 }
 
@@ -31,6 +33,23 @@ export async function findPublicOwnedSkillBySlug(slug: string) {
     .where(and(eq(skills.slug, slug), eq(skills.type, 'owned'), eq(skills.visibility, 'public')))
     .limit(1);
   return rows[0] ?? null;
+}
+
+export async function findPublicOwnedSkillByOwnerAndSlug(ownerName: string, slug: string) {
+  const rows = await db
+    .select({ skill: skills })
+    .from(skills)
+    .innerJoin(user, eq(skills.ownerUserId, user.id))
+    .where(
+      and(
+        eq(user.name, ownerName),
+        eq(skills.slug, slug),
+        eq(skills.type, 'owned'),
+        eq(skills.visibility, 'public'),
+      ),
+    )
+    .limit(1);
+  return rows[0]?.skill ?? null;
 }
 
 export async function getSkillFileContent(skillId: string, path: string): Promise<string | null> {
@@ -162,4 +181,222 @@ export async function listAllTags(): Promise<string[]> {
         ORDER BY tag`,
   );
   return Array.from(rows, (r: { tag: string }) => r.tag);
+}
+
+// ─── User lookup ──────────────────────────────────────────────────────
+
+export interface UserRow {
+  id: string;
+  name: string;
+  email: string;
+  image: string | null;
+  isVirtual: boolean;
+  canPublishAs: string[];
+}
+
+export async function findUserById(id: string): Promise<UserRow | null> {
+  const rows = await db
+    .select({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      image: user.image,
+      isVirtual: user.isVirtual,
+      canPublishAs: user.canPublishAs,
+    })
+    .from(user)
+    .where(eq(user.id, id))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function findUserByName(name: string): Promise<UserRow | null> {
+  const rows = await db
+    .select({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      image: user.image,
+      isVirtual: user.isVirtual,
+      canPublishAs: user.canPublishAs,
+    })
+    .from(user)
+    .where(eq(user.name, name))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateUserName(userId: string, newName: string): Promise<void> {
+  await db.update(user).set({ name: newName, updatedAt: new Date() }).where(eq(user.id, userId));
+}
+
+// ─── User-scoped skill listing ────────────────────────────────────────
+
+/** All skills owned by this user, including private. */
+export async function listSkillsByOwner(ownerName: string): Promise<SkillWithOwner[]> {
+  const rows = await db
+    .select({ skill: skills, owner: { id: user.id, name: user.name, image: user.image } })
+    .from(skills)
+    .innerJoin(user, eq(skills.ownerUserId, user.id))
+    .where(eq(user.name, ownerName))
+    .orderBy(sql`${skills.updatedAt} DESC`);
+  return rows.map((r) => ({ ...r.skill, owner: r.owner }));
+}
+
+/** Public-only skills owned by this user. */
+export async function listPublicSkillsByOwner(ownerName: string): Promise<SkillWithOwner[]> {
+  const rows = await db
+    .select({ skill: skills, owner: { id: user.id, name: user.name, image: user.image } })
+    .from(skills)
+    .innerJoin(user, eq(skills.ownerUserId, user.id))
+    .where(
+      and(
+        eq(user.name, ownerName),
+        or(eq(skills.visibility, 'public'), eq(skills.type, 'referenced')),
+      ),
+    )
+    .orderBy(sql`${skills.updatedAt} DESC`);
+  return rows.map((r) => ({ ...r.skill, owner: r.owner }));
+}
+
+// ─── Create / update / delete owned skill ─────────────────────────────
+
+function parseFrontmatter(md: string): Record<string, unknown> {
+  // Minimal `key: value` YAML — same approach as seed-owned. Good enough for
+  // SKILL.md headers; not a general parser.
+  const lines = md.split('\n');
+  if (lines[0] !== '---') return {};
+  const out: Record<string, unknown> = {};
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line === '---') break;
+    if (!line || !line.includes(':')) continue;
+    const idx = line.indexOf(':');
+    const key = line.slice(0, idx).trim();
+    const val = line.slice(idx + 1).trim();
+    if (key) out[key] = val;
+  }
+  return out;
+}
+
+export interface CreateSkillData {
+  ownerUserId: string;
+  slug: string;
+  name: string;
+  description: string;
+  tags: string[];
+  visibility: 'public' | 'private';
+  skillMdContent: string;
+  frontmatter?: Record<string, unknown>;
+}
+
+export async function createOwnedSkill(input: CreateSkillData): Promise<SkillWithOwner> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(skills)
+      .values({
+        slug: input.slug,
+        name: input.name,
+        description: input.description,
+        type: 'owned',
+        visibility: input.visibility,
+        tags: input.tags,
+        frontmatter: input.frontmatter ?? parseFrontmatter(input.skillMdContent),
+        ownerUserId: input.ownerUserId,
+      })
+      .returning();
+    if (!row) throw new Error('createOwnedSkill: insert returned no row');
+
+    await tx
+      .insert(skillFiles)
+      .values({ skillId: row.id, path: 'SKILL.md', content: input.skillMdContent });
+
+    const [ownerRow] = await tx
+      .select({ id: user.id, name: user.name, image: user.image })
+      .from(user)
+      .where(eq(user.id, input.ownerUserId))
+      .limit(1);
+    if (!ownerRow) throw new Error('createOwnedSkill: owner user disappeared mid-tx');
+
+    return { ...row, owner: ownerRow };
+  });
+}
+
+export interface UpdateSkillData {
+  name?: string;
+  description?: string;
+  tags?: string[];
+  visibility?: 'public' | 'private';
+  skillMdContent?: string;
+  frontmatter?: Record<string, unknown>;
+}
+
+export async function updateOwnedSkill(
+  skillId: string,
+  input: UpdateSkillData,
+): Promise<SkillWithOwner | null> {
+  return db.transaction(async (tx) => {
+    const patch: Record<string, unknown> = { updatedAt: new Date() };
+    if (input.name !== undefined) patch.name = input.name;
+    if (input.description !== undefined) patch.description = input.description;
+    if (input.tags !== undefined) patch.tags = input.tags;
+    if (input.visibility !== undefined) patch.visibility = input.visibility;
+    if (input.frontmatter !== undefined) {
+      patch.frontmatter = input.frontmatter;
+    } else if (input.skillMdContent !== undefined) {
+      patch.frontmatter = parseFrontmatter(input.skillMdContent);
+    }
+
+    const [row] = await tx.update(skills).set(patch).where(eq(skills.id, skillId)).returning();
+    if (!row) return null;
+
+    if (input.skillMdContent !== undefined) {
+      // Upsert SKILL.md content
+      await tx
+        .insert(skillFiles)
+        .values({ skillId, path: 'SKILL.md', content: input.skillMdContent })
+        .onConflictDoUpdate({
+          target: [skillFiles.skillId, skillFiles.path],
+          set: { content: input.skillMdContent },
+        });
+    }
+
+    const [ownerRow] = await tx
+      .select({ id: user.id, name: user.name, image: user.image })
+      .from(user)
+      .where(eq(user.id, row.ownerUserId))
+      .limit(1);
+    if (!ownerRow) throw new Error('updateOwnedSkill: owner user disappeared mid-tx');
+
+    return { ...row, owner: ownerRow };
+  });
+}
+
+export async function deleteSkill(skillId: string): Promise<boolean> {
+  const result = await db.delete(skills).where(eq(skills.id, skillId)).returning({ id: skills.id });
+  return result.length > 0;
+}
+
+// ─── File CRUD on owned skills ────────────────────────────────────────
+
+export async function upsertSkillFile(
+  skillId: string,
+  path: string,
+  content: string,
+): Promise<void> {
+  await db
+    .insert(skillFiles)
+    .values({ skillId, path, content })
+    .onConflictDoUpdate({
+      target: [skillFiles.skillId, skillFiles.path],
+      set: { content },
+    });
+}
+
+export async function deleteSkillFile(skillId: string, path: string): Promise<boolean> {
+  const result = await db
+    .delete(skillFiles)
+    .where(and(eq(skillFiles.skillId, skillId), eq(skillFiles.path, path)))
+    .returning({ id: skillFiles.id });
+  return result.length > 0;
 }

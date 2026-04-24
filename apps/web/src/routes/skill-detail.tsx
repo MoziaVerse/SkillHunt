@@ -219,7 +219,7 @@ function ReferencedDetail({ skill }: { skill: Extract<SkillDetail, { type: 'refe
 }
 
 export default function SkillDetailPage() {
-  const { slug = '' } = useParams<{ slug: string }>();
+  const { owner = '', slug = '' } = useParams<{ owner: string; slug: string }>();
   const [skill, setSkill] = useState<SkillDetail | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(true);
@@ -228,7 +228,7 @@ export default function SkillDetailPage() {
     let cancelled = false;
     setLoading(true);
     apiClient
-      .getSkill(slug)
+      .getSkill(owner, slug)
       .then((s) => {
         if (!cancelled) {
           setSkill(s);
@@ -244,7 +244,7 @@ export default function SkillDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [owner, slug]);
 
   if (loading) {
     return (
@@ -261,7 +261,11 @@ export default function SkillDetailPage() {
           404
         </div>
         <div className="text-neutral-700">
-          Skill <code className="font-mono">{slug}</code> not found.
+          Skill{' '}
+          <code className="font-mono">
+            {owner}/{slug}
+          </code>{' '}
+          not found.
         </div>
         <Link
           to="/"

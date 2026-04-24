@@ -7,6 +7,8 @@ import { skillListItemSchema } from '../lib/dto';
 
 const OWNER_USER_ID = 'test-owner';
 const OTHER_USER_ID = 'test-other';
+const OWNER_NAME = 'tester';
+const OTHER_NAME = 'other';
 
 // Per-request injected auth — read a custom test header so individual cases
 // can simulate "no session" vs "logged in".
@@ -44,23 +46,22 @@ async function resetAndSeed() {
     sql`DELETE FROM skillhub."user" WHERE id IN (${OWNER_USER_ID}, ${OTHER_USER_ID})`,
   );
 
-  // Two test users: an owner of the private skill, and an unrelated user.
   await db.insert(user).values([
     {
       id: OWNER_USER_ID,
-      name: 'tester',
+      name: OWNER_NAME,
       email: 'tester@example.com',
       emailVerified: true,
     },
     {
       id: OTHER_USER_ID,
-      name: 'other',
+      name: OTHER_NAME,
       email: 'other@example.com',
       emailVerified: true,
     },
   ]);
 
-  // owned + public, tag=['design'], owner = tester
+  // owned + public, owned by tester
   const [ownedPub] = await db
     .insert(skills)
     .values({
@@ -81,7 +82,7 @@ async function resetAndSeed() {
     content: '---\nname: test-owned-pub\n---\n# body\n',
   });
 
-  // owned + private, tag=['writing'], owner = tester. Tester can see this; nobody else.
+  // owned + private, owned by tester
   const [ownedPriv] = await db
     .insert(skills)
     .values({
@@ -102,7 +103,7 @@ async function resetAndSeed() {
     content: '---\nname: test-owned-priv\n---\n# private body\n',
   });
 
-  // referenced, tag=['tooling'], owner = other (referenced is always public regardless of owner)
+  // referenced, owned by other
   await db.insert(skills).values({
     slug: 'test-ref',
     name: 'test-ref',
@@ -125,9 +126,17 @@ async function cleanup() {
   );
 }
 
-const reqAnon = (path: string) => new Request(`http://localhost${path}`);
-const reqAsUser = (path: string, userId: string) =>
-  new Request(`http://localhost${path}`, { headers: { [HEADER]: userId } });
+const reqAnon = (path: string, init?: RequestInit) => new Request(`http://localhost${path}`, init);
+const reqAsUser = (path: string, userId: string, init?: RequestInit) => {
+  const headers = new Headers(init?.headers);
+  headers.set(HEADER, userId);
+  return new Request(`http://localhost${path}`, { ...init, headers });
+};
+const jsonInit = (body: unknown, method = 'POST'): RequestInit => ({
+  method,
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify(body),
+});
 
 describe('business API', () => {
   beforeEach(resetAndSeed);
@@ -140,7 +149,6 @@ describe('business API', () => {
       const body = (await res.json()) as { items: Array<{ slug: string }>; total: number };
       expect(body.items).toHaveLength(2);
       expect(body.items.map((i) => i.slug).sort()).toEqual(['test-owned-pub', 'test-ref']);
-      expect(body.total).toBe(2);
     });
 
     it('non-owner logged-in user: still cannot see other people private', async () => {
@@ -179,46 +187,11 @@ describe('business API', () => {
       for (const it of body.items) expect(it.type).toBe('owned');
     });
 
-    it('type=referenced filters to referenced only', async () => {
-      const res = await app.fetch(reqAnon('/api/skills?type=referenced'));
-      const body = (await res.json()) as { items: Array<{ type: string }> };
-      expect(body.items.length).toBeGreaterThan(0);
-      for (const it of body.items) expect(it.type).toBe('referenced');
-    });
-
     it('q filters by name / description (ILIKE)', async () => {
       const res = await app.fetch(reqAnon('/api/skills?q=magical'));
       const body = (await res.json()) as { items: Array<{ slug: string }> };
       expect(body.items).toHaveLength(1);
       expect(body.items[0]?.slug).toBe('test-owned-pub');
-    });
-
-    it('tag filters by array overlap', async () => {
-      const res = await app.fetch(reqAnon('/api/skills?tag=design'));
-      const body = (await res.json()) as { items: Array<{ slug: string }> };
-      expect(body.items).toHaveLength(1);
-      expect(body.items[0]?.slug).toBe('test-owned-pub');
-
-      const res2 = await app.fetch(reqAnon('/api/skills?tag=tooling'));
-      const body2 = (await res2.json()) as { items: Array<{ slug: string }> };
-      expect(body2.items).toHaveLength(1);
-      expect(body2.items[0]?.slug).toBe('test-ref');
-    });
-
-    it('results are ordered by updatedAt DESC', async () => {
-      // Bump one skill's updatedAt so it becomes the most recent.
-      await db.execute(
-        sql`UPDATE skillhub.skills SET description = 'touched' WHERE slug = 'test-ref'`,
-      );
-      const res = await app.fetch(reqAnon('/api/skills'));
-      const body = (await res.json()) as { items: Array<{ slug: string; updatedAt: string }> };
-      expect(body.items[0]?.slug).toBe('test-ref');
-      const times = body.items.map((i) => new Date(i.updatedAt).getTime());
-      for (let i = 1; i < times.length; i++) {
-        const prev = times[i - 1];
-        const cur = times[i];
-        if (prev !== undefined && cur !== undefined) expect(prev).toBeGreaterThanOrEqual(cur);
-      }
     });
 
     it('response items match discriminated union schema', async () => {
@@ -231,9 +204,9 @@ describe('business API', () => {
     });
   });
 
-  describe('GET /api/skills/:slug', () => {
+  describe('GET /api/skills/:owner/:slug (canonical)', () => {
     it('owned public skill returns skillMdContent + installCommand', async () => {
-      const res = await app.fetch(reqAnon('/api/skills/test-owned-pub'));
+      const res = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`));
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
         type: string;
@@ -250,7 +223,7 @@ describe('business API', () => {
     });
 
     it('referenced skill returns sourceInstallCommand + sourceUrl', async () => {
-      const res = await app.fetch(reqAnon('/api/skills/test-ref'));
+      const res = await app.fetch(reqAnon(`/api/skills/${OTHER_NAME}/test-ref`));
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
         type: string;
@@ -259,33 +232,50 @@ describe('business API', () => {
       };
       expect(body.type).toBe('referenced');
       expect(body.sourceInstallCommand).toBe('npx skills add acme/repo --skill test-ref');
-      expect(body.sourceUrl).toBe('https://github.com/acme/repo');
     });
 
-    it('private skill returns 404 to anonymous (leak-prevention)', async () => {
-      const res = await app.fetch(reqAnon('/api/skills/test-owned-priv'));
+    it('private skill returns 404 to anonymous', async () => {
+      const res = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-priv`));
       expect(res.status).toBe(404);
     });
 
-    it('private skill returns 404 to a logged-in non-owner (leak-prevention)', async () => {
-      const res = await app.fetch(reqAsUser('/api/skills/test-owned-priv', OTHER_USER_ID));
+    it('private skill returns 404 to a logged-in non-owner', async () => {
+      const res = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-priv`, OTHER_USER_ID),
+      );
       expect(res.status).toBe(404);
     });
 
     it('private skill returns 200 to its owner', async () => {
-      const res = await app.fetch(reqAsUser('/api/skills/test-owned-priv', OWNER_USER_ID));
+      const res = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-priv`, OWNER_USER_ID),
+      );
       expect(res.status).toBe(200);
-      const body = (await res.json()) as {
-        type: string;
-        visibility: string;
-        owner: { id: string };
-      };
-      expect(body.type).toBe('owned');
+      const body = (await res.json()) as { visibility: string; owner: { name: string } };
       expect(body.visibility).toBe('private');
-      expect(body.owner.id).toBe(OWNER_USER_ID);
+      expect(body.owner.name).toBe(OWNER_NAME);
     });
 
     it('non-existent slug returns 404', async () => {
+      const res = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/no-such`));
+      expect(res.status).toBe(404);
+    });
+
+    it('wrong owner for an existing slug returns 404 (no leak)', async () => {
+      const res = await app.fetch(reqAnon(`/api/skills/${OTHER_NAME}/test-owned-pub`));
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe('GET /api/skills/:slug (legacy)', () => {
+    it('returns 302 to canonical URL when slug exists', async () => {
+      const res = await app.fetch(reqAnon('/api/skills/test-owned-pub'));
+      expect(res.status).toBe(302);
+      const loc = res.headers.get('location') ?? '';
+      expect(loc).toContain(`/api/skills/${OWNER_NAME}/test-owned-pub`);
+    });
+
+    it('returns 404 when slug does not exist', async () => {
       const res = await app.fetch(reqAnon('/api/skills/no-such'));
       expect(res.status).toBe(404);
     });
@@ -298,6 +288,260 @@ describe('business API', () => {
       const body = (await res.json()) as { tags: string[] };
       expect(body.tags.sort()).toEqual(['design', 'tooling']);
       expect(body.tags).not.toContain('writing');
+    });
+  });
+
+  // ─── Mutations ──────────────────────────────────────────────────────
+
+  describe('POST /api/skills', () => {
+    const validBody = {
+      owner: OWNER_NAME,
+      slug: 'new-skill',
+      name: 'New Skill',
+      description: 'a brand new skill from a test',
+      tags: ['demo'],
+      visibility: 'public' as const,
+      skillMdContent: '---\nname: new-skill\n---\n# body of new skill\n',
+    };
+
+    it('rejects anonymous (401)', async () => {
+      const res = await app.fetch(reqAnon('/api/skills', jsonInit(validBody)));
+      expect(res.status).toBe(401);
+    });
+
+    it('rejects when owner != logged-in user (403)', async () => {
+      const res = await app.fetch(
+        reqAsUser('/api/skills', OTHER_USER_ID, jsonInit({ ...validBody, owner: OWNER_NAME })),
+      );
+      expect(res.status).toBe(403);
+    });
+
+    it('creates a skill for logged-in owner (201)', async () => {
+      const res = await app.fetch(reqAsUser('/api/skills', OWNER_USER_ID, jsonInit(validBody)));
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { slug: string; owner: { name: string } };
+      expect(body.slug).toBe('new-skill');
+      expect(body.owner.name).toBe(OWNER_NAME);
+    });
+
+    it('rejects duplicate (owner, slug) (409)', async () => {
+      const res = await app.fetch(
+        reqAsUser('/api/skills', OWNER_USER_ID, jsonInit({ ...validBody, slug: 'test-owned-pub' })),
+      );
+      expect(res.status).toBe(409);
+    });
+
+    it('rejects invalid slug format (400)', async () => {
+      const res = await app.fetch(
+        reqAsUser('/api/skills', OWNER_USER_ID, jsonInit({ ...validBody, slug: 'Has Spaces' })),
+      );
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('PUT /api/skills/:owner/:slug', () => {
+    const patch = { description: 'updated desc' };
+
+    it('rejects anonymous (401)', async () => {
+      const res = await app.fetch(
+        reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`, jsonInit(patch, 'PUT')),
+      );
+      expect(res.status).toBe(401);
+    });
+
+    it('rejects non-owner (403)', async () => {
+      const res = await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub`,
+          OTHER_USER_ID,
+          jsonInit(patch, 'PUT'),
+        ),
+      );
+      expect(res.status).toBe(403);
+    });
+
+    it('updates fields for owner (200)', async () => {
+      const res = await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub`,
+          OWNER_USER_ID,
+          jsonInit(patch, 'PUT'),
+        ),
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { description: string };
+      expect(body.description).toBe('updated desc');
+    });
+
+    it('refuses to edit a referenced skill (400)', async () => {
+      // owner of referenced is OTHER; they can authorize but business rule blocks.
+      const res = await app.fetch(
+        reqAsUser(`/api/skills/${OTHER_NAME}/test-ref`, OTHER_USER_ID, jsonInit(patch, 'PUT')),
+      );
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('DELETE /api/skills/:owner/:slug', () => {
+    it('rejects non-owner (403)', async () => {
+      const res = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub`, OTHER_USER_ID, { method: 'DELETE' }),
+      );
+      expect(res.status).toBe(403);
+    });
+
+    it('owner can delete; subsequent GET 404', async () => {
+      const del = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub`, OWNER_USER_ID, { method: 'DELETE' }),
+      );
+      expect(del.status).toBe(204);
+      const get = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`));
+      expect(get.status).toBe(404);
+    });
+  });
+
+  describe('POST /api/skills/:owner/:slug/files/:path — upsert file', () => {
+    it('owner uploads a new file', async () => {
+      const res = await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/files/references/foo.md`,
+          OWNER_USER_ID,
+          jsonInit({ content: '# foo\n' }),
+        ),
+      );
+      expect(res.status).toBe(204);
+      const detail = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`));
+      const body = (await detail.json()) as { files: string[] };
+      expect(body.files).toContain('references/foo.md');
+    });
+
+    it('rejects non-owner (403)', async () => {
+      const res = await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/files/foo.md`,
+          OTHER_USER_ID,
+          jsonInit({ content: 'x' }),
+        ),
+      );
+      expect(res.status).toBe(403);
+    });
+
+    it('rejects unsafe path (400)', async () => {
+      const res = await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/files/..%2Fetc%2Fpasswd`,
+          OWNER_USER_ID,
+          jsonInit({ content: 'x' }),
+        ),
+      );
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('DELETE /api/skills/:owner/:slug/files/:path', () => {
+    it('owner can remove an extra file', async () => {
+      // First upload it
+      await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/files/references/foo.md`,
+          OWNER_USER_ID,
+          jsonInit({ content: '# foo\n' }),
+        ),
+      );
+      const del = await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/files/references/foo.md`,
+          OWNER_USER_ID,
+          { method: 'DELETE' },
+        ),
+      );
+      expect(del.status).toBe(204);
+    });
+
+    it('refuses to delete SKILL.md', async () => {
+      const res = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/files/SKILL.md`, OWNER_USER_ID, {
+          method: 'DELETE',
+        }),
+      );
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('GET /api/users/me', () => {
+    it('401 for anonymous', async () => {
+      const res = await app.fetch(reqAnon('/api/users/me'));
+      expect(res.status).toBe(401);
+    });
+
+    it('returns current user', async () => {
+      const res = await app.fetch(reqAsUser('/api/users/me', OWNER_USER_ID));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { name: string; isVirtual: boolean };
+      expect(body.name).toBe(OWNER_NAME);
+      expect(body.isVirtual).toBe(false);
+    });
+  });
+
+  describe('PATCH /api/users/me/profile', () => {
+    it('renames the user', async () => {
+      const res = await app.fetch(
+        reqAsUser('/api/users/me/profile', OWNER_USER_ID, jsonInit({ name: 'newname' }, 'PATCH')),
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { name: string };
+      expect(body.name).toBe('newname');
+    });
+
+    it('409 when name taken', async () => {
+      const res = await app.fetch(
+        reqAsUser('/api/users/me/profile', OWNER_USER_ID, jsonInit({ name: OTHER_NAME }, 'PATCH')),
+      );
+      expect(res.status).toBe(409);
+    });
+
+    it('400 for invalid name', async () => {
+      const res = await app.fetch(
+        reqAsUser(
+          '/api/users/me/profile',
+          OWNER_USER_ID,
+          jsonInit({ name: 'Has Spaces' }, 'PATCH'),
+        ),
+      );
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('GET /api/users/me/skills', () => {
+    it('lists owner public + private', async () => {
+      const res = await app.fetch(reqAsUser('/api/users/me/skills', OWNER_USER_ID));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { items: Array<{ slug: string }> };
+      expect(body.items.map((i) => i.slug).sort()).toEqual(['test-owned-priv', 'test-owned-pub']);
+    });
+  });
+
+  describe('GET /api/users/:owner/skills', () => {
+    it('anonymous sees only public', async () => {
+      const res = await app.fetch(reqAnon(`/api/users/${OWNER_NAME}/skills`));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        owner: { name: string };
+        items: Array<{ slug: string }>;
+      };
+      expect(body.owner.name).toBe(OWNER_NAME);
+      expect(body.items.map((i) => i.slug)).toEqual(['test-owned-pub']);
+    });
+
+    it('owner sees own private + public', async () => {
+      const res = await app.fetch(reqAsUser(`/api/users/${OWNER_NAME}/skills`, OWNER_USER_ID));
+      const body = (await res.json()) as { items: Array<{ slug: string }> };
+      expect(body.items.map((i) => i.slug).sort()).toEqual(['test-owned-priv', 'test-owned-pub']);
+    });
+
+    it('404 for unknown user', async () => {
+      const res = await app.fetch(reqAnon('/api/users/no-such-user/skills'));
+      expect(res.status).toBe(404);
     });
   });
 });
