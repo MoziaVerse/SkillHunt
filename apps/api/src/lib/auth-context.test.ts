@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { db, user } from '../db';
 import { getAuthContext } from './auth-context';
@@ -21,7 +21,7 @@ const fakeCtx = (headers: Record<string, string>): Context => {
 
 beforeAll(async () => {
   process.env.SKILLHUB_SERVICE_TOKEN = SERVICE_TOKEN;
-  await db.execute(sql`DELETE FROM skillhub."user" WHERE id = ${KNOWN_USER_ID}`);
+  await db.delete(user).where(eq(user.id, KNOWN_USER_ID));
   await db.insert(user).values({
     id: KNOWN_USER_ID,
     name: 'Known User',
@@ -33,7 +33,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.execute(sql`DELETE FROM skillhub."user" WHERE id = ${KNOWN_USER_ID}`);
+  await db.delete(user).where(eq(user.id, KNOWN_USER_ID));
   process.env.SKILLHUB_SERVICE_TOKEN = undefined;
 });
 

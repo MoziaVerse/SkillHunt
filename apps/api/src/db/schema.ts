@@ -1,26 +1,13 @@
 import { sql } from 'drizzle-orm';
-import {
-  index,
-  inet,
-  integer,
-  jsonb,
-  pgSchema,
-  text,
-  timestamp,
-  uniqueIndex,
-  uuid,
-} from 'drizzle-orm/pg-core';
+import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
-// Dedicated schema, isolated from other mozia tables.
-export const skillhubSchema = pgSchema('skillhub');
+const nowMs = sql`(unixepoch() * 1000)`;
+const randomId = () => crypto.randomUUID();
 
-export const skillTypeEnum = skillhubSchema.enum('skill_type', ['owned', 'referenced']);
-export const visibilityEnum = skillhubSchema.enum('visibility', ['public', 'private']);
-
-export const skills = skillhubSchema.table(
+export const skills = sqliteTable(
   'skills',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    id: text('id').primaryKey().$defaultFn(randomId),
 
     // URL + CLI install identifier. Rule: lowercase, 1-64, [a-z0-9-].
     slug: text('slug').notNull(),
@@ -28,12 +15,14 @@ export const skills = skillhubSchema.table(
     name: text('name').notNull(),
     description: text('description').notNull(),
 
-    type: skillTypeEnum('type').notNull(),
+    type: text('type', { enum: ['owned', 'referenced'] }).notNull(),
 
     // Only meaningful for type='owned'. For 'referenced' we always treat as public.
-    visibility: visibilityEnum('visibility').notNull().default('public'),
+    visibility: text('visibility', { enum: ['public', 'private'] })
+      .notNull()
+      .default('public'),
 
-    tags: text('tags').array().notNull().default(sql`ARRAY[]::text[]`),
+    tags: text('tags', { mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
 
     // referenced-only fields (null for owned)
     sourceRepo: text('source_repo'),
@@ -42,15 +31,15 @@ export const skills = skillhubSchema.table(
     sourceUrl: text('source_url'),
 
     // owned-only field: original SKILL.md frontmatter, kept verbatim for future restore.
-    frontmatter: jsonb('frontmatter').$type<Record<string, unknown>>(),
+    frontmatter: text('frontmatter', { mode: 'json' }).$type<Record<string, unknown>>(),
 
     // Phase 2: every skill belongs to a user (real or virtual). FK is enforced
     // by the DB; not declared here via .references() to avoid a module-import
     // cycle with auth-schema.ts (we don't use drizzle relational queries).
     ownerUserId: text('owner_user_id').notNull(),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
   },
   (t) => [
     // Slug is unique per owner — Phase 2 namespacing means two users can each
@@ -62,19 +51,19 @@ export const skills = skillhubSchema.table(
 );
 
 // Only type='owned' skills have file records. Each must have at least one row with path='SKILL.md'.
-export const skillFiles = skillhubSchema.table(
+export const skillFiles = sqliteTable(
   'skill_files',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    id: text('id').primaryKey().$defaultFn(randomId),
 
-    skillId: uuid('skill_id')
+    skillId: text('skill_id')
       .notNull()
       .references(() => skills.id, { onDelete: 'cascade' }),
 
     path: text('path').notNull(),
     content: text('content').notNull(),
 
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
   },
   (t) => [uniqueIndex('skill_files_skill_path_idx').on(t.skillId, t.path)],
 );
@@ -89,16 +78,16 @@ export type NewSkillFile = typeof skillFiles.$inferInsert;
 // PAT was removed in 0006 — Bearer auth is forwarded to matrix's central
 // key system in spec 04 instead of maintaining a parallel SkillHub table.
 
-export const installGrants = skillhubSchema.table(
+export const installGrants = sqliteTable(
   'install_grants',
   {
     token: text('token').primaryKey(),
-    skillId: uuid('skill_id').notNull(),
+    skillId: text('skill_id').notNull(),
     grantedBy: text('granted_by').notNull(),
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
     maxUses: integer('max_uses').notNull().default(1),
     usedCount: integer('used_count').notNull().default(0),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
   },
   (t) => [
     index('install_grants_skill_idx').on(t.skillId),
@@ -106,14 +95,14 @@ export const installGrants = skillhubSchema.table(
   ],
 );
 
-export const installGrantUses = skillhubSchema.table(
+export const installGrantUses = sqliteTable(
   'install_grant_uses',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    id: text('id').primaryKey().$defaultFn(randomId),
     token: text('token').notNull(),
-    ip: inet('ip'),
+    ip: text('ip'),
     userAgent: text('user_agent'),
-    accessedAt: timestamp('accessed_at', { withTimezone: true }).notNull().defaultNow(),
+    accessedAt: integer('accessed_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
   },
   (t) => [
     index('grant_uses_token_idx').on(t.token),
@@ -122,3 +111,23 @@ export const installGrantUses = skillhubSchema.table(
 );
 
 export type InstallGrant = typeof installGrants.$inferSelect;
+
+export const skillInstallEvents = sqliteTable(
+  'skill_install_events',
+  {
+    id: text('id').primaryKey().$defaultFn(randomId),
+    skillId: text('skill_id')
+      .notNull()
+      .references(() => skills.id, { onDelete: 'cascade' }),
+    dedupeKey: text('dedupe_key').notNull(),
+    source: text('source', { enum: ['well-known', 'capability'] }).notNull(),
+    installedAt: integer('installed_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+  },
+  (t) => [
+    uniqueIndex('skill_install_events_skill_dedupe_idx').on(t.skillId, t.dedupeKey),
+    index('skill_install_events_skill_idx').on(t.skillId),
+    index('skill_install_events_installed_at_idx').on(t.installedAt),
+  ],
+);
+
+export type SkillInstallEvent = typeof skillInstallEvents.$inferSelect;
