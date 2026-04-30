@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, gt, sql } from 'drizzle-orm';
 import { db, installGrantUses, installGrants, skillFiles, skills, user } from '../db';
+import { recordSkillInstall } from './install-stats-service';
 
-// 32 random bytes → 43 chars base64url. URL becomes
-// /.well-known/agent-skills/i/<token>/<owner>/<slug>/<file>
+// 32 random bytes -> 43 chars base64url. URL becomes:
+// /i/<token>/.well-known/agent-skills/index.json
 function randomToken(): string {
   return randomBytes(32).toString('base64url');
 }
@@ -43,21 +44,106 @@ export async function mintGrant(input: MintGrantInput): Promise<Grant> {
   return { token, expiresAt, maxUses };
 }
 
-export interface GrantedSkillFile {
+export interface GrantedSkill {
   skillId: string;
   ownerHandle: string;
   skillSlug: string;
-  filePath: string;
-  content: string;
-  contentType?: string;
+  description: string;
+}
+
+export async function peekGrantSkill(token: string): Promise<GrantedSkill | null> {
+  const rows = await db
+    .select({
+      skillId: skills.id,
+      ownerHandle: user.handle,
+      skillSlug: skills.slug,
+      description: skills.description,
+    })
+    .from(installGrants)
+    .innerJoin(skills, eq(installGrants.skillId, skills.id))
+    .innerJoin(user, eq(skills.ownerUserId, user.id))
+    .where(
+      and(
+        eq(installGrants.token, token),
+        gt(installGrants.expiresAt, new Date()),
+        sql`${installGrants.usedCount} < ${installGrants.maxUses}`,
+      ),
+    )
+    .limit(1);
+
+  return rows[0] ?? null;
+}
+
+function usableGrantCondition(token: string, filePath: string) {
+  const isSkillMd = filePath.toLowerCase() === 'skill.md';
+  if (isSkillMd) {
+    return and(
+      eq(installGrants.token, token),
+      gt(installGrants.expiresAt, new Date()),
+      sql`${installGrants.usedCount} < ${installGrants.maxUses}`,
+    );
+  }
+
+  return and(
+    eq(installGrants.token, token),
+    gt(installGrants.expiresAt, new Date()),
+    sql`${installGrants.usedCount} > 0`,
+    sql`${installGrants.usedCount} <= ${installGrants.maxUses}`,
+  );
+}
+
+export async function peekGrantSkillForFile(
+  token: string,
+  filePath: string,
+): Promise<GrantedSkill | null> {
+  const rows = await db
+    .select({
+      skillId: skills.id,
+      ownerHandle: user.handle,
+      skillSlug: skills.slug,
+      description: skills.description,
+    })
+    .from(installGrants)
+    .innerJoin(skills, eq(installGrants.skillId, skills.id))
+    .innerJoin(user, eq(skills.ownerUserId, user.id))
+    .where(usableGrantCondition(token, filePath))
+    .limit(1);
+
+  return rows[0] ?? null;
+}
+
+async function loadGrantForFile(
+  token: string,
+  filePath: string,
+): Promise<{ skillId: string } | null> {
+  const isSkillMd = filePath.toLowerCase() === 'skill.md';
+  if (isSkillMd) {
+    // Reserve an install attempt only for SKILL.md. The CLI fetches SKILL.md
+    // first, then downloads supporting files from the same token URL.
+    const reserved = await db
+      .update(installGrants)
+      .set({ usedCount: sql`${installGrants.usedCount} + 1` })
+      .where(usableGrantCondition(token, filePath))
+      .returning({ skillId: installGrants.skillId });
+
+    return reserved[0] ?? null;
+  }
+
+  const rows = await db
+    .select({ skillId: installGrants.skillId })
+    .from(installGrants)
+    .where(usableGrantCondition(token, filePath))
+    .limit(1);
+
+  return rows[0] ?? null;
 }
 
 /**
  * Resolve a capability URL hit:
- *   - validates token (not expired, used_count < max_uses)
+ *   - validates token
  *   - looks up the requested file under that skill
- *   - if found, atomically increments used_count (race-safe via WHERE) and
- *     records an audit entry
+ *   - counts SKILL.md as the install attempt, while allowing the CLI to fetch
+ *     supporting files afterward
  *
  * Returns null if any step fails (treat as 404 to caller — single
  * 404-or-content code path keeps tokens un-enumerable).
@@ -69,21 +155,7 @@ export async function consumeGrant(
   filePath: string,
   audit: { ip?: string | null; userAgent?: string | null },
 ): Promise<{ content: string; contentType?: string } | null> {
-  // Atomically reserve a use slot — only succeeds if not expired and
-  // used_count < max_uses.
-  const now = new Date();
-  const reserved = await db
-    .update(installGrants)
-    .set({ usedCount: sql`${installGrants.usedCount} + 1` })
-    .where(
-      and(
-        eq(installGrants.token, token),
-        gt(installGrants.expiresAt, now),
-        sql`${installGrants.usedCount} < ${installGrants.maxUses}`,
-      ),
-    )
-    .returning({ skillId: installGrants.skillId });
-  const grant = reserved[0];
+  const grant = await loadGrantForFile(token, filePath);
   if (!grant) return null;
 
   // Load skill + verify owner/slug match (so a token for skill A can't be
@@ -107,6 +179,10 @@ export async function consumeGrant(
     .where(and(eq(skillFiles.skillId, sk.skillId), eq(skillFiles.path, filePath)))
     .limit(1);
   if (!fileRow[0]) return null;
+
+  if (filePath.toLowerCase() === 'skill.md') {
+    await recordSkillInstall(sk.skillId, 'capability', audit);
+  }
 
   // Audit (fire-and-forget — don't block the response)
   void db.insert(installGrantUses).values({

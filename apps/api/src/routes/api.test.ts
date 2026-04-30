@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { sql } from 'drizzle-orm';
+import { inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { db, skillFiles, skills, user } from '../db';
 import type { AuthContext } from '../lib/auth-context';
 import { skillListItemSchema } from '../lib/dto';
+import { skillProtocolName } from '../lib/protocol-name';
 
 const OWNER_USER_ID = 'test-owner';
 const OTHER_USER_ID = 'test-other';
@@ -41,10 +42,8 @@ beforeAll(async () => {
 });
 
 async function resetAndSeed() {
-  await db.execute(sql`TRUNCATE TABLE skillhub.skills RESTART IDENTITY CASCADE`);
-  await db.execute(
-    sql`DELETE FROM skillhub."user" WHERE id IN (${OWNER_USER_ID}, ${OTHER_USER_ID})`,
-  );
+  await db.delete(skills);
+  await db.delete(user).where(inArray(user.id, [OWNER_USER_ID, OTHER_USER_ID]));
 
   await db.insert(user).values([
     {
@@ -99,11 +98,18 @@ async function resetAndSeed() {
     })
     .returning();
   if (!ownedPriv) throw new Error('seed: ownedPriv insert failed');
-  await db.insert(skillFiles).values({
-    skillId: ownedPriv.id,
-    path: 'SKILL.md',
-    content: '---\nname: test-owned-priv\n---\n# private body\n',
-  });
+  await db.insert(skillFiles).values([
+    {
+      skillId: ownedPriv.id,
+      path: 'SKILL.md',
+      content: '---\nname: test-owned-priv\n---\n# private body\n',
+    },
+    {
+      skillId: ownedPriv.id,
+      path: 'references/private.md',
+      content: '# private reference\n',
+    },
+  ]);
 
   // referenced, owned by other
   await db.insert(skills).values({
@@ -122,10 +128,8 @@ async function resetAndSeed() {
 }
 
 async function cleanup() {
-  await db.execute(sql`TRUNCATE TABLE skillhub.skills RESTART IDENTITY CASCADE`);
-  await db.execute(
-    sql`DELETE FROM skillhub."user" WHERE id IN (${OWNER_USER_ID}, ${OTHER_USER_ID})`,
-  );
+  await db.delete(skills);
+  await db.delete(user).where(inArray(user.id, [OWNER_USER_ID, OTHER_USER_ID]));
 }
 
 const reqAnon = (path: string, init?: RequestInit) => new Request(`http://localhost${path}`, init);
@@ -221,8 +225,11 @@ describe('business API', () => {
       expect(typeof body.id).toBe('string');
       expect(body.type).toBe('owned');
       expect(body.skillMdContent).toContain('body');
-      expect(body.installCommand).toMatch(
-        /^npx skills add http:\/\/.+ --skill test-owned-pub --agent claude-code -y$/,
+      expect(body.installCommand).toBe(
+        `npx skills add http://localhost --skill ${skillProtocolName(
+          OWNER_NAME,
+          'test-owned-pub',
+        )} --agent claude-code -y`,
       );
       expect(body.files).toContain('SKILL.md');
     });
@@ -641,7 +648,9 @@ describe('business API', () => {
       expect(mint.status).toBe(201);
       const mintBody = (await mint.json()) as { token: string; installCommand: string };
       expect(mintBody.token).toBeDefined();
-      expect(mintBody.installCommand).toContain('/.well-known/agent-skills/i/');
+      expect(mintBody.installCommand).toBe(
+        `npx skills add http://localhost/i/${mintBody.token} --agent claude-code -y`,
+      );
     });
 
     it('non-owner cannot mint token for someone else private skill (404)', async () => {
@@ -668,14 +677,36 @@ describe('business API', () => {
       );
       const { token } = (await mint.json()) as { token: string };
 
-      const { wellknownRoute } = await import('./wellknown');
-      const wkApp = new Hono().route('/.well-known', wellknownRoute);
-      const url = `/.well-known/agent-skills/i/${token}/${OWNER_NAME}/test-owned-priv/SKILL.md`;
+      const { capabilityWellknownRoute } = await import('./wellknown');
+      const wkApp = new Hono().route('/i', capabilityWellknownRoute);
+
+      const index = await wkApp.fetch(
+        new Request(`http://localhost/i/${token}/.well-known/agent-skills/index.json`),
+      );
+      expect(index.status).toBe(200);
+      const indexBody = (await index.json()) as {
+        skills: Array<{ name: string; description: string; files: string[] }>;
+      };
+      expect(indexBody.skills).toHaveLength(1);
+      expect(indexBody.skills[0]?.name).toBe(skillProtocolName(OWNER_NAME, 'test-owned-priv'));
+      expect(indexBody.skills[0]?.description).toBe('private only');
+      expect(indexBody.skills[0]?.files.sort()).toEqual(['SKILL.md', 'references/private.md']);
+
+      const protocolName = skillProtocolName(OWNER_NAME, 'test-owned-priv');
+      const url = `/i/${token}/.well-known/agent-skills/${protocolName}/SKILL.md`;
 
       const first = await wkApp.fetch(new Request(`http://localhost${url}`));
       expect(first.status).toBe(200);
       const text = await first.text();
       expect(text).toContain('private body');
+
+      const extra = await wkApp.fetch(
+        new Request(
+          `http://localhost/i/${token}/.well-known/agent-skills/${protocolName}/references/private.md`,
+        ),
+      );
+      expect(extra.status).toBe(200);
+      expect(await extra.text()).toContain('private reference');
 
       const second = await wkApp.fetch(new Request(`http://localhost${url}`));
       expect(second.status).toBe(404);
@@ -691,12 +722,10 @@ describe('business API', () => {
       );
       const { token } = (await mint.json()) as { token: string };
 
-      const { wellknownRoute } = await import('./wellknown');
-      const wkApp = new Hono().route('/.well-known', wellknownRoute);
+      const { capabilityWellknownRoute } = await import('./wellknown');
+      const wkApp = new Hono().route('/i', capabilityWellknownRoute);
       const r1 = await wkApp.fetch(
-        new Request(
-          `http://localhost/.well-known/agent-skills/i/${token}/${OTHER_NAME}/test-owned-pub/SKILL.md`,
-        ),
+        new Request(`http://localhost/i/${token}/.well-known/agent-skills/not-the-skill/SKILL.md`),
       );
       expect(r1.status).toBe(404);
     });

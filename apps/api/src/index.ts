@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
 import { OIDC_PROVIDER_ID, auth } from './lib/auth';
 import { apiRoute } from './routes/api';
-import { wellknownRoute } from './routes/wellknown';
+import { apiV1Route } from './routes/api-v1';
+import { capabilityWellknownRoute, wellknownRoute } from './routes/wellknown';
 
 const app = new Hono();
 
@@ -21,6 +22,8 @@ app.get('/api/auth-status', (c) =>
 app.on(['GET', 'POST'], '/api/auth/*', (c) => auth.handler(c.req.raw));
 
 app.route('/.well-known', wellknownRoute);
+app.route('/i', capabilityWellknownRoute);
+app.route('/api/v1', apiV1Route);
 app.route('/api', apiRoute);
 
 // Serve web SPA static files when WEB_DIST is set (production/test-server).

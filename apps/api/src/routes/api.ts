@@ -12,6 +12,7 @@ import {
   updateSkillSchema,
   upsertFileBodySchema,
 } from '../lib/dto';
+import { skillProtocolName } from '../lib/protocol-name';
 import { mintGrant } from '../services/install-grant-service';
 import {
   type SkillWithOwner,
@@ -68,7 +69,7 @@ const toDetail = async (
     const files = await listSkillFilesWithContent(skill.id);
     const skillMd = files.find((f) => f.path === 'SKILL.md');
     if (!skillMd) return { error: 'Skill data corrupted' };
-    const installCommand = `npx skills add ${origin} --skill ${skill.slug} --agent claude-code -y`;
+    const installCommand = `npx skills add ${origin} --skill ${skillProtocolName(skill.owner.handle, skill.slug)} --agent claude-code -y`;
     return {
       ...base,
       type: 'owned',
@@ -344,9 +345,7 @@ apiRoute.post('/install-tokens', zValidator('json', mintInstallTokenSchema), asy
   });
 
   const origin = new URL(c.req.url).origin;
-  const installCommand =
-    `npx skills add ${origin}/.well-known/agent-skills/i/${grant.token}` +
-    ` --skill ${skill.owner.handle}/${skill.slug} --agent claude-code -y`;
+  const installCommand = `npx skills add ${origin}/i/${grant.token} --agent claude-code -y`;
   return c.json(
     {
       token: grant.token,
