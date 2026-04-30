@@ -1,5 +1,6 @@
-import { and, arrayOverlaps, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, eq, or, sql } from 'drizzle-orm';
 import { db, skillFiles, skills, user } from '../db';
+import { skillProtocolName } from '../lib/protocol-name';
 
 // ─── Well-known ───────────────────────────────────────────────────────
 
@@ -50,6 +51,18 @@ export async function findPublicOwnedSkillByOwnerAndSlug(ownerHandle: string, sl
     )
     .limit(1);
   return rows[0]?.skill ?? null;
+}
+
+export async function findPublicOwnedSkillByProtocolName(protocolName: string) {
+  const rows = await db
+    .select({ skill: skills, ownerHandle: user.handle })
+    .from(skills)
+    .innerJoin(user, eq(skills.ownerUserId, user.id))
+    .where(and(eq(skills.type, 'owned'), eq(skills.visibility, 'public')));
+
+  return (
+    rows.find((r) => skillProtocolName(r.ownerHandle, r.skill.slug) === protocolName)?.skill ?? null
+  );
 }
 
 export async function getSkillFileContent(skillId: string, path: string): Promise<string | null> {
@@ -130,12 +143,11 @@ export async function listSkillsForApi(opts: ListSkillsOptions): Promise<SkillWi
 
   if (opts.q) {
     const pattern = `%${opts.q}%`;
-    const cond = or(ilike(skills.name, pattern), ilike(skills.description, pattern));
+    const cond = or(
+      sql`lower(${skills.name}) like lower(${pattern})`,
+      sql`lower(${skills.description}) like lower(${pattern})`,
+    );
     if (cond) conditions.push(cond);
-  }
-
-  if (opts.tags.length > 0) {
-    conditions.push(arrayOverlaps(skills.tags, opts.tags));
   }
 
   const rows = await db
@@ -145,7 +157,9 @@ export async function listSkillsForApi(opts: ListSkillsOptions): Promise<SkillWi
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(sql`${skills.updatedAt} DESC`);
 
-  return rows.map((r) => ({ ...r.skill, owner: r.owner }));
+  const mapped = rows.map((r) => ({ ...r.skill, owner: r.owner }));
+  if (opts.tags.length === 0) return mapped;
+  return mapped.filter((r) => opts.tags.some((tag) => r.tags.includes(tag)));
 }
 
 export async function findSkillBySlug(slug: string): Promise<SkillWithOwner | null> {
@@ -194,14 +208,11 @@ export async function listSkillFilesWithContent(skillId: string) {
 export async function listAllTags(): Promise<string[]> {
   // Public + referenced rows only — private rows' tags are owner-private
   // and shouldn't leak through the global tag cloud.
-  const rows = await db.execute<{ tag: string }>(
-    sql`SELECT DISTINCT unnest(tags) AS tag
-        FROM skillhub.skills
-        WHERE cardinality(tags) > 0
-          AND (type = 'referenced' OR visibility = 'public')
-        ORDER BY tag`,
-  );
-  return Array.from(rows, (r: { tag: string }) => r.tag);
+  const rows = await db
+    .select({ tags: skills.tags })
+    .from(skills)
+    .where(or(eq(skills.type, 'referenced'), eq(skills.visibility, 'public')));
+  return [...new Set(rows.flatMap((r) => r.tags))].sort();
 }
 
 // ─── User lookup ──────────────────────────────────────────────────────
