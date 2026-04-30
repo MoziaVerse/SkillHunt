@@ -219,7 +219,7 @@ export const updateSkillSchema = createSkillSchema
 7. **前端 routes**：新增 `publish.tsx`、`user.tsx`（`/u/:owner`）、`settings-profile.tsx`；改动 `skill-detail.tsx`、`skills-list.tsx`、`layout.tsx`
 8. **前端 hooks**：新增 `useCurrentUser` / `useMyTokens` 等；扩 `useSkills` 接收 owner 过滤
 9. **测试**：`api.test.ts` 大改（按 owner+slug + viewer 鉴权重写所有 case）
-10. **seed 脚本**：`seed-owned.ts` 默认把所有 owned 归到 `mozia` owner；`scripts/owned-skills.json` 加 `owner: 'mozia'` 字段
+10. **seed 脚本**：`seed-owned.ts` 默认把所有 owned 归到 `mozia` owner；官方自研 skills 由 `builtin-skills/` 目录扫描导入
 11. **smoke**：脚本里所有 `/api/skills/<slug>` 改成 `/api/skills/mozia/<slug>`
 
 ## 八、测试

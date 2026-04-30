@@ -82,7 +82,7 @@ DROP TYPE skillhub.visibility_old;
 
 ### Seed 数据更新
 
-`scripts/owned-skills.json` 里 `internal-rfc-writer` 的 `visibility` 字段：
+`builtin-skills/internal-rfc-writer/skill.json` 里 `visibility` 字段：
 
 ```diff
 - "visibility": "internal",
