@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { existsSync } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { type UploadFileLike, pickSkillFromFiles } from './skill-uploader';
@@ -125,9 +126,12 @@ describe('pickSkillFromFiles · folder', () => {
   });
 });
 
+const REAL_WORLD_12388_PATH = '/Users/apple/Desktop/work/mclaw/SKILLS/12388';
+const maybeIt = existsSync(REAL_WORLD_12388_PATH) ? it : it.skip;
+
 describe('pickSkillFromFiles · real-world skill at /Users/apple/Desktop/work/mclaw/SKILLS/12388', () => {
-  it('parses 12388 correctly', async () => {
-    const files = await loadAsUpload('/Users/apple/Desktop/work/mclaw/SKILLS/12388');
+  maybeIt('parses 12388 correctly', async () => {
+    const files = await loadAsUpload(REAL_WORLD_12388_PATH);
     const r = pickSkillFromFiles(files);
 
     // SKILL.md sits at root of the picked folder

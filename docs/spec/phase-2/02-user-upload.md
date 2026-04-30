@@ -147,7 +147,7 @@ export const skills = skillhubSchema.table('skills', {
 | `GET /api/skills` | 路由签名不变；返回 items 里多 `owner: { name, image }`；查询时 visibility=private 的只对 owner 自己出现 |
 | `GET /api/skills/:slug` | **保留**作为 legacy 兼容路径，内部转发到 `mozia/<slug>` 并 302 |
 | **新增** `GET /api/skills/:owner/:slug` | 取代上一条；正规路径 |
-| `GET /.well-known/agent-skills/index.json` | 包含的 `slug` 字段从 `<slug>` 改为 `<owner>/<slug>`；同时保留旧 `<slug>` 字段为 alias 直到 deprecation 期结束 |
+| `GET /.well-known/agent-skills/index.json` | `name` 必须保持 CLI 可接受格式：`mozia` owner 使用 `<slug>`，其他 owner 使用 `<owner>-<slug>-<hash>`；不返回 `<owner>/<slug>` alias |
 | `GET /.well-known/agent-skills/:owner/:slug/SKILL.md` | 新格式；旧 `/.well-known/agent-skills/:slug/SKILL.md` 自动按 `mozia/:slug` 查 |
 
 ### DTO 形状（关键）
@@ -214,7 +214,7 @@ export const updateSkillSchema = createSkillSchema
 2. **schema.ts / auth-schema.ts** 改动
 3. **service 层**：`skill-service.ts` 加 `createSkill / updateSkill / deleteSkill / addFile / removeFile`；改 `listSkillsForApi` / `findSkillBy` 接受 `viewerUserId` + 按 (owner, slug) 查
 4. **route 层**：`routes/api.ts` 加 8 个新 endpoint；旧 `/api/skills/:slug` 走 302 兼容；加 zod 校验
-5. **well-known**：`routes/wellknown.ts` 改成新 owner/slug 路径，加旧 slug fallback
+5. **well-known**：`routes/wellknown.ts` 使用 CLI-safe protocol name 解析，避免 `owner/slug` 进入 index `name`
 6. **DTO**：`lib/dto.ts` 加 createSkill / updateSkill / userPublic / skillListItemWithOwner schemas
 7. **前端 routes**：新增 `publish.tsx`、`user.tsx`（`/u/:owner`）、`settings-profile.tsx`；改动 `skill-detail.tsx`、`skills-list.tsx`、`layout.tsx`
 8. **前端 hooks**：新增 `useCurrentUser` / `useMyTokens` 等；扩 `useSkills` 接收 owner 过滤

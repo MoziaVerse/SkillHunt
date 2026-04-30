@@ -1,10 +1,10 @@
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db, skillFiles, skills } from '../apps/api/src/db';
 import { loadOwnedEntries, seedOwned } from './seed-owned';
 
 async function truncate() {
-  await db.execute(sql`TRUNCATE TABLE skillhub.skills RESTART IDENTITY CASCADE`);
+  await db.delete(skills);
 }
 
 const silent = (_: string) => {};

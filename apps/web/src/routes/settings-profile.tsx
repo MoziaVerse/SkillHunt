@@ -112,9 +112,7 @@ export default function SettingsProfilePage() {
       <dl className="space-y-3 mb-10 font-mono text-[13px]">
         <Row label="邮箱">{me.email}</Row>
         <Row label="用户 ID">{me.id}</Row>
-        {me.canPublishAs.length > 0 && (
-          <Row label="可发布为">{me.canPublishAs.join(', ')}</Row>
-        )}
+        {me.canPublishAs.length > 0 && <Row label="可发布为">{me.canPublishAs.join(', ')}</Row>}
       </dl>
 
       <form onSubmit={handleSave} className="space-y-5">

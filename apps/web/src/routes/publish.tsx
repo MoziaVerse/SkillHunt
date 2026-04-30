@@ -28,9 +28,7 @@ export default function PublishPage() {
         <div className="font-mono text-[12px] uppercase tracking-[0.16em] text-neutral-500 mb-3">
           需要登录
         </div>
-        <p className="text-neutral-700">
-          发布 skill 前请先通过 mozia-sso 登录。
-        </p>
+        <p className="text-neutral-700">发布 skill 前请先通过 mozia-sso 登录。</p>
         <Link
           to="/"
           className="mt-5 inline-block font-mono text-[12px] uppercase tracking-[0.1em] border border-neutral-300 px-3 py-1.5 hover:border-neutral-900"
@@ -58,7 +56,8 @@ export default function PublishPage() {
           handle 需要重命名
         </div>
         <p className="text-neutral-700">
-          你的 URL handle <code className="font-mono">{me.handle}</code> 包含非法字符。SkillHub URL 只允许小写字母、数字和连字符。
+          你的 URL handle <code className="font-mono">{me.handle}</code> 包含非法字符。SkillHub URL
+          只允许小写字母、数字和连字符。
         </p>
         <Link
           to="/settings/profile"

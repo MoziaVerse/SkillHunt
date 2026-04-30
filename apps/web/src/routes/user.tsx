@@ -64,9 +64,7 @@ export default function UserPage() {
           {data.owner.name}
         </h1>
         <p className="mt-1 font-mono text-[13px] text-neutral-500">@{data.owner.handle}</p>
-        <p className="mt-2 font-mono text-[12.5px] text-neutral-500">
-          {data.total} 个 skill
-        </p>
+        <p className="mt-2 font-mono text-[12.5px] text-neutral-500">{data.total} 个 skill</p>
       </section>
 
       {data.items.length === 0 ? (

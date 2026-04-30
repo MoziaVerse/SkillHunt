@@ -4,11 +4,34 @@
 
 import { readFile } from 'node:fs/promises';
 import { and, eq } from 'drizzle-orm';
-import { db, skillFiles, skills } from '../apps/api/src/db';
+import { db, skillFiles, skills, user } from '../apps/api/src/db';
 
 // All seed-driven owned skills are attributed to the `mozia` virtual user
 // (created by migration 0003). Phase 2 pass 2 will allow per-entry overrides.
 const SEED_OWNER_ID = 'mozia-virtual';
+const SEED_OWNER_HANDLE = 'mozia';
+
+async function ensureSeedOwner() {
+  await db
+    .insert(user)
+    .values({
+      id: SEED_OWNER_ID,
+      name: 'mozia',
+      handle: SEED_OWNER_HANDLE,
+      email: 'mozia-virtual@skillhub.local',
+      emailVerified: true,
+      isVirtual: true,
+    })
+    .onConflictDoUpdate({
+      target: user.id,
+      set: {
+        name: 'mozia',
+        handle: SEED_OWNER_HANDLE,
+        isVirtual: true,
+        updatedAt: new Date(),
+      },
+    });
+}
 
 export interface OwnedEntry {
   slug: string;
@@ -53,6 +76,7 @@ export async function seedOwned(
 ): Promise<{ upserted: number; fileCount: number }> {
   let upserted = 0;
   let fileCount = 0;
+  await ensureSeedOwner();
 
   for (const entry of entries) {
     if (!SLUG_RE.test(entry.slug) && entry.slug.length !== 1) {

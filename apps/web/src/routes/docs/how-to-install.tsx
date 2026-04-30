@@ -25,11 +25,11 @@ export default function HowToInstall() {
 
       <h2>Install from SkillHub</h2>
       <div className="my-5">
-        <InstallCommand command="npx skills add http://localhost:3333 --skill <skill-name>" />
+        <InstallCommand command="npx skills add http://localhost:3333 --skill <skill-name> --agent claude-code -y" />
       </div>
       <p>
-        这条命令会从 SkillHub 的 well-known endpoint 拉取 skill 内容, 解包到当前 agent 的 skill
-        目录。
+        这条命令会从 SkillHub 的 well-known endpoint 拉取公开 skill 内容, 解包到当前 agent 的 skill
+        目录。私有 skill 请在详情页复制一次性 <code>/i/&lt;token&gt;</code> 安装命令。
       </p>
 
       <h2>Install from GitHub</h2>

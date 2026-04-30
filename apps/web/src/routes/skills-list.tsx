@@ -28,9 +28,11 @@ function Hero() {
         <InstallCommand command="npx skills add http://localhost:3333 --skill <slug> --agent claude-code -y" />
         <p className="mt-2 font-mono text-[11px] text-neutral-500">
           将 <code className="px-1 bg-neutral-100 rounded text-neutral-700">&lt;slug&gt;</code>{' '}
-          替换为下方列表中的 skill 名称。将{' '}
-          <code className="px-1 bg-neutral-100 rounded text-neutral-700">claude-code</code> 替换为你的
-          首选 agent（cursor / copilot / opencode …）。
+          替换为 well-known index 中的 skill 名称。用户自有 skill 会使用{' '}
+          <code className="px-1 bg-neutral-100 rounded text-neutral-700">owner-slug-hash</code> 这种
+          CLI 安全名称。将{' '}
+          <code className="px-1 bg-neutral-100 rounded text-neutral-700">claude-code</code>{' '}
+          替换为你的 首选 agent（cursor / copilot / opencode …）。
         </p>
       </div>
     </section>
@@ -217,9 +219,7 @@ export default function SkillsList() {
           <div className="font-mono text-[12px] uppercase tracking-[0.18em] text-neutral-400 mb-3">
             无匹配结果
           </div>
-          <div className="text-neutral-700 text-[15px]">
-            换个关键词或清除筛选条件试试。
-          </div>
+          <div className="text-neutral-700 text-[15px]">换个关键词或清除筛选条件试试。</div>
           <button
             type="button"
             onClick={reset}

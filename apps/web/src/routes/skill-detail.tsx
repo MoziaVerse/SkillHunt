@@ -130,7 +130,8 @@ function PrivateInstallSection({
   return (
     <div className="border border-amber-200 bg-amber-50 p-4">
       <div className="font-mono text-[12px] text-amber-900 mb-2">
-        🔒 私有 skill——任何持有安装命令的人都可以拉取副本。在下方生成一次性 token，24 小时或首次使用后过期。
+        🔒 私有 skill——任何持有安装命令的人都可以拉取副本。在下方生成一次性 token，24
+        小时或首次使用后过期。
       </div>
       {grant ? (
         <>
@@ -299,7 +300,8 @@ function ReferencedDetail({ skill }: { skill: Extract<SkillDetail, { type: 'refe
             引用 skill
           </div>
           <p className="text-[14px] text-neutral-700 leading-relaxed">
-            此 skill 由 <span className="font-mono">{skill.sourceRepo}</span> 维护。我们不托管其内容——请直接从源头安装：
+            此 skill 由 <span className="font-mono">{skill.sourceRepo}</span>{' '}
+            维护。我们不托管其内容——请直接从源头安装：
           </p>
         </div>
 
