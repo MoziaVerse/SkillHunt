@@ -30,7 +30,40 @@ export interface SkillFormProps {
   submitLabel?: string;
 }
 
-const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
+import { pinyin } from 'pinyin-pro';
+
+/** Allowed in name: Chinese, letters, digits, spaces, hyphens. Everything else is stripped. */
+const NAME_ALLOWED_RE = /[^\u4e00-\u9fff\u3400-\u4dbfa-zA-Z0-9\s-]/g;
+
+/** Derive a slug from a display name: Chinese → pinyin, then keep only a-z0-9 hyphenated. */
+function nameToSlug(name: string): string {
+  const py = pinyin(name, { toneType: 'none', type: 'string' });
+  return py
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 64);
+}
+
+/** Parse simple YAML frontmatter from SKILL.md content. */
+function parseFrontmatter(md: string): Record<string, string> {
+  const lines = md.split('\n');
+  if (lines[0] !== '---') return {};
+  const out: Record<string, string> = {};
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line === '---') break;
+    if (!line || !line.includes(':')) continue;
+    const idx = line.indexOf(':');
+    const key = line.slice(0, idx).trim();
+    const val = line
+      .slice(idx + 1)
+      .trim()
+      .replace(/^["']|["']$/g, '');
+    if (key) out[key] = val;
+  }
+  return out;
+}
 
 function FieldLabel({ children, hint }: { children: React.ReactNode; hint?: string }) {
   return (
@@ -51,22 +84,24 @@ export function SkillForm({
   onCancel,
   submitLabel,
 }: SkillFormProps) {
+  const singleOwner = ownerOptions.length <= 1;
   const [owner, setOwner] = useState(initial?.owner ?? ownerOptions[0]?.handle ?? '');
-  const [slug, setSlug] = useState(initial?.slug ?? '');
-  const [name, setName] = useState(initial?.name ?? '');
-  const [description, setDescription] = useState(initial?.description ?? '');
-  const [tagsRaw, setTagsRaw] = useState((initial?.tags ?? []).join(', '));
+  const [name, setName] = useState(initial?.name ?? initial?.slug ?? '');
+  // Slug is auto-derived from name in create mode; fixed in edit mode.
+  const slug =
+    mode === 'edit'
+      ? (initial?.slug ?? '')
+      : (initial?.slug && name === initial.name ? initial.slug : nameToSlug(name));
   const [visibility, setVisibility] = useState<'public' | 'private'>(
     initial?.visibility ?? 'private',
   );
-  const [skillMd, setSkillMd] = useState(initial?.skillMdContent ?? defaultSkillMd(slug));
+  const [skillMd, setSkillMd] = useState(initial?.skillMdContent ?? defaultSkillMd(name));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const slugDisabled = mode === 'edit';
   const ownerDisabled = mode === 'edit';
 
-  const slugProblem = !slugDisabled && slug && !SLUG_RE.test(slug);
+  const slugProblem = !slug;
   const tooShort = skillMd.trim().length < 20;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -75,9 +110,11 @@ export function SkillForm({
     if (slugProblem) return setError('slug 格式无效');
     if (tooShort) return setError('SKILL.md 至少需要 20 个字符');
 
-    const tags = tagsRaw
-      .split(/[,\s]+/)
-      .map((t) => t.trim())
+    // Derive description & tags from SKILL.md frontmatter.
+    const fm = parseFrontmatter(skillMd);
+    const fmTags = (fm.tags ?? '')
+      .split(/[,>\s]+/)
+      .map((t) => t.trim().replace(/^\[|]$/g, ''))
       .filter(Boolean);
 
     setSubmitting(true);
@@ -86,8 +123,8 @@ export function SkillForm({
         owner,
         slug,
         name: name.trim() || slug,
-        description: description.trim(),
-        tags,
+        description: fm.description ?? '',
+        tags: fmTags,
         visibility,
         skillMdContent: skillMd,
       });
@@ -104,15 +141,16 @@ export function SkillForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-[760px] py-8 space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-[1fr_2fr] gap-4">
+    <form onSubmit={handleSubmit} className="max-w-[760px] py-8 space-y-5">
+      {/* Owner (hidden when single) */}
+      {!singleOwner && (
         <div>
           <FieldLabel hint="发布者">owner</FieldLabel>
           <select
             disabled={ownerDisabled}
             value={owner}
             onChange={(e) => setOwner(e.target.value)}
-            className="w-full font-mono text-[13px] border border-neutral-300 px-2 py-1.5 bg-white disabled:bg-neutral-100 disabled:text-neutral-500"
+            className="w-full max-w-[200px] font-mono text-[13px] border border-neutral-300 px-2 py-1.5 bg-white disabled:bg-neutral-100 disabled:text-neutral-500"
           >
             {ownerOptions.map((o) => (
               <option key={o.handle} value={o.handle}>
@@ -122,83 +160,67 @@ export function SkillForm({
             ))}
           </select>
         </div>
-        <div>
-          <FieldLabel hint="小写字母和连字符；URL slug">slug</FieldLabel>
-          <Input
-            value={slug}
-            disabled={slugDisabled}
-            onChange={(e) => setSlug(e.target.value)}
-            placeholder="my-helpful-skill"
-            className={cn('font-mono', slugProblem && 'border-red-400')}
-          />
-        </div>
-      </div>
+      )}
 
+      {/* Name → auto slug */}
       <div>
-        <FieldLabel hint="显示名称（默认为 slug）">名称</FieldLabel>
+        <FieldLabel hint="skill 的显示名称，会自动生成 URL slug">名称</FieldLabel>
         <Input
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => setName(e.target.value.replace(NAME_ALLOWED_RE, ''))}
           placeholder="My Helpful Skill"
+          disabled={mode === 'edit'}
         />
+        {slug && (
+          <div className="mt-1 font-mono text-[12px] text-neutral-400">
+            /u/{owner}/<span className="text-neutral-700">{slug}</span>
+          </div>
+        )}
       </div>
 
-      <div>
-        <FieldLabel hint="列表中显示的一句话简介；≤500 字符">描述</FieldLabel>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={2}
-          placeholder="这个 skill 的功能，一句话概括。"
-          className="w-full text-[14px] border border-neutral-300 px-3 py-2 leading-relaxed"
-        />
-      </div>
-
-      <div>
-        <FieldLabel hint="逗号分隔；最多 10 个">标签</FieldLabel>
-        <Input
-          value={tagsRaw}
-          onChange={(e) => setTagsRaw(e.target.value)}
-          placeholder="design, writing, review"
-        />
-      </div>
-
-      <div>
+      {/* Visibility — inline toggle */}
+      <div className="flex items-center gap-4">
         <FieldLabel>可见性</FieldLabel>
-        <div className="flex gap-3">
-          <label className="flex items-center gap-2 font-mono text-[13px] cursor-pointer">
+        <div className="flex items-center gap-3 font-mono text-[12.5px]">
+          <label className="flex items-center gap-1.5 cursor-pointer">
             <input
               type="radio"
+              name="visibility"
               checked={visibility === 'private'}
               onChange={() => setVisibility('private')}
+              className="accent-neutral-900"
             />
-            <span>private — 仅自己可见和安装</span>
+            <span className={visibility === 'private' ? 'text-neutral-900' : 'text-neutral-400'}>
+              私有
+            </span>
           </label>
-        </div>
-        <div className="mt-2">
-          <label className="flex items-center gap-2 font-mono text-[13px] cursor-pointer">
+          <label className="flex items-center gap-1.5 cursor-pointer">
             <input
               type="radio"
+              name="visibility"
               checked={visibility === 'public'}
               onChange={() => setVisibility('public')}
+              className="accent-neutral-900"
             />
-            <span>public — 所有访客可见，可通过 well-known 爬取</span>
+            <span className={visibility === 'public' ? 'text-neutral-900' : 'text-neutral-400'}>
+              公开
+            </span>
           </label>
         </div>
       </div>
 
+      {/* SKILL.md — preview only */}
       <div>
-        <FieldLabel hint={`${skillMd.length} chars · 20 min · 200 KB max`}>SKILL.md</FieldLabel>
-        <textarea
-          value={skillMd}
-          onChange={(e) => setSkillMd(e.target.value)}
-          rows={20}
-          spellCheck={false}
-          className={cn(
-            'w-full font-mono text-[12.5px] border border-neutral-300 px-3 py-2 leading-relaxed bg-white',
-            tooShort && 'border-red-400',
-          )}
-        />
+        <FieldLabel hint={`${skillMd.length} chars`}>SKILL.md</FieldLabel>
+        {skillMd ? (
+          <pre className="w-full font-mono text-[12.5px] border border-neutral-200 bg-neutral-50 px-3 py-2 leading-relaxed overflow-auto max-h-[480px] whitespace-pre-wrap break-words">
+            {skillMd}
+          </pre>
+        ) : (
+          <div className="font-mono text-[12px] text-neutral-400 py-6 text-center border border-dashed border-neutral-300">
+            请先上传 SKILL.md 文件或文件夹
+          </div>
+        )}
       </div>
 
       {error && (
@@ -229,7 +251,7 @@ export function SkillForm({
   );
 }
 
-function defaultSkillMd(slug: string): string {
-  const name = slug || 'my-skill';
-  return `---\nname: ${name}\ndescription: short description here\n---\n\n# ${name}\n\n## When to Use\n\nDescribe the trigger / scenario.\n\n## How\n\nSteps the agent should follow.\n`;
+function defaultSkillMd(name: string): string {
+  const displayName = name || 'my-skill';
+  return `---\nname: ${displayName}\ndescription: short description here\ntags: []\n---\n\n# ${displayName}\n\n## When to Use\n\nDescribe the trigger / scenario.\n\n## How\n\nSteps the agent should follow.\n`;
 }

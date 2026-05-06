@@ -1,6 +1,9 @@
 import { cn } from '@/lib/utils';
 import { useRef, useState } from 'react';
 
+// Type augmentation for HTMLInputElement to include webkitdirectory
+type DirectoryInput = HTMLInputElement & { webkitdirectory?: boolean };
+
 export interface SkillFromUpload {
   // SKILL.md content (root)
   skillMdContent: string;
@@ -51,9 +54,6 @@ function parseFrontmatter(md: string): Record<string, string> {
   }
   return out;
 }
-
-// Type augmentation for HTMLInputElement to include webkitdirectory + webkitRelativePath
-type DirectoryInput = HTMLInputElement & { webkitdirectory?: boolean };
 
 // Pure logic extracted for unit testing — given a list of file descriptors
 // (path + name + size; content read on demand via readText), pick SKILL.md
@@ -179,7 +179,7 @@ export const __test__ = { parseFrontmatter, SLUG_RE };
 
 export function SkillUploader({ onLoaded, compact = false }: SkillUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<DirectoryInput>(null);
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -230,26 +230,25 @@ export function SkillUploader({ onLoaded, compact = false }: SkillUploaderProps)
         </div>
         {!compact && (
           <div className="font-mono text-[11px] text-neutral-400 mb-4">
-            单个 .md 文件 → 填充 SKILL.md · 文件夹 → 根目录 SKILL.md + 同级文件作为附件
+            .md 文件 → 填充 SKILL.md · 文件夹 → 根目录 SKILL.md + 同级文件作为附件
           </div>
         )}
-        <div className="flex gap-2 items-center justify-center">
+        <div className="relative inline-block">
           <button
             type="button"
-            onClick={() => fileInputRef.current?.click()}
             disabled={busy}
+            onClick={() => fileInputRef.current?.click()}
             className="font-mono text-[12px] uppercase tracking-[0.1em] px-3 py-1.5 border border-neutral-300 hover:border-neutral-900 transition disabled:opacity-50"
           >
             选择文件
           </button>
-          <span className="text-neutral-300">|</span>
           <button
             type="button"
-            onClick={() => folderInputRef.current?.click()}
             disabled={busy}
-            className="font-mono text-[12px] uppercase tracking-[0.1em] px-3 py-1.5 border border-neutral-300 hover:border-neutral-900 transition disabled:opacity-50"
+            onClick={() => folderInputRef.current?.click()}
+            className="font-mono text-[12px] uppercase tracking-[0.1em] px-3 py-1.5 border border-l-0 border-neutral-300 hover:border-neutral-900 hover:border-l transition disabled:opacity-50"
           >
-            pick folder
+            文件夹
           </button>
         </div>
         <input
@@ -263,9 +262,9 @@ export function SkillUploader({ onLoaded, compact = false }: SkillUploaderProps)
           }}
         />
         <input
-          ref={folderInputRef as React.RefObject<DirectoryInput>}
+          ref={folderInputRef}
           type="file"
-          // @ts-expect-error — webkitdirectory is non-standard but supported by Chromium / Firefox
+          // @ts-expect-error — webkitdirectory is non-standard but widely supported
           webkitdirectory=""
           directory=""
           multiple

@@ -68,7 +68,7 @@ export default function SkillEditPage() {
       description: values.description,
       tags: values.tags,
       visibility: values.visibility,
-      skillMdContent: values.skillMdContent,
+      ...(values.skillMdContent ? { skillMdContent: values.skillMdContent } : {}),
     });
     const failures: string[] = [];
     for (const f of extras) {
