@@ -193,7 +193,7 @@ function TopNav() {
 
 function Footer() {
   return (
-    <footer className="mt-20 border-t border-neutral-200">
+    <footer className="border-t border-neutral-200">
       <div className="mx-auto max-w-[1100px] px-6 py-8 flex items-center justify-between flex-wrap gap-3 font-mono text-[11.5px] text-neutral-500">
         <div className="flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
@@ -203,7 +203,7 @@ function Footer() {
           <span className="text-neutral-600">web</span>
           <span className="text-neutral-400">http://localhost:5180</span>
         </div>
-        <div className="uppercase tracking-[0.14em] text-neutral-400">skillhub · phase 0</div>
+        <div className="uppercase tracking-[0.14em] text-neutral-400">skillhub</div>
       </div>
     </footer>
   );
@@ -211,12 +211,12 @@ function Footer() {
 
 export default function Layout() {
   return (
-    <>
+    <div className="min-h-screen flex flex-col">
       <TopNav />
-      <main className="mx-auto max-w-[1100px] px-6">
+      <main className="flex-1 mx-auto max-w-[1100px] px-6 w-full">
         <Outlet />
       </main>
       <Footer />
-    </>
+    </div>
   );
 }

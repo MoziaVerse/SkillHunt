@@ -15,7 +15,7 @@ function Hero() {
       <div className="flex items-center gap-3 mb-4">
         <Logo size={28} />
         <span className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-neutral-500">
-          phase 0 · localhost
+          localhost
         </span>
       </div>
       <h1 className="font-semibold text-[44px] leading-[1.02] tracking-[-0.03em] text-neutral-900">
