@@ -106,14 +106,6 @@ function SessionWidget() {
           {state.me.name}
         </Link>
         <span className="text-neutral-300">·</span>
-        <Link
-          to="/settings/profile"
-          className="text-neutral-500 hover:text-neutral-900 transition"
-          title="个人资料"
-        >
-          设置
-        </Link>
-        <span className="text-neutral-300">·</span>
         <button
           type="button"
           onClick={signOut}

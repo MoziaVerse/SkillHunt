@@ -59,12 +59,9 @@ export default function PublishPage() {
           你的 URL handle <code className="font-mono">{me.handle}</code> 包含非法字符。SkillHub URL
           只允许小写字母、数字和连字符。
         </p>
-        <Link
-          to="/settings/profile"
-          className="mt-5 inline-block font-mono text-[12px] uppercase tracking-[0.1em] bg-neutral-900 text-neutral-100 px-3 py-1.5"
-        >
-          在设置中重命名
-        </Link>
+        <p className="mt-4 text-[13px] text-neutral-500">
+          请联系管理员修改 handle 后再发布。
+        </p>
       </div>
     );
   }

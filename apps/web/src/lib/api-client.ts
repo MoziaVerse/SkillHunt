@@ -164,10 +164,6 @@ export const apiClient = {
     return request<MeResponse>('/users/me', { credentials: 'include' });
   },
 
-  updateProfile(input: { name?: string; handle?: string }): Promise<MeResponse> {
-    return request<MeResponse>('/users/me/profile', json(input, 'PATCH'));
-  },
-
   getMySkills(): Promise<ListSkillsResponse> {
     return request<ListSkillsResponse>('/users/me/skills', { credentials: 'include' });
   },
