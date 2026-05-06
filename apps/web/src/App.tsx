@@ -1,6 +1,5 @@
 import { Navigate, RouterProvider, createBrowserRouter, useParams } from 'react-router';
-import HowToInstall from './routes/docs/how-to-install';
-import HowToPublish from './routes/docs/how-to-publish';
+import ApiReference from './routes/docs/api-reference';
 import DocsIndex from './routes/docs/index';
 import DocsLayout from './routes/docs/layout';
 import WhatIsASkill from './routes/docs/what-is-a-skill';
@@ -34,8 +33,7 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <DocsIndex /> },
           { path: 'what-is-a-skill', element: <WhatIsASkill /> },
-          { path: 'how-to-install', element: <HowToInstall /> },
-          { path: 'how-to-publish', element: <HowToPublish /> },
+          { path: 'api-reference', element: <ApiReference /> },
         ],
       },
     ],
