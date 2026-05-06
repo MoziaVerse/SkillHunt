@@ -3,6 +3,7 @@ import { MarkdownView } from '@/components/markdown-view';
 import { SourceBadge } from '@/components/source-badge';
 import { Badge } from '@/components/ui/badge';
 import { type MeResponse, apiClient } from '@/lib/api-client';
+import { cn } from '@/lib/utils';
 import { formatRelative } from '@/lib/format';
 import type { SkillDetail } from '@/types/api';
 import { useEffect, useState } from 'react';
@@ -181,6 +182,37 @@ function OwnedDetail({
   isOwner: boolean;
   onDeleted: () => void;
 }) {
+  const [activeFile, setActiveFile] = useState('SKILL.md');
+  const [activeFileContent, setActiveFileContent] = useState<string | null>(skill.skillMdContent);
+  const [activeFileLoading, setActiveFileLoading] = useState(false);
+
+  const handleFileClick = async (file: string) => {
+    if (file === activeFile) {
+      return;
+    }
+    if (file === 'SKILL.md') {
+      setActiveFile('SKILL.md');
+      setActiveFileContent(skill.skillMdContent);
+      setActiveFileLoading(false);
+      return;
+    }
+
+    setActiveFile(file);
+    setActiveFileContent(null);
+    setActiveFileLoading(true);
+    try {
+      setActiveFileContent(await apiClient.getSkillFile(skill.owner.handle, skill.slug, file));
+    } catch {
+      setActiveFileContent(null);
+    } finally {
+      setActiveFileLoading(false);
+    }
+  };
+
+  const currentContent = activeFile === 'SKILL.md' ? skill.skillMdContent : activeFileContent;
+  const currentLines = currentContent?.split('\n').length ?? 0;
+  const isMarkdownFile = activeFile.endsWith('.md');
+
   return (
     <>
       <DetailHeader
@@ -214,15 +246,27 @@ function OwnedDetail({
           <div className="mt-10">
             <div className="flex items-center justify-between mb-3">
               <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-neutral-500">
-                SKILL.md
+                {activeFile}
               </div>
               <div className="font-mono text-[11px] text-neutral-400">
-                {skill.skillMdContent.split('\n').length} lines
+                {activeFileLoading ? '加载中…' : `${currentLines} lines`}
               </div>
             </div>
             <div className="border border-neutral-200 bg-white">
               <div className="px-5 py-5 lg:px-7 lg:py-7">
-                <MarkdownView source={skill.skillMdContent} />
+                {activeFileLoading ? (
+                  <div className="font-mono text-[12px] text-neutral-400">加载中…</div>
+                ) : currentContent !== null ? (
+                  isMarkdownFile ? (
+                    <MarkdownView source={currentContent} />
+                  ) : (
+                    <pre className="font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap break-words">
+                      {currentContent}
+                    </pre>
+                  )
+                ) : (
+                  <div className="font-mono text-[12px] text-red-600">加载失败</div>
+                )}
               </div>
             </div>
           </div>
@@ -268,7 +312,20 @@ function OwnedDetail({
                     <line x1="3" y1="3" x2="6" y2="3" stroke="currentColor" />
                     <line x1="3" y1="5" x2="6" y2="5" stroke="currentColor" />
                   </svg>
-                  <span className="text-neutral-800 truncate">{f}</span>
+                  {f.endsWith('.md') || f.endsWith('.txt') || f.endsWith('.ts') || f.endsWith('.js') || f.endsWith('.json') ? (
+                    <button
+                      type="button"
+                      onClick={() => handleFileClick(f)}
+                      className={cn(
+                        'text-left truncate cursor-pointer transition',
+                        activeFile === f ? 'text-neutral-900 underline' : 'text-neutral-800 hover:underline',
+                      )}
+                    >
+                      {f}
+                    </button>
+                  ) : (
+                    <span className="text-neutral-800 truncate">{f}</span>
+                  )}
                 </li>
               ))}
             </ul>

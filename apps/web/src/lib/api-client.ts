@@ -113,6 +113,18 @@ export const apiClient = {
     );
   },
 
+  async getSkillFile(owner: string, slug: string, path: string): Promise<string> {
+    const res = await fetch(
+      `${BASE}/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/files/${encodePath(path)}`,
+      { credentials: 'include' },
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new ApiError(res.status, text);
+    }
+    return res.text();
+  },
+
   getSkillBySlug(slug: string): Promise<SkillDetail> {
     return request<SkillDetail>(`/skills/${encodeURIComponent(slug)}`, {
       credentials: 'include',
