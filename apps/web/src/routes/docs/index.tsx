@@ -3,21 +3,15 @@ import { Link } from 'react-router';
 const DOCS = [
   {
     slug: 'what-is-a-skill',
-    title: 'What is a Skill?',
+    title: '什么是 Skill？',
     summary: '从 Agent Skill 的定义讲起,说清楚它和 MCP、Agent 的区别,以及 SkillHub 的定位。',
     minutes: 3,
   },
   {
-    slug: 'how-to-install',
-    title: 'How to Install',
-    summary: '前置依赖、基础命令、不同 agent 的路径差异,以及装完之后的验证方法。',
-    minutes: 4,
-  },
-  {
-    slug: 'how-to-publish',
-    title: 'How to Publish',
-    summary: 'Phase 0 内部流程,Phase 1 开放申请。目前如何联系维护者提交 skill。',
-    minutes: 2,
+    slug: 'api-reference',
+    title: 'API 参考',
+    summary: 'SkillHub REST API 完整参考：skill 增删改查、文件管理、安装令牌、well-known 协议。',
+    minutes: 8,
   },
 ];
 
@@ -26,13 +20,13 @@ export default function DocsIndex() {
     <>
       <header className="border-b border-neutral-200 pb-6 mb-8">
         <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-neutral-500 mb-2">
-          documentation
+          文档
         </div>
         <h1 className="font-semibold text-[36px] leading-[1.05] tracking-[-0.02em]">
-          SkillHub Docs
+          SkillHub 文档
         </h1>
         <p className="mt-3 text-neutral-600 max-w-2xl">
-          Phase 0 只有三篇:什么是 skill、怎么装、怎么发。Phase 1 会扩展。
+          什么是 skill，以及完整的 API 参考。
         </p>
       </header>
 
@@ -51,7 +45,7 @@ export default function DocsIndex() {
               <div className="mt-1 text-[13px] text-neutral-600">{d.summary}</div>
             </div>
             <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-neutral-400">
-              {d.minutes} min read →
+              {d.minutes} 分钟阅读 →
             </div>
           </Link>
         ))}

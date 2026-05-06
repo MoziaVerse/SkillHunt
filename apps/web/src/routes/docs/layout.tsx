@@ -2,9 +2,8 @@ import { cn } from '@/lib/utils';
 import { Link, Outlet, useLocation } from 'react-router';
 
 export const DOCS = [
-  { slug: 'what-is-a-skill', title: 'What is a Skill?' },
-  { slug: 'how-to-install', title: 'How to Install' },
-  { slug: 'how-to-publish', title: 'How to Publish' },
+  { slug: 'what-is-a-skill', title: '什么是 Skill？' },
+  { slug: 'api-reference', title: 'API 参考' },
 ];
 
 export default function DocsLayout() {
@@ -16,7 +15,7 @@ export default function DocsLayout() {
     <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-10 pt-10">
       <aside className="lg:sticky lg:top-[68px] lg:self-start">
         <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-neutral-500 mb-3">
-          docs
+          文档
         </div>
         <nav className="flex flex-col">
           <Link
@@ -28,7 +27,7 @@ export default function DocsLayout() {
                 : 'border-transparent text-neutral-600 hover:text-neutral-900',
             )}
           >
-            Overview
+            概览
           </Link>
           {DOCS.map((d) => (
             <Link

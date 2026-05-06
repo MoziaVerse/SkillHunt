@@ -3,10 +3,10 @@ export default function WhatIsASkill() {
     <>
       <header className="border-b border-neutral-200 pb-6 mb-8">
         <div className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-neutral-500 mb-2">
-          concepts · 01
+          概念 · 01
         </div>
         <h1 className="font-semibold text-[36px] leading-[1.05] tracking-[-0.02em]">
-          What is a Skill?
+          什么是 Skill？
         </h1>
       </header>
 
@@ -17,7 +17,7 @@ export default function WhatIsASkill() {
       </p>
       <p>你可以把它理解成"给 AI 看的 README + runbook"。</p>
 
-      <h2>Skill vs MCP vs Agent</h2>
+      <h2>Skill、MCP 和 Agent 的区别</h2>
       <div className="my-6 border border-neutral-200">
         <table className="w-full text-[13px] font-mono">
           <thead className="bg-neutral-50">
@@ -64,7 +64,7 @@ export default function WhatIsASkill() {
         </li>
       </ol>
 
-      <h2>References</h2>
+      <h2>参考链接</h2>
       <ul>
         <li>
           <a href="https://agentskills.io" target="_blank" rel="noreferrer">
