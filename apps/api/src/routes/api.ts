@@ -1,5 +1,6 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
+import { mimeFromPath } from '../lib/content-type';
 import { getAuthContext } from '../lib/auth-context';
 import {
   type SkillDetail,
@@ -24,6 +25,7 @@ import {
   findSkillBySlug,
   findUserByHandle,
   findUserById,
+  getSkillFileContent,
   listAllTags,
   listPublicSkillsByOwner,
   listSkillFilesWithContent,
@@ -211,6 +213,30 @@ apiRoute.delete('/skills/:owner/:slug', async (c) => {
 });
 
 // ─── File CRUD ────────────────────────────────────────────────────────
+
+apiRoute.get('/skills/:owner/:slug/files/:path{.+}', async (c) => {
+  const ownerHandle = c.req.param('owner');
+  const slug = c.req.param('slug');
+  const filePath = c.req.param('path');
+  const pathParse = filePathSchema.safeParse(filePath);
+  if (!pathParse.success) return c.json({ error: 'Invalid path' }, 400);
+
+  const { user } = await getAuthContext(c);
+  const skill = await findSkillByOwnerAndSlug(ownerHandle, slug);
+  if (!skill) return c.json({ error: 'Not Found' }, 404);
+  if (skill.type !== 'owned') return c.json({ error: 'Not Found' }, 404);
+
+  const isOwner = !!user && skill.ownerUserId === user.id;
+  if (skill.visibility === 'private' && !isOwner) {
+    return c.json({ error: 'Not Found' }, 404);
+  }
+
+  const content = await getSkillFileContent(skill.id, pathParse.data);
+  if (content === null) return c.json({ error: 'Not Found' }, 404);
+
+  c.header('Content-Type', mimeFromPath(pathParse.data));
+  return c.body(content);
+});
 
 apiRoute.post(
   '/skills/:owner/:slug/files/:path{.+}',

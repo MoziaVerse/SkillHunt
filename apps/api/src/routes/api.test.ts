@@ -482,6 +482,44 @@ describe('business API', () => {
     });
   });
 
+  describe('GET /api/skills/:owner/:slug/files/:path', () => {
+    it('returns public owned file content to anonymous', async () => {
+      await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/files/references/foo.md`,
+          OWNER_USER_ID,
+          jsonInit({ content: '# foo\n' }),
+        ),
+      );
+
+      const res = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub/files/references/foo.md`));
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe('# foo\n');
+    });
+
+    it('returns private owned file content to owner', async () => {
+      const path = 'references/private.md';
+      const encoded = path.split('/').map(encodeURIComponent).join('/');
+      const res = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-priv/files/${encoded}`, OWNER_USER_ID),
+      );
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain('private reference');
+    });
+
+    it('hides private owned file content from anonymous', async () => {
+      const path = 'references/private.md';
+      const encoded = path.split('/').map(encodeURIComponent).join('/');
+      const res = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-priv/files/${encoded}`));
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 404 for referenced skills', async () => {
+      const res = await app.fetch(reqAnon(`/api/skills/${OTHER_NAME}/test-ref/files/SKILL.md`));
+      expect(res.status).toBe(404);
+    });
+  });
+
   describe('DELETE /api/skills/:owner/:slug/files/:path', () => {
     it('owner can remove an extra file', async () => {
       // First upload it
