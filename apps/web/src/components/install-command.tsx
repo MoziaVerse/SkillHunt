@@ -33,7 +33,7 @@ export function InstallCommand({
           type="button"
           onClick={onCopy}
           className="text-neutral-500 hover:text-neutral-900 transition"
-          aria-label="Copy"
+          aria-label="复制"
         >
           {copied ? '✓' : '⎘'}
         </button>
@@ -42,31 +42,31 @@ export function InstallCommand({
   }
 
   return (
-    <div className="group relative border border-neutral-200 bg-neutral-950 text-neutral-100 font-mono text-[13px] leading-relaxed">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-800/60">
+    <div className="group relative bg-neutral-950 text-neutral-100 font-mono text-[13px] leading-relaxed rounded-xl overflow-hidden shadow-[0_16px_40px_rgba(10,10,10,0.18)]">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-neutral-900/70">
         <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-neutral-700" />
-          <span className="w-2 h-2 rounded-full bg-neutral-700" />
-          <span className="w-2 h-2 rounded-full bg-neutral-700" />
-          <span className="ml-2 text-[10.5px] uppercase tracking-[0.14em] text-neutral-500">
-            shell
+          <span className="w-2.5 h-2.5 rounded-full bg-red-500/70" />
+          <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/70" />
+          <span className="w-2.5 h-2.5 rounded-full bg-green-500/70" />
+          <span className="ml-3 text-[10.5px] uppercase tracking-[0.14em] text-neutral-500">
+            命令行
           </span>
         </div>
         <button
           type="button"
           onClick={onCopy}
           className={cn(
-            'text-[11px] uppercase tracking-[0.1em] px-2 py-0.5 border transition',
+            'text-[11px] uppercase tracking-[0.1em] px-2.5 py-1 rounded-md transition',
             copied
-              ? 'border-emerald-400 text-emerald-400'
-              : 'border-neutral-700 text-neutral-400 hover:text-neutral-100 hover:border-neutral-500',
+              ? 'bg-emerald-500/15 text-emerald-400'
+              : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-100',
           )}
         >
           {copied ? '已复制' : '复制'}
         </button>
       </div>
-      <div className="px-3 py-3 overflow-x-auto">
-        <span className="text-neutral-500 select-none">$ </span>
+      <div className="px-4 py-3 overflow-x-auto">
+        <span className="text-emerald-400 select-none">$ </span>
         <span className="text-neutral-100">{command}</span>
       </div>
     </div>

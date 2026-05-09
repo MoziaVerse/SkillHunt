@@ -22,7 +22,7 @@ export default function SkillEditPage() {
         if (!cancelled) setSkill(s);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'failed to load');
+        if (!cancelled) setError(e instanceof Error ? e.message : '加载失败');
       });
     return () => {
       cancelled = true;
@@ -42,7 +42,7 @@ export default function SkillEditPage() {
   if (!skill)
     return (
       <div className="py-24 text-center font-mono text-[11.5px] uppercase tracking-[0.14em] text-neutral-400">
-        loading…
+        加载中…
       </div>
     );
 
@@ -65,7 +65,7 @@ export default function SkillEditPage() {
   const handleSubmit = async (values: SkillFormValues) => {
     await apiClient.updateSkill(owner, slug, {
       name: values.name,
-      description: values.description,
+      description: values.tagline,
       tags: values.tags,
       visibility: values.visibility,
       ...(values.skillMdContent ? { skillMdContent: values.skillMdContent } : {}),
@@ -79,8 +79,12 @@ export default function SkillEditPage() {
       }
     }
     if (failures.length) {
-      window.alert(`Saved but some extra files failed:\n${failures.join('\n')}`);
+      window.alert(`已保存，但部分附加文件处理失败：\n${failures.join('\n')}`);
     }
+    await apiClient.createSkillRelease(owner, slug, {
+      title: '保存更新',
+      changelog: 'Skill 内容已更新。',
+    });
     navigate(`/skills/${owner}/${slug}`);
   };
 
@@ -123,7 +127,7 @@ export default function SkillEditPage() {
           owner,
           slug,
           name: skill.name,
-          description: skill.description,
+          tagline: skill.description,
           tags: skill.tags,
           visibility: skill.visibility,
           skillMdContent: overrideSkillMd ?? skill.skillMdContent,

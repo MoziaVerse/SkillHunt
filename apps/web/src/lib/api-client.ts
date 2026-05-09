@@ -1,4 +1,17 @@
-import type { ListSkillsResponse, ListTagsResponse, OwnerInfo, SkillDetail } from '@/types/api';
+import type {
+  BaseSkill,
+  ListSkillsResponse,
+  ListTagsResponse,
+  Notification,
+  OwnerInfo,
+  SkillComment,
+  SkillDetail,
+  SkillRelease,
+  SkillSubscription,
+  UpstreamStatus,
+} from '@/types/api';
+
+export type { Notification } from '@/types/api';
 
 const BASE = '/api';
 
@@ -76,6 +89,11 @@ export interface OwnerSkillsResponse {
   total: number;
 }
 
+export interface SkillCommentsResponse {
+  items: SkillComment[];
+  total: number;
+}
+
 export interface CreateSkillInput {
   owner: string;
   slug: string;
@@ -136,6 +154,13 @@ export const apiClient = {
     return request<ListTagsResponse>('/tags', { credentials: 'include' });
   },
 
+  listSkillComments(owner: string, slug: string): Promise<SkillCommentsResponse> {
+    return request<SkillCommentsResponse>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/comments`,
+      { credentials: 'include' },
+    );
+  },
+
   // ─── Mutations ───────────────────────────────────────────────────────
 
   createSkill(input: CreateSkillInput): Promise<SkillDetail> {
@@ -170,10 +195,105 @@ export const apiClient = {
     );
   },
 
+  upvoteSkill(owner: string, slug: string): Promise<BaseSkill> {
+    return request<BaseSkill>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/upvote`,
+      { method: 'POST', credentials: 'include' },
+    );
+  },
+
+  removeSkillUpvote(owner: string, slug: string): Promise<BaseSkill> {
+    return request<BaseSkill>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/upvote`,
+      { method: 'DELETE', credentials: 'include' },
+    );
+  },
+
+  createSkillComment(
+    owner: string,
+    slug: string,
+    input: { content: string; parentId?: string | null },
+  ): Promise<SkillComment> {
+    return request<SkillComment>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/comments`,
+      json(input, 'POST'),
+    );
+  },
+
+  forkSkill(owner: string, slug: string, input: { slug?: string } = {}): Promise<SkillDetail> {
+    return request<SkillDetail>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/fork`,
+      json(input, 'POST'),
+    );
+  },
+
+  listSkillReleases(
+    owner: string,
+    slug: string,
+  ): Promise<{ items: SkillRelease[]; total: number }> {
+    return request<{ items: SkillRelease[]; total: number }>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/releases`,
+      { credentials: 'include' },
+    );
+  },
+
+  createSkillRelease(
+    owner: string,
+    slug: string,
+    input: { title: string; changelog?: string },
+  ): Promise<SkillRelease> {
+    return request<SkillRelease>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/releases`,
+      json(input, 'POST'),
+    );
+  },
+
+  getUpstreamStatus(owner: string, slug: string): Promise<UpstreamStatus> {
+    return request<UpstreamStatus>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/upstream-status`,
+      { credentials: 'include' },
+    );
+  },
+
+  syncUpstream(
+    owner: string,
+    slug: string,
+  ): Promise<
+    | { status: 'success'; latestUpstreamRelease: SkillRelease; forkRelease: SkillRelease }
+    | { status: 'conflict'; conflictFiles: string[]; latestUpstreamRelease: SkillRelease }
+  > {
+    return request(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/sync-upstream`,
+      json({ strategy: 'auto' }, 'POST'),
+    );
+  },
+
+  getSkillSubscription(owner: string, slug: string): Promise<SkillSubscription> {
+    return request<SkillSubscription>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/subscription`,
+      { credentials: 'include' },
+    );
+  },
+
+  setSkillSubscription(
+    owner: string,
+    slug: string,
+    input: { active: boolean; notifyOnRelease?: boolean; notifyOnSync?: boolean },
+  ): Promise<SkillSubscription> {
+    return request<SkillSubscription>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/subscription`,
+      json(input, 'PUT'),
+    );
+  },
+
   // ─── Users ───────────────────────────────────────────────────────────
 
   getMe(): Promise<MeResponse> {
     return request<MeResponse>('/users/me', { credentials: 'include' });
+  },
+
+  updateAvatar(image: string | null): Promise<{ image: string | null }> {
+    return request<{ image: string | null }>('/users/me/avatar', json({ image }, 'PATCH'));
   },
 
   getMySkills(): Promise<ListSkillsResponse> {
@@ -194,6 +314,34 @@ export const apiClient = {
     maxUses?: number;
   }): Promise<MintTokenResult> {
     return request<MintTokenResult>('/install-tokens', json(input, 'POST'));
+  },
+
+  // ─── Notifications ───────────────────────────────────────────────────
+
+  listNotifications(): Promise<{ items: Notification[]; total: number }> {
+    return request<{ items: Notification[]; total: number }>('/notifications', {
+      credentials: 'include',
+    });
+  },
+
+  getUnreadNotificationCount(): Promise<{ count: number }> {
+    return request<{ count: number }>('/notifications/unread-count', {
+      credentials: 'include',
+    });
+  },
+
+  markNotificationRead(id: string): Promise<{ status: 'ok' }> {
+    return request<{ status: 'ok' }>(`/notifications/${id}/read`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+  },
+
+  markAllNotificationsRead(): Promise<{ status: 'ok' }> {
+    return request<{ status: 'ok' }>('/notifications/read-all', {
+      method: 'POST',
+      credentials: 'include',
+    });
   },
 
   // ─── Auth status ─────────────────────────────────────────────────────

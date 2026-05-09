@@ -192,7 +192,7 @@ export function SkillUploader({ onLoaded, compact = false }: SkillUploaderProps)
       const data = await processFiles(arr);
       onLoaded(data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'failed to read files');
+      setError(e instanceof Error ? e.message : '读取文件失败');
     } finally {
       setBusy(false);
     }
@@ -219,26 +219,28 @@ export function SkillUploader({ onLoaded, compact = false }: SkillUploaderProps)
         onDragLeave={() => setDragActive(false)}
         onDrop={handleDrop}
         className={cn(
-          'border-2 border-dashed transition px-6 py-8 text-center',
+          'border-2 border-dashed rounded-xl transition px-6 py-10 text-center',
           dragActive
-            ? 'border-neutral-900 bg-neutral-50'
-            : 'border-neutral-300 hover:border-neutral-500',
+            ? 'border-emerald-400 bg-emerald-50'
+            : 'border-neutral-300 hover:border-neutral-400',
         )}
       >
-        <div className="font-mono text-[12px] uppercase tracking-[0.16em] text-neutral-500 mb-2">
-          {busy ? '读取中…' : '拖放 SKILL.md 或 skill 文件夹到此处'}
+        <div className="text-[48px] mb-3 select-none">📁</div>
+        <div className="text-[14px] font-medium text-[#0f172a] mb-1">
+          {busy ? '读取中…' : '拖放 SKILL.md 或 Skill 文件夹到此处'}
         </div>
         {!compact && (
-          <div className="font-mono text-[11px] text-neutral-400 mb-4">
-            .md 文件 → 填充 SKILL.md · 文件夹 → 根目录 SKILL.md + 同级文件作为附件
+          <div className="text-[12px] text-neutral-500 mb-4">
+            用文件快速开始一次发布：`.md` 会导入主说明，文件夹会把根目录 `SKILL.md`
+            和同级文件一起带入。
           </div>
         )}
-        <div className="relative inline-block">
+        <div className="relative inline-flex">
           <button
             type="button"
             disabled={busy}
             onClick={() => fileInputRef.current?.click()}
-            className="font-mono text-[12px] uppercase tracking-[0.1em] px-3 py-1.5 border border-neutral-300 hover:border-neutral-900 transition disabled:opacity-50"
+            className="text-[12px] uppercase tracking-[0.1em] px-4 py-2 border border-neutral-300 hover:border-neutral-900 rounded-l-lg transition disabled:opacity-50 font-medium"
           >
             选择文件
           </button>
@@ -246,7 +248,7 @@ export function SkillUploader({ onLoaded, compact = false }: SkillUploaderProps)
             type="button"
             disabled={busy}
             onClick={() => folderInputRef.current?.click()}
-            className="font-mono text-[12px] uppercase tracking-[0.1em] px-3 py-1.5 border border-l-0 border-neutral-300 hover:border-neutral-900 hover:border-l transition disabled:opacity-50"
+            className="text-[12px] uppercase tracking-[0.1em] px-4 py-2 border border-l-0 border-neutral-300 hover:border-neutral-900 hover:border-l rounded-r-lg transition disabled:opacity-50 font-medium"
           >
             文件夹
           </button>
@@ -276,7 +278,7 @@ export function SkillUploader({ onLoaded, compact = false }: SkillUploaderProps)
         />
       </div>
       {error && (
-        <div className="mt-3 border border-red-300 bg-red-50 px-3 py-2 font-mono text-[12px] text-red-700">
+        <div className="mt-3 border border-red-300 bg-red-50 px-3 py-2 font-mono text-[12px] text-red-700 rounded-xl">
           {error}
         </div>
       )}
