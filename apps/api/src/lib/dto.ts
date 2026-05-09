@@ -38,6 +38,10 @@ const baseSkillDto = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   owner: ownerInfoSchema,
+  upvoteCount: z.number().int().nonnegative(),
+  commentCount: z.number().int().nonnegative(),
+  bookmarkCount: z.number().int().nonnegative(),
+  viewerHasUpvoted: z.boolean(),
 });
 
 export const ownedSkillListItemSchema = baseSkillDto.extend({
@@ -78,6 +82,25 @@ export const skillDetailSchema = z.discriminatedUnion('type', [
 
 export type SkillDetail = z.infer<typeof skillDetailSchema>;
 
+export const skillCommentSchema = z.object({
+  id: z.string(),
+  skillId: z.string(),
+  parentId: z.string().nullable(),
+  content: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  author: ownerInfoSchema,
+});
+
+export type SkillComment = z.infer<typeof skillCommentSchema>;
+
+export const createSkillCommentSchema = z.object({
+  content: z.string().trim().min(1).max(5_000),
+  parentId: z.string().optional().nullable(),
+});
+
+export type CreateSkillCommentInput = z.infer<typeof createSkillCommentSchema>;
+
 // ─── Mutations ─────────────────────────────────────────────────────────
 
 // Slug / owner segment: lowercase, 1-64, [a-z0-9-], no leading/trailing dash.
@@ -107,6 +130,34 @@ export type CreateSkillInput = z.infer<typeof createSkillSchema>;
 export const updateSkillSchema = createSkillSchema.omit({ owner: true, slug: true }).partial();
 
 export type UpdateSkillInput = z.infer<typeof updateSkillSchema>;
+
+export const forkSkillSchema = z.object({
+  slug: slugSegmentSchema.optional(),
+  note: z.string().max(500).optional(),
+});
+
+export type ForkSkillInput = z.infer<typeof forkSkillSchema>;
+
+export const createReleaseSchema = z.object({
+  title: z.string().trim().min(1).max(120).default('发布更新'),
+  changelog: z.string().trim().max(5_000).default(''),
+});
+
+export type CreateReleaseInput = z.infer<typeof createReleaseSchema>;
+
+export const syncUpstreamSchema = z.object({
+  strategy: z.enum(['auto']).default('auto'),
+});
+
+export type SyncUpstreamInput = z.infer<typeof syncUpstreamSchema>;
+
+export const updateSubscriptionSchema = z.object({
+  active: z.boolean(),
+  notifyOnRelease: z.boolean().optional().default(true),
+  notifyOnSync: z.boolean().optional().default(true),
+});
+
+export type UpdateSubscriptionInput = z.infer<typeof updateSubscriptionSchema>;
 
 // File path constraint: no leading slash, no `..`, max 512 chars (matches DB constraint)
 export const filePathSchema = z
@@ -165,6 +216,17 @@ export const updateProfileSchema = z
   });
 
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+
+// PATCH /api/users/me/avatar — accepts a base64 data-URL or clears with null.
+export const updateAvatarSchema = z.object({
+  image: z
+    .string()
+    .max(2_000_000, 'image data too large')
+    .nullable()
+    .refine((v) => v === null || v.startsWith('data:image/'), 'must be a data:image/ URL or null'),
+});
+
+export type UpdateAvatarInput = z.infer<typeof updateAvatarSchema>;
 
 // ─── Capability URL ────────────────────────────────────────────────────
 
