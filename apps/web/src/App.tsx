@@ -4,6 +4,7 @@ import DocsIndex from './routes/docs/index';
 import DocsLayout from './routes/docs/layout';
 import WhatIsASkill from './routes/docs/what-is-a-skill';
 import Layout from './routes/layout';
+import NotificationsPage from './routes/notifications';
 import PublishPage from './routes/publish';
 import SkillDetail from './routes/skill-detail';
 import SkillEditPage from './routes/skill-edit';
@@ -26,6 +27,7 @@ const router = createBrowserRouter([
       { path: 'skills/:owner/:slug/edit', element: <SkillEditPage /> },
       { path: 'skills/:slug', element: <LegacySkillRedirect /> },
       { path: 'publish', element: <PublishPage /> },
+      { path: 'notifications', element: <NotificationsPage /> },
       { path: 'u/:owner', element: <UserPage /> },
       {
         path: 'docs',
