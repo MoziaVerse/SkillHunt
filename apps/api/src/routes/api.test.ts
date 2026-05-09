@@ -1,7 +1,16 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
-import { db, skillFiles, skills, user } from '../db';
+import {
+  db,
+  notifications,
+  skillFiles,
+  skillReleases,
+  skillSubscriptions,
+  skillSyncEvents,
+  skills,
+  user,
+} from '../db';
 import type { AuthContext } from '../lib/auth-context';
 import { skillListItemSchema } from '../lib/dto';
 import { skillProtocolName } from '../lib/protocol-name';
@@ -42,6 +51,10 @@ beforeAll(async () => {
 });
 
 async function resetAndSeed() {
+  await db.delete(notifications);
+  await db.delete(skillSyncEvents);
+  await db.delete(skillSubscriptions);
+  await db.delete(skillReleases);
   await db.delete(skills);
   await db.delete(user).where(inArray(user.id, [OWNER_USER_ID, OTHER_USER_ID]));
 
@@ -128,6 +141,9 @@ async function resetAndSeed() {
 }
 
 async function cleanup() {
+  await db.delete(skillSyncEvents);
+  await db.delete(skillSubscriptions);
+  await db.delete(skillReleases);
   await db.delete(skills);
   await db.delete(user).where(inArray(user.id, [OWNER_USER_ID, OTHER_USER_ID]));
 }
@@ -198,6 +214,21 @@ describe('business API', () => {
       const body = (await res.json()) as { items: Array<{ slug: string }> };
       expect(body.items).toHaveLength(1);
       expect(body.items[0]?.slug).toBe('test-owned-pub');
+    });
+
+    it('q filters by owner name', async () => {
+      const res = await app.fetch(reqAnon('/api/skills?q=tester'));
+      const body = (await res.json()) as { items: Array<{ slug: string }> };
+      // Only public owned skill by tester is visible to anonymous
+      expect(body.items.length).toBeGreaterThanOrEqual(1);
+      expect(body.items.some((it) => it.slug === 'test-owned-pub')).toBe(true);
+    });
+
+    it('q filters by owner handle (case-insensitive)', async () => {
+      const res = await app.fetch(reqAnon('/api/skills?q=TESTER'));
+      const body = (await res.json()) as { items: Array<{ slug: string }> };
+      expect(body.items.length).toBeGreaterThanOrEqual(1);
+      expect(body.items.some((it) => it.slug === 'test-owned-pub')).toBe(true);
     });
 
     it('response items match discriminated union schema', async () => {
@@ -412,6 +443,328 @@ describe('business API', () => {
     });
   });
 
+  describe('POST /api/skills/:owner/:slug/fork', () => {
+    it('rejects anonymous users', async () => {
+      const res = await app.fetch(
+        reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub/fork`, jsonInit({})),
+      );
+      expect(res.status).toBe(401);
+    });
+
+    it('copies a public owned skill to the current user as private', async () => {
+      const res = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/fork`, OTHER_USER_ID, jsonInit({})),
+      );
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as {
+        type: string;
+        visibility: string;
+        owner: { handle: string };
+        slug: string;
+      };
+      expect(body.type).toBe('owned');
+      expect(body.visibility).toBe('private');
+      expect(body.owner.handle).toBe(OTHER_NAME);
+      expect(body.slug).toBe('test-owned-pub');
+    });
+
+    it('auto-resolves slug conflicts with -fork suffixes', async () => {
+      await app.fetch(
+        reqAsUser(
+          '/api/skills',
+          OTHER_USER_ID,
+          jsonInit({
+            owner: OTHER_NAME,
+            slug: 'test-owned-pub',
+            name: 'existing',
+            description: 'existing',
+            tags: [],
+            visibility: 'private',
+            skillMdContent: '---\nname: existing\n---\n# existing\n',
+          }),
+        ),
+      );
+
+      const res = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/fork`, OTHER_USER_ID, jsonInit({})),
+      );
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { slug: string };
+      expect(body.slug).toBe('test-owned-pub-fork');
+    });
+
+    it('forks a referenced skill into an owned private skill', async () => {
+      const res = await app.fetch(
+        reqAsUser(`/api/skills/${OTHER_NAME}/test-ref/fork`, OWNER_USER_ID, jsonInit({})),
+      );
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as {
+        type: string;
+        visibility: string;
+        skillMdContent: string;
+      };
+      expect(body.type).toBe('owned');
+      expect(body.visibility).toBe('private');
+      expect(body.skillMdContent).toContain('Fork 自 acme/repo/test-ref');
+    });
+
+    it('reports upstream updates for a linked fork', async () => {
+      await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/releases`,
+          OWNER_USER_ID,
+          jsonInit({ title: '首次发布' }),
+        ),
+      );
+      const fork = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/fork`, OTHER_USER_ID, jsonInit({})),
+      );
+      expect(fork.status).toBe(201);
+
+      await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/files/reference.md`,
+          OWNER_USER_ID,
+          jsonInit({ content: '# upstream new file\n' }),
+        ),
+      );
+      await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/releases`,
+          OWNER_USER_ID,
+          jsonInit({ title: '新增参考文件' }),
+        ),
+      );
+
+      const statusRes = await app.fetch(
+        reqAsUser(`/api/skills/${OTHER_NAME}/test-owned-pub/upstream-status`, OTHER_USER_ID),
+      );
+      expect(statusRes.status).toBe(200);
+      const status = (await statusRes.json()) as {
+        isFork: boolean;
+        hasUpdate: boolean;
+        behindBy: number;
+      };
+      expect(status.isFork).toBe(true);
+      expect(status.hasUpdate).toBe(true);
+      expect(status.behindBy).toBe(1);
+    });
+
+    it('syncs upstream changes when fork files are unchanged', async () => {
+      await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/releases`,
+          OWNER_USER_ID,
+          jsonInit({ title: '首次发布' }),
+        ),
+      );
+      await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/fork`, OTHER_USER_ID, jsonInit({})),
+      );
+      await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/files/reference.md`,
+          OWNER_USER_ID,
+          jsonInit({ content: '# upstream new file\n' }),
+        ),
+      );
+      await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/releases`,
+          OWNER_USER_ID,
+          jsonInit({ title: '新增参考文件' }),
+        ),
+      );
+
+      const sync = await app.fetch(
+        reqAsUser(
+          `/api/skills/${OTHER_NAME}/test-owned-pub/sync-upstream`,
+          OTHER_USER_ID,
+          jsonInit({ strategy: 'auto' }),
+        ),
+      );
+      expect(sync.status).toBe(200);
+      const body = (await sync.json()) as { status: string };
+      expect(body.status).toBe('success');
+
+      const file = await app.fetch(
+        reqAsUser(`/api/skills/${OTHER_NAME}/test-owned-pub/files/reference.md`, OTHER_USER_ID),
+      );
+      expect(file.status).toBe(200);
+      expect(await file.text()).toBe('# upstream new file\n');
+    });
+
+    it('reports conflicts when upstream and fork edit the same base file', async () => {
+      await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/releases`,
+          OWNER_USER_ID,
+          jsonInit({ title: '首次发布' }),
+        ),
+      );
+      await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/fork`, OTHER_USER_ID, jsonInit({})),
+      );
+      await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/files/SKILL.md`,
+          OWNER_USER_ID,
+          jsonInit({ content: '---\nname: test-owned-pub\n---\n# upstream edit\n' }),
+        ),
+      );
+      await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/releases`,
+          OWNER_USER_ID,
+          jsonInit({ title: '上游修改' }),
+        ),
+      );
+      await app.fetch(
+        reqAsUser(
+          `/api/skills/${OTHER_NAME}/test-owned-pub/files/SKILL.md`,
+          OTHER_USER_ID,
+          jsonInit({ content: '---\nname: test-owned-pub\n---\n# fork edit\n' }),
+        ),
+      );
+
+      const sync = await app.fetch(
+        reqAsUser(
+          `/api/skills/${OTHER_NAME}/test-owned-pub/sync-upstream`,
+          OTHER_USER_ID,
+          jsonInit({ strategy: 'auto' }),
+        ),
+      );
+      expect(sync.status).toBe(200);
+      const body = (await sync.json()) as { status: string; conflictFiles: string[] };
+      expect(body.status).toBe('conflict');
+      expect(body.conflictFiles).toContain('SKILL.md');
+    });
+
+    it('lets users subscribe to upstream updates', async () => {
+      const res = await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/subscription`,
+          OTHER_USER_ID,
+          jsonInit({ active: true, notifyOnRelease: true, notifyOnSync: true }, 'PUT'),
+        ),
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { active: boolean; notifyOnRelease: boolean };
+      expect(body.active).toBe(true);
+      expect(body.notifyOnRelease).toBe(true);
+    });
+  });
+
+  describe('notifications', () => {
+    it('returns 401 for anonymous', async () => {
+      const res = await app.fetch(reqAnon('/api/notifications'));
+      expect(res.status).toBe(401);
+    });
+
+    it('lists notifications with unread count', async () => {
+      await db.insert(notifications).values({
+        userId: OTHER_USER_ID,
+        type: 'comment',
+        actorId: OWNER_USER_ID,
+        skillId: 'test-skill-id',
+        read: 0,
+      });
+
+      const res = await app.fetch(reqAsUser('/api/notifications', OTHER_USER_ID));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { items: Array<{ type: string }>; total: number };
+      expect(body.total).toBe(1);
+      expect(body.items[0]?.type).toBe('comment');
+    });
+
+    it('returns unread count', async () => {
+      await db.insert(notifications).values([
+        { userId: OTHER_USER_ID, type: 'upvote', actorId: OWNER_USER_ID, read: 0 },
+        { userId: OTHER_USER_ID, type: 'comment', actorId: OWNER_USER_ID, read: 0 },
+        { userId: OTHER_USER_ID, type: 'fork', actorId: OWNER_USER_ID, read: 1 },
+      ]);
+
+      const res = await app.fetch(reqAsUser('/api/notifications/unread-count', OTHER_USER_ID));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { count: number };
+      expect(body.count).toBe(2);
+    });
+
+    it('marks a notification as read', async () => {
+      const [n] = await db
+        .insert(notifications)
+        .values({ userId: OTHER_USER_ID, type: 'upvote', actorId: OWNER_USER_ID, read: 0 })
+        .returning();
+      if (!n) throw new Error('insert failed');
+
+      const res = await app.fetch(
+        reqAsUser(`/api/notifications/${n.id}/read`, OTHER_USER_ID, { method: 'POST' }),
+      );
+      expect(res.status).toBe(200);
+
+      const countRes = await app.fetch(reqAsUser('/api/notifications/unread-count', OTHER_USER_ID));
+      const body = (await countRes.json()) as { count: number };
+      expect(body.count).toBe(0);
+    });
+
+    it('marks all notifications as read', async () => {
+      await db.insert(notifications).values([
+        { userId: OTHER_USER_ID, type: 'upvote', actorId: OWNER_USER_ID, read: 0 },
+        { userId: OTHER_USER_ID, type: 'comment', actorId: OWNER_USER_ID, read: 0 },
+      ]);
+
+      const res = await app.fetch(
+        reqAsUser('/api/notifications/read-all', OTHER_USER_ID, { method: 'POST' }),
+      );
+      expect(res.status).toBe(200);
+
+      const countRes = await app.fetch(reqAsUser('/api/notifications/unread-count', OTHER_USER_ID));
+      const body = (await countRes.json()) as { count: number };
+      expect(body.count).toBe(0);
+    });
+
+    it('creates a notification when someone comments', async () => {
+      await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/comments`,
+          OTHER_USER_ID,
+          jsonInit({ content: 'Great skill!' }),
+        ),
+      );
+
+      const res = await app.fetch(reqAsUser('/api/notifications', OWNER_USER_ID));
+      const body = (await res.json()) as { items: Array<{ type: string; actor: { id: string } }> };
+      expect(body.items.length).toBe(1);
+      expect(body.items[0]?.type).toBe('comment');
+      expect(body.items[0]?.actor.id).toBe(OTHER_USER_ID);
+    });
+
+    it('creates a notification when someone upvotes', async () => {
+      await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/upvote`, OTHER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+
+      const res = await app.fetch(reqAsUser('/api/notifications', OWNER_USER_ID));
+      const body = (await res.json()) as { items: Array<{ type: string }> };
+      const upvoteNotifs = body.items.filter((n) => n.type === 'upvote');
+      expect(upvoteNotifs.length).toBe(1);
+    });
+
+    it('does not notify yourself when you upvote your own skill', async () => {
+      await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/upvote`, OWNER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+
+      const res = await app.fetch(reqAsUser('/api/notifications', OWNER_USER_ID));
+      const body = (await res.json()) as { items: Array<{ type: string }> };
+      expect(body.items.length).toBe(0);
+    });
+  });
+
   describe('POST /api/skills/:owner/:slug/files/:path — upsert file', () => {
     it('owner uploads a new file', async () => {
       const res = await app.fetch(
@@ -492,7 +845,9 @@ describe('business API', () => {
         ),
       );
 
-      const res = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub/files/references/foo.md`));
+      const res = await app.fetch(
+        reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub/files/references/foo.md`),
+      );
       expect(res.status).toBe(200);
       expect(await res.text()).toBe('# foo\n');
     });
@@ -510,7 +865,9 @@ describe('business API', () => {
     it('hides private owned file content from anonymous', async () => {
       const path = 'references/private.md';
       const encoded = path.split('/').map(encodeURIComponent).join('/');
-      const res = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-priv/files/${encoded}`));
+      const res = await app.fetch(
+        reqAnon(`/api/skills/${OWNER_NAME}/test-owned-priv/files/${encoded}`),
+      );
       expect(res.status).toBe(404);
     });
 
