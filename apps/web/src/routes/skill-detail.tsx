@@ -19,6 +19,28 @@ function isTextPreviewable(path: string) {
   return /\.(md|txt|ts|tsx|js|jsx|json|yaml|yml|toml|css|html|py|sh)$/i.test(path);
 }
 
+function isDirectVideoUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return /\.(mp4|webm|mov|m4v|ogg|ogv)$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function isManagedOssVideoUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.pathname.includes('/skillhunt-videos/skillhunt/videos/');
+  } catch {
+    return false;
+  }
+}
+
+function shouldPreviewDemoVideo(value: string) {
+  return isManagedOssVideoUrl(value) || isDirectVideoUrl(value);
+}
+
 function sortFiles(files: string[]) {
   return [...files].sort((a, b) => {
     if (a === 'SKILL.md') return -1;
@@ -182,10 +204,12 @@ function MetaRow({
 function CommunityStats({
   skill,
   onUpvoteClick,
+  onBookmarkClick,
   onCommentClick,
 }: {
   skill: SkillDetail;
   onUpvoteClick: () => void;
+  onBookmarkClick: () => void;
   onCommentClick: () => void;
 }) {
   return (
@@ -202,6 +226,19 @@ function CommunityStats({
       >
         <span>▲</span>
         <span>{skill.upvoteCount} 人点赞</span>
+      </button>
+      <button
+        type="button"
+        onClick={onBookmarkClick}
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 transition',
+          skill.viewerHasBookmarked
+            ? 'border-emerald-500 bg-emerald-50 text-emerald-700 hover:border-emerald-600 hover:text-emerald-800'
+            : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300 hover:text-neutral-900',
+        )}
+      >
+        <span>{skill.viewerHasBookmarked ? '🔖' : '📑'}</span>
+        <span>{skill.bookmarkCount} 人收藏</span>
       </button>
       <button
         type="button"
@@ -823,6 +860,8 @@ function CommentsSection({
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState('');
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyDraft, setReplyDraft] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -842,6 +881,60 @@ function CommentsSection({
       cancelled = true;
     };
   }, [skill.owner.handle, skill.slug]);
+
+  // 构建评论树
+  const commentTree = useMemo(() => {
+    const rootComments: SkillComment[] = [];
+    const childrenMap = new Map<string, SkillComment[]>();
+
+    for (const comment of comments) {
+      if (comment.parentId) {
+        const children = childrenMap.get(comment.parentId) || [];
+        children.push(comment);
+        childrenMap.set(comment.parentId, children);
+      } else {
+        rootComments.push(comment);
+      }
+    }
+
+    return { rootComments, childrenMap };
+  }, [comments]);
+
+  const submitTopLevel = async () => {
+    if (!draft.trim()) return;
+    setSubmitting(true);
+    try {
+      const created = await apiClient.createSkillComment(skill.owner.handle, skill.slug, {
+        content: draft.trim(),
+      });
+      setComments((prev) => [created, ...prev]);
+      setDraft('');
+      onCommentCreated();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : '发表评论失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submitReply = async (parentId: string) => {
+    if (!replyDraft.trim()) return;
+    setSubmitting(true);
+    try {
+      const created = await apiClient.createSkillComment(skill.owner.handle, skill.slug, {
+        content: replyDraft.trim(),
+        parentId,
+      });
+      setComments((prev) => [...prev, created]);
+      setReplyDraft('');
+      setReplyingTo(null);
+      onCommentCreated();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : '发表回复失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <section
@@ -873,21 +966,7 @@ function CommentsSection({
           <button
             type="button"
             disabled={!me || submitting || !draft.trim()}
-            onClick={async () => {
-              setSubmitting(true);
-              try {
-                const created = await apiClient.createSkillComment(skill.owner.handle, skill.slug, {
-                  content: draft.trim(),
-                });
-                setComments((prev) => [created, ...prev]);
-                setDraft('');
-                onCommentCreated();
-              } catch (err) {
-                window.alert(err instanceof Error ? err.message : '发表评论失败');
-              } finally {
-                setSubmitting(false);
-              }
-            }}
+            onClick={submitTopLevel}
             className="rounded-lg bg-neutral-900 px-4 py-2 text-[13px] font-medium text-white disabled:opacity-50"
           >
             {submitting ? '发布中…' : '发表评论'}
@@ -895,31 +974,145 @@ function CommentsSection({
         </div>
       </div>
 
-      <div className="mt-6 rounded-2xl bg-neutral-50 px-5">
+      <div className="mt-6">
         {loading ? (
-          <div className="py-6 text-[13px] text-neutral-500">评论加载中…</div>
+          <div className="py-6 text-[13px] text-neutral-500 text-center">评论加载中…</div>
         ) : comments.length === 0 ? (
-          <div className="py-6 text-[13px] text-neutral-500">还没有评论，来发表第一条看法吧。</div>
+          <div className="py-6 text-[13px] text-neutral-500 text-center">
+            还没有评论，来发表第一条看法吧。
+          </div>
         ) : (
-          comments.map((comment) => (
-            <article key={comment.id} className="py-5 border-b border-neutral-200 last:border-b-0">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-[13px] text-neutral-700">
-                  <span className="font-medium text-neutral-900">{comment.author.name}</span>
-                  <span className="ml-2 text-neutral-500">@{comment.author.handle}</span>
-                </div>
-                <time className="text-[12px] text-neutral-500">
-                  {formatRelative(comment.createdAt)}
-                </time>
-              </div>
-              <p className="mt-3 whitespace-pre-wrap text-[14px] leading-7 text-neutral-700">
-                {comment.content}
-              </p>
-            </article>
-          ))
+          <div className="space-y-4">
+            {commentTree.rootComments.map((comment) => (
+              <CommentThread
+                key={comment.id}
+                comment={comment}
+                childComments={commentTree.childrenMap.get(comment.id) || []}
+                childrenMap={commentTree.childrenMap}
+                me={me}
+                replyingTo={replyingTo}
+                replyDraft={replyDraft}
+                onReplyDraftChange={setReplyDraft}
+                onReply={submitReply}
+                onSetReplyingTo={setReplyingTo}
+                submitting={submitting}
+              />
+            ))}
+          </div>
         )}
       </div>
     </section>
+  );
+}
+
+function CommentThread({
+  comment,
+  childComments,
+  childrenMap,
+  me,
+  replyingTo,
+  replyDraft,
+  onReplyDraftChange,
+  onReply,
+  onSetReplyingTo,
+  submitting,
+  depth = 0,
+}: {
+  comment: SkillComment;
+  childComments: SkillComment[];
+  childrenMap: Map<string, SkillComment[]>;
+  me: MeResponse | null;
+  replyingTo: string | null;
+  replyDraft: string;
+  onReplyDraftChange: (v: string) => void;
+  onReply: (parentId: string) => Promise<void>;
+  onSetReplyingTo: (id: string | null) => void;
+  submitting: boolean;
+  depth?: number;
+}) {
+  const isReplying = replyingTo === comment.id;
+  const childIndentClass = cn(
+    'mt-4 pl-3 border-l-2 border-neutral-200 space-y-4',
+    depth < 2 && 'ml-4',
+  );
+
+  return (
+    <div className="rounded-2xl bg-neutral-50 px-5 py-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <span className="text-[13px] font-medium text-neutral-900">{comment.author.name}</span>
+          <span className="ml-1.5 text-[12px] text-neutral-500">@{comment.author.handle}</span>
+        </div>
+        <time className="text-[12px] text-neutral-500 shrink-0">
+          {formatRelative(comment.createdAt)}
+        </time>
+      </div>
+      <p className="mt-2 whitespace-pre-wrap text-[14px] leading-7 text-neutral-700">
+        {comment.content}
+      </p>
+      {me && (
+        <button
+          type="button"
+          onClick={() => onSetReplyingTo(isReplying ? null : comment.id)}
+          className="mt-2 text-[12px] text-neutral-500 hover:text-neutral-700 transition"
+        >
+          回复
+        </button>
+      )}
+      {isReplying && (
+        <div className="mt-3 ml-4 pl-3 border-l-2 border-emerald-200">
+          <div className="rounded-xl bg-white p-3">
+            <textarea
+              value={replyDraft}
+              onChange={(e) => onReplyDraftChange(e.target.value)}
+              placeholder={`回复 @${comment.author.name}…`}
+              disabled={submitting}
+              className="min-h-[70px] w-full resize-y rounded-lg bg-neutral-50 px-3 py-2 text-[13px] text-neutral-800 outline-none ring-1 ring-inset ring-neutral-100 focus:ring-2 focus:ring-emerald-200 disabled:bg-neutral-100"
+            />
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onSetReplyingTo(null);
+                  onReplyDraftChange('');
+                }}
+                className="px-3 py-1.5 text-[12px] text-neutral-600 hover:text-neutral-800 transition"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={submitting || !replyDraft.trim()}
+                onClick={() => onReply(comment.id)}
+                className="rounded-lg bg-neutral-900 px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-50"
+              >
+                {submitting ? '发布中…' : '发表回复'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {childComments.length > 0 && (
+        <div className={childIndentClass}>
+          {childComments.map((child) => (
+            <CommentThread
+              key={child.id}
+              comment={child}
+              childComments={childrenMap.get(child.id) || []}
+              childrenMap={childrenMap}
+              me={me}
+              replyingTo={replyingTo}
+              replyDraft={replyDraft}
+              onReplyDraftChange={onReplyDraftChange}
+              onReply={onReply}
+              onSetReplyingTo={onSetReplyingTo}
+              submitting={submitting}
+              depth={depth + 1}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1091,6 +1284,7 @@ function HeroSection({
   isOwner,
   onDelete,
   onUpvote,
+  onBookmark,
   onCommentOpen,
 }: {
   skill: SkillDetail;
@@ -1098,6 +1292,7 @@ function HeroSection({
   isOwner: boolean;
   onDelete: () => void;
   onUpvote: (patch: SkillStatsPatch) => void;
+  onBookmark: (patch: SkillStatsPatch) => void;
   onCommentOpen: () => void;
 }) {
   return (
@@ -1113,7 +1308,19 @@ function HeroSection({
         </div>
 
         <div className="min-w-0">
+          {/* Cover image or icon */}
+          {skill.coverImage && (
+            <img
+              src={skill.coverImage}
+              alt="封面"
+              className="w-full max-h-64 object-cover rounded-2xl mb-6"
+            />
+          )}
+
           <div className="flex items-center gap-3 flex-wrap">
+            {!skill.coverImage && skill.icon && (
+              <span className="text-[36px] leading-none select-none">{skill.icon}</span>
+            )}
             <h1 className="text-[34px] font-bold tracking-[-0.03em] text-[#0f172a]">
               {skill.name}
             </h1>
@@ -1177,6 +1384,27 @@ function HeroSection({
                   });
                 } catch (err) {
                   window.alert(err instanceof Error ? err.message : '点赞失败');
+                }
+              })();
+            }}
+            onBookmarkClick={() => {
+              if (!me) {
+                window.alert('登录后才能收藏。');
+                return;
+              }
+              void (async () => {
+                try {
+                  const next = skill.viewerHasBookmarked
+                    ? await apiClient.removeSkillBookmark(skill.owner.handle, skill.slug)
+                    : await apiClient.bookmarkSkill(skill.owner.handle, skill.slug);
+                  onBookmark({
+                    upvoteCount: next.upvoteCount,
+                    commentCount: next.commentCount,
+                    bookmarkCount: next.bookmarkCount,
+                    viewerHasUpvoted: next.viewerHasUpvoted,
+                  });
+                } catch (err) {
+                  window.alert(err instanceof Error ? err.message : '收藏操作失败');
                 }
               })();
             }}
@@ -1270,6 +1498,21 @@ function DetailContent({
   return (
     <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="space-y-10 min-w-0">
+        {skill.demoVideoUrl && shouldPreviewDemoVideo(skill.demoVideoUrl) && (
+          <section className="rounded-3xl bg-white border border-neutral-200 p-6 shadow-sm shadow-neutral-100/80">
+            <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-neutral-500 mb-3">
+              演示视频
+            </div>
+            <video
+              src={apiClient.getSkillDemoVideoUrl(skill.owner.handle, skill.slug)}
+              controls
+              preload="metadata"
+              className="aspect-video w-full rounded-xl bg-neutral-950"
+            >
+              <track kind="captions" label="暂无字幕" src="data:text/vtt,WEBVTT%0A" />
+            </video>
+          </section>
+        )}
         <AboutSection skill={skill} />
       </div>
       <StatusSidebar skill={skill} onOpenFiles={() => onChangeTab('files')} />
@@ -1371,6 +1614,7 @@ export default function SkillDetailPage() {
         onDelete={() => navigate('/')}
         onCommentOpen={() => openTabSection('discussion', 'comments-section')}
         onUpvote={updateSkillStats}
+        onBookmark={updateSkillStats}
       />
       <TabNav active={activeTab} onChange={setActiveTab} />
 

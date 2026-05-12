@@ -69,6 +69,9 @@ export default function SkillEditPage() {
       tags: values.tags,
       visibility: values.visibility,
       ...(values.skillMdContent ? { skillMdContent: values.skillMdContent } : {}),
+      icon: values.icon,
+      coverImage: values.coverImage,
+      demoVideoUrl: values.demoVideoUrl,
     });
     const failures: string[] = [];
     for (const f of extras) {
@@ -131,6 +134,9 @@ export default function SkillEditPage() {
           tags: skill.tags,
           visibility: skill.visibility,
           skillMdContent: overrideSkillMd ?? skill.skillMdContent,
+          icon: skill.icon,
+          coverImage: skill.coverImage,
+          demoVideoUrl: skill.demoVideoUrl,
         }}
         onSubmit={handleSubmit}
         onCancel={() => navigate(`/skills/${owner}/${slug}`)}

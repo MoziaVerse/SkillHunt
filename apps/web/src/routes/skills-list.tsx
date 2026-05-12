@@ -1,11 +1,11 @@
-import { useSkills } from "@/hooks/use-skills";
-import { cn } from "@/lib/utils";
-import type { SkillListItem } from "@/types/api";
-import { useMemo, useState } from "react";
-import { Link } from "react-router";
+import { useSkills } from '@/hooks/use-skills';
+import { cn } from '@/lib/utils';
+import type { SkillListItem } from '@/types/api';
+import { useState } from 'react';
+import { Link } from 'react-router';
 
-type TypeFilter = "all" | "owned" | "referenced";
-type SortMode = "hottest" | "recent" | "az";
+type TypeFilter = 'all' | 'owned' | 'referenced';
+type SortMode = 'hottest' | 'recent' | 'az';
 
 function Hero({
   query,
@@ -19,18 +19,8 @@ function Hero({
       <div className="absolute inset-0 opacity-[0.03]" aria-hidden>
         <svg width="100%" height="100%">
           <title>SkillHunt 背景网格</title>
-          <pattern
-            id="hero-grid"
-            width="40"
-            height="40"
-            patternUnits="userSpaceOnUse"
-          >
-            <path
-              d="M 40 0 L 0 0 0 40"
-              fill="none"
-              stroke="#0f172a"
-              strokeWidth="0.5"
-            />
+          <pattern id="hero-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#0f172a" strokeWidth="0.5" />
           </pattern>
           <rect width="100%" height="100%" fill="url(#hero-grid)" />
         </svg>
@@ -56,14 +46,7 @@ function Hero({
             aria-hidden
           >
             <title>搜索</title>
-            <circle
-              cx="8"
-              cy="8"
-              r="5.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            />
+            <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
             <line
               x1="12"
               y1="12"
@@ -104,27 +87,24 @@ function FilterBar({
         <div className="flex items-center gap-2 flex-wrap overflow-x-auto">
           <button
             type="button"
-            onClick={() => setType("all")}
-            className={cn("category-btn", type === "all" ? "active" : "")}
+            onClick={() => setType('all')}
+            className={cn('category-btn', type === 'all' ? 'active' : '')}
           >
             <span>◆</span>
             <span>全部发布</span>
           </button>
           <button
             type="button"
-            onClick={() => setType("owned")}
-            className={cn("category-btn", type === "owned" ? "active" : "")}
+            onClick={() => setType('owned')}
+            className={cn('category-btn', type === 'owned' ? 'active' : '')}
           >
             <span>⚡</span>
             <span>原创</span>
           </button>
           <button
             type="button"
-            onClick={() => setType("referenced")}
-            className={cn(
-              "category-btn",
-              type === "referenced" ? "active" : "",
-            )}
+            onClick={() => setType('referenced')}
+            className={cn('category-btn', type === 'referenced' ? 'active' : '')}
           >
             <span>🔗</span>
             <span>引用</span>
@@ -135,9 +115,9 @@ function FilterBar({
           <div className="flex border border-neutral-300 divide-x divide-neutral-300 font-mono text-[11.5px] rounded-lg overflow-hidden">
             {(
               [
-                ["hottest", "推荐"],
-                ["recent", "最新"],
-                ["az", "A-Z"],
+                ['hottest', '推荐'],
+                ['recent', '最新'],
+                ['az', 'A-Z'],
               ] as const
             ).map(([k, label]) => (
               <button
@@ -145,10 +125,10 @@ function FilterBar({
                 type="button"
                 onClick={() => setSort(k)}
                 className={cn(
-                  "px-3 py-1.5 transition",
+                  'px-3 py-1.5 transition',
                   sort === k
-                    ? "bg-neutral-900 text-neutral-100"
-                    : "bg-white text-neutral-600 hover:text-neutral-900",
+                    ? 'bg-neutral-900 text-neutral-100'
+                    : 'bg-white text-neutral-600 hover:text-neutral-900',
                 )}
               >
                 {label}
@@ -163,26 +143,23 @@ function FilterBar({
 
 function SkillCard({ skill }: { skill: SkillListItem }) {
   return (
-    <Link
-      to={`/skills/${skill.owner.handle}/${skill.slug}`}
-      className="skill-card flex flex-col"
-    >
+    <Link to={`/skills/${skill.owner.handle}/${skill.slug}`} className="skill-card flex flex-col">
       {/* Thumbnail */}
       <div className="aspect-square h-40 bg-gradient-to-br from-neutral-50 to-neutral-100 flex items-center justify-center text-[48px] select-none">
-        {skill.type === "owned" ? "📦" : "🔗"}
+        {skill.type === 'owned' ? '📦' : '🔗'}
       </div>
 
       {/* Content */}
       <div className="p-4 flex-1 flex flex-col">
         <div className="mb-3 flex items-center justify-between text-[11px] uppercase tracking-[0.12em] text-neutral-400">
-          <span>{skill.type === "owned" ? "发布" : "来源推荐"}</span>
+          <span>{skill.type === 'owned' ? '发布' : '来源推荐'}</span>
           <span>{new Date(skill.updatedAt).toLocaleDateString()}</span>
         </div>
         <div className="flex items-start justify-between gap-2 mb-2">
           <h3 className="font-semibold text-[15px] text-[#0f172a] leading-tight truncate">
             {skill.name}
           </h3>
-          {skill.type === "owned" && (
+          {skill.type === 'owned' && (
             <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 bg-emerald-50 border border-emerald-200 rounded text-[10px] font-medium text-emerald-700 uppercase tracking-wide">
               自有
             </span>
@@ -196,19 +173,13 @@ function SkillCard({ skill }: { skill: SkillListItem }) {
         {/* Footer */}
         <div className="mt-3 pt-3 border-t border-neutral-100 flex items-center justify-between">
           <span className="text-[12px] text-neutral-500">
-            作者{" "}
-            <span className="text-neutral-700 font-medium">
-              @{skill.owner.handle}
-            </span>
+            作者 <span className="text-neutral-700 font-medium">@{skill.owner.handle}</span>
           </span>
           <div className="flex items-center gap-3">
-            <span className="text-[11px] text-neutral-500">
-              ▲ {skill.upvoteCount}
-            </span>
-            <span className="text-[11px] text-neutral-500">
-              💬 {skill.commentCount}
-            </span>
-            {skill.type === "owned" && skill.visibility === "private" && (
+            <span className="text-[11px] text-neutral-500">▲ {skill.upvoteCount}</span>
+            <span className="text-[11px] text-neutral-500">💬 {skill.commentCount}</span>
+            <span className="text-[11px] text-neutral-500">🔖 {skill.bookmarkCount}</span>
+            {skill.type === 'owned' && skill.visibility === 'private' && (
               <span className="text-[10px] px-1.5 py-0.5 border border-amber-300 text-amber-700 bg-amber-50 rounded">
                 私有
               </span>
@@ -239,9 +210,7 @@ function SpotlightRow({ items }: { items: SkillListItem[] }) {
                 </span>
                 推荐
               </div>
-              <span className="text-[11px] text-neutral-400">
-                @{skill.owner.handle}
-              </span>
+              <span className="text-[11px] text-neutral-400">@{skill.owner.handle}</span>
             </div>
             <div className="text-[18px] font-semibold text-neutral-900 leading-tight">
               {skill.name}
@@ -262,6 +231,7 @@ function SpotlightRow({ items }: { items: SkillListItem[] }) {
             <div className="mt-4 flex items-center gap-4 text-[12px] text-neutral-500">
               <span>▲ {skill.upvoteCount}</span>
               <span>💬 {skill.commentCount}</span>
+              <span>🔖 {skill.bookmarkCount}</span>
             </div>
           </Link>
         ))}
@@ -271,45 +241,28 @@ function SpotlightRow({ items }: { items: SkillListItem[] }) {
 }
 
 export default function SkillsList() {
-  const [type, setType] = useState<TypeFilter>("all");
-  const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<SortMode>("recent");
+  const [type, setType] = useState<TypeFilter>('all');
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<SortMode>('recent');
 
-  const { items, loading, fetching, error } = useSkills({
+  const { items, total, loading, fetching, error, hasMore, loadMore } = useSkills({
     type,
     q: query.trim() ? query.trim() : undefined,
     tag: [],
+    sort,
+    limit: 20,
   });
 
-  const sorted = useMemo(() => {
-    const xs = items.slice();
-    if (sort === "recent") {
-      xs.sort(
-        (a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-      );
-    } else if (sort === "az") {
-      xs.sort((a, b) => a.name.localeCompare(b.name));
-    } else {
-      xs.sort((a, b) => {
-        const scoreA = a.upvoteCount * 3 + a.commentCount;
-        const scoreB = b.upvoteCount * 3 + b.commentCount;
-        return scoreB - scoreA;
-      });
-    }
-    return xs;
-  }, [items, sort]);
-
   const reset = () => {
-    setType("all");
-    setQuery("");
+    setType('all');
+    setQuery('');
   };
 
   const hasQuery = query.trim().length > 0;
 
   // 发现模式：前 3 个为推荐区，搜索模式时不分割
-  const spotlight = sorted.slice(0, 3);
-  const freshLaunches = hasQuery ? sorted : sorted.slice(3);
+  const spotlight = items.slice(0, 3);
+  const freshLaunches = hasQuery ? items : items.slice(3);
 
   return (
     <>
@@ -320,12 +273,7 @@ export default function SkillsList() {
 
       {/* 发现模式：展示分类与排序 */}
       {!loading && !error && !hasQuery && (
-        <FilterBar
-          type={type}
-          setType={setType}
-          sort={sort}
-          setSort={setSort}
-        />
+        <FilterBar type={type} setType={setType} sort={sort} setSort={setSort} />
       )}
 
       {error && (
@@ -340,15 +288,13 @@ export default function SkillsList() {
         </div>
       )}
 
-      {!error && !loading && sorted.length === 0 && (
+      {!error && !loading && items.length === 0 && (
         <div className="px-6 min-h-[400px] py-24 text-center">
           <div className="font-mono text-[12px] uppercase tracking-[0.18em] text-neutral-400 mb-3">
-            {hasQuery ? "未找到匹配结果" : "无匹配结果"}
+            {hasQuery ? '未找到匹配结果' : '无匹配结果'}
           </div>
           <div className="text-neutral-700 text-[15px]">
-            {hasQuery
-              ? "换个关键词或清除筛选条件试试。"
-              : "当前还没有任何发布内容。"}
+            {hasQuery ? '换个关键词或清除筛选条件试试。' : '当前还没有任何发布内容。'}
           </div>
           <button
             type="button"
@@ -360,12 +306,12 @@ export default function SkillsList() {
         </div>
       )}
 
-      {!error && !loading && sorted.length > 0 && (
+      {!error && !loading && items.length > 0 && (
         <>
           <div
             className={cn(
-              "px-6 pt-6 transition-opacity duration-150 py-2",
-              fetching ? "opacity-60" : "opacity-100",
+              'px-6 pt-6 transition-opacity duration-150 py-2',
+              fetching ? 'opacity-60' : 'opacity-100',
             )}
           >
             {hasQuery ? (
@@ -375,7 +321,7 @@ export default function SkillsList() {
                   搜索结果
                 </div>
                 <h2 className="text-[24px] font-semibold tracking-[-0.02em] text-neutral-900">
-                  找到 {sorted.length} 个与「{query.trim()}」相关的 skill
+                  找到 {total} 个与「{query.trim()}」相关的 skill
                 </h2>
               </div>
             ) : (
@@ -389,9 +335,7 @@ export default function SkillsList() {
                     社区下一步值得探索的内容
                   </h2>
                 </div>
-                <div className="text-[13px] text-neutral-500">
-                  共发现 {sorted.length} 个 skill
-                </div>
+                <div className="text-[13px] text-neutral-500">共发现 {total} 个 skill</div>
               </div>
             )}
             <div className="mx-auto max-w-[1200px] grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
@@ -401,13 +345,25 @@ export default function SkillsList() {
             </div>
           </div>
 
+          {/* 加载更多 */}
+          {!hasQuery && hasMore && (
+            <div className="flex justify-center py-8">
+              <button
+                type="button"
+                onClick={loadMore}
+                disabled={fetching}
+                className="font-mono text-[12px] uppercase tracking-[0.1em] border border-neutral-300 px-4 py-2 hover:border-neutral-900 transition rounded-lg disabled:opacity-50"
+              >
+                {fetching ? '加载中…' : '加载更多'}
+              </button>
+            </div>
+          )}
+
           {/* 发现模式：CTA 区 */}
           {!hasQuery && (
             <section className="px-6 py-16 mt-8 text-center">
               <div className="max-w-2xl mx-auto">
-                <h2 className="text-[28px] font-bold text-[#0f172a] mb-2">
-                  发布你的下一个 Skill
-                </h2>
+                <h2 className="text-[28px] font-bold text-[#0f172a] mb-2">发布你的下一个 Skill</h2>
                 <p className="text-[15px] text-[#64748b] mb-6">
                   分享你构建的能力，说明它的价值，让社区发现并尝试它。
                 </p>

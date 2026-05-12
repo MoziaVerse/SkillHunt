@@ -16,7 +16,7 @@ export default function ApiReference() {
       {/* Base URL */}
       <h2>基础地址</h2>
       <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {'https://skillhub.mozia.ai/api'}
+        {'https://skillhunt.mozia.ai/api'}
       </pre>
 
       {/* Authentication */}
@@ -105,7 +105,7 @@ export default function ApiReference() {
       </div>
       <p>示例：</p>
       <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl "https://skillhub.mozia.ai/api/skills?q=react&tag=frontend"`}
+        {`curl "https://skillhunt.mozia.ai/api/skills?q=react&tag=frontend"`}
       </pre>
       <p>响应：</p>
       <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
@@ -140,7 +140,7 @@ export default function ApiReference() {
       </h3>
       <p>获取单个 skill 的完整信息，包含 SKILL.md 内容和文件列表。</p>
       <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl "https://skillhub.mozia.ai/api/skills/alice/react-hooks"`}
+        {`curl "https://skillhunt.mozia.ai/api/skills/alice/react-hooks"`}
       </pre>
       <p>响应：</p>
       <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
@@ -155,7 +155,7 @@ export default function ApiReference() {
   "owner": { "id": "uuid", "name": "alice", "handle": "alice" },
   "skillMdContent": "---\\nname: React Hooks\\n---\\n...",
   "files": ["SKILL.md", "examples/usage.md"],
-  "installCommand": "npx skills add https://skillhub.mozia.ai/.well-known/agent-skills/alice/react-hooks/SKILL.md",
+  "installCommand": "npx skills add https://skillhunt.mozia.ai/.well-known/agent-skills/alice/react-hooks/SKILL.md",
   "createdAt": "2026-01-15T08:00:00.000Z",
   "updatedAt": "2026-03-01T12:00:00.000Z"
 }`}
@@ -167,7 +167,7 @@ export default function ApiReference() {
       </h3>
       <p>创建新 skill。需要登录。</p>
       <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl -X POST "https://skillhub.mozia.ai/api/skills" \\
+        {`curl -X POST "https://skillhunt.mozia.ai/api/skills" \\
   -H "Content-Type: application/json" \\
   -b "session_cookie" \\
   -d '{
@@ -192,7 +192,7 @@ export default function ApiReference() {
       </h3>
       <p>更新 skill。仅 owner 可操作，所有字段可选。</p>
       <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl -X PUT "https://skillhub.mozia.ai/api/skills/alice/react-hooks" \\
+        {`curl -X PUT "https://skillhunt.mozia.ai/api/skills/alice/react-hooks" \\
   -H "Content-Type: application/json" \\
   -b "session_cookie" \\
   -d '{
@@ -209,7 +209,7 @@ export default function ApiReference() {
       </h3>
       <p>删除 skill。仅 owner 可操作。</p>
       <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl -X DELETE "https://skillhub.mozia.ai/api/skills/alice/react-hooks" \\
+        {`curl -X DELETE "https://skillhunt.mozia.ai/api/skills/alice/react-hooks" \\
   -b "session_cookie"`}
       </pre>
       <p>
@@ -252,7 +252,7 @@ export default function ApiReference() {
         </table>
       </div>
       <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl -X POST "https://skillhub.mozia.ai/api/skills/alice/react-hooks/files/examples/usage.md" \\
+        {`curl -X POST "https://skillhunt.mozia.ai/api/skills/alice/react-hooks/files/examples/usage.md" \\
   -H "Content-Type: application/json" \\
   -b "session_cookie" \\
   -d '{ "content": "# Usage Examples\\n..." }'`}
@@ -271,7 +271,7 @@ export default function ApiReference() {
         删除附加文件。不能删除 <code>SKILL.md</code>。
       </p>
       <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl -X DELETE "https://skillhub.mozia.ai/api/skills/alice/react-hooks/files/examples/usage.md" \\
+        {`curl -X DELETE "https://skillhunt.mozia.ai/api/skills/alice/react-hooks/files/examples/usage.md" \\
   -b "session_cookie"`}
       </pre>
       <p>
@@ -287,7 +287,7 @@ export default function ApiReference() {
       </h3>
       <p>获取当前登录用户信息。需要登录。</p>
       <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl "https://skillhub.mozia.ai/api/users/me" -b "session_cookie"`}
+        {`curl "https://skillhunt.mozia.ai/api/users/me" -b "session_cookie"`}
       </pre>
       <p>响应：</p>
       <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
@@ -310,7 +310,7 @@ export default function ApiReference() {
       </h3>
       <p>获取指定用户公开的 skill 列表。</p>
       <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl "https://skillhub.mozia.ai/api/users/alice/skills"`}
+        {`curl "https://skillhunt.mozia.ai/api/users/alice/skills"`}
       </pre>
 
       {/* ── Install Tokens ── */}
@@ -352,7 +352,7 @@ export default function ApiReference() {
         </table>
       </div>
       <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl -X POST "https://skillhub.mozia.ai/api/install-tokens" \\
+        {`curl -X POST "https://skillhunt.mozia.ai/api/install-tokens" \\
   -H "Content-Type: application/json" \\
   -b "session_cookie" \\
   -d '{
@@ -367,14 +367,14 @@ export default function ApiReference() {
   "token": "abc123...",
   "expiresAt": "2026-05-08T12:00:00.000Z",
   "maxUses": 5,
-  "installCommand": "npx skills add https://skillhub.mozia.ai/i/abc123.../.well-known/agent-skills/..."
+  "installCommand": "npx skills add https://skillhunt.mozia.ai/i/abc123.../.well-known/agent-skills/..."
 }`}
       </pre>
 
       {/* ── Well-Known ── */}
       <h2>Well-Known 协议</h2>
       <p>
-        SkillHub 实现了{' '}
+        SkillHunt 实现了{' '}
         <code className="text-[13px] font-mono bg-neutral-100 px-1.5 py-0.5">
           /.well-known/agent-skills
         </code>{' '}
@@ -396,10 +396,10 @@ export default function ApiReference() {
       <p>获取指定 skill 的文件内容。</p>
       <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
         {`# 安装 skill
-npx skills add https://skillhub.mozia.ai/.well-known/agent-skills/alice/react-hooks/SKILL.md
+npx skills add https://skillhunt.mozia.ai/.well-known/agent-skills/alice/react-hooks/SKILL.md
 
 # 通过 capability URL 安装私有 skill
-npx skills add https://skillhub.mozia.ai/i/TOKEN/.well-known/agent-skills/alice/react-hooks/SKILL.md`}
+npx skills add https://skillhunt.mozia.ai/i/TOKEN/.well-known/agent-skills/alice/react-hooks/SKILL.md`}
       </pre>
 
       {/* ── Tags ── */}
@@ -410,7 +410,7 @@ npx skills add https://skillhub.mozia.ai/i/TOKEN/.well-known/agent-skills/alice/
       </h3>
       <p>获取所有公开 skill 使用的标签列表。</p>
       <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl "https://skillhub.mozia.ai/api/tags"`}
+        {`curl "https://skillhunt.mozia.ai/api/tags"`}
       </pre>
       <p>响应：</p>
       <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">

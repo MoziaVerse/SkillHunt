@@ -51,6 +51,9 @@ export interface ListSkillsParams {
   type?: 'all' | 'owned' | 'referenced';
   q?: string;
   tag?: string[];
+  sort?: 'recent' | 'hottest' | 'az';
+  limit?: number;
+  offset?: number;
 }
 
 export interface SessionUser {
@@ -94,6 +97,28 @@ export interface SkillCommentsResponse {
   total: number;
 }
 
+export interface CreateVideoUploadInput {
+  fileName: string;
+  contentType: string;
+  size: number;
+}
+
+export interface VideoUploadTicket {
+  uploadUrl: string;
+  objectKey: string;
+  videoUrl: string;
+  maxSizeBytes: number;
+  expiresInSeconds: number;
+}
+
+export interface UploadedVideoMetadata {
+  objectKey: string;
+  videoUrl: string;
+  playbackUrl: string;
+  size: number;
+  contentType: string | null;
+}
+
 export interface CreateSkillInput {
   owner: string;
   slug: string;
@@ -102,6 +127,9 @@ export interface CreateSkillInput {
   tags: string[];
   visibility: 'public' | 'private';
   skillMdContent: string;
+  icon?: string | null;
+  coverImage?: string | null;
+  demoVideoUrl?: string | null;
 }
 
 export interface UpdateSkillInput {
@@ -110,6 +138,9 @@ export interface UpdateSkillInput {
   tags?: string[];
   visibility?: 'public' | 'private';
   skillMdContent?: string;
+  icon?: string | null;
+  coverImage?: string | null;
+  demoVideoUrl?: string | null;
 }
 
 export const apiClient = {
@@ -120,6 +151,9 @@ export const apiClient = {
     if (params.type) usp.set('type', params.type);
     if (params.q) usp.set('q', params.q);
     if (params.tag) for (const t of params.tag) usp.append('tag', t);
+    if (params.sort) usp.set('sort', params.sort);
+    if (params.limit) usp.set('limit', String(params.limit));
+    if (params.offset) usp.set('offset', String(params.offset));
     const qs = usp.toString();
     return request<ListSkillsResponse>(`/skills${qs ? `?${qs}` : ''}`, { credentials: 'include' });
   },
@@ -161,7 +195,19 @@ export const apiClient = {
     );
   },
 
+  getSkillDemoVideoUrl(owner: string, slug: string): string {
+    return `${BASE}/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/demo-video`;
+  },
+
   // ─── Mutations ───────────────────────────────────────────────────────
+
+  createVideoUpload(input: CreateVideoUploadInput): Promise<VideoUploadTicket> {
+    return request<VideoUploadTicket>('/uploads/videos', json(input, 'POST'));
+  },
+
+  completeVideoUpload(objectKey: string): Promise<UploadedVideoMetadata> {
+    return request<UploadedVideoMetadata>('/uploads/videos/complete', json({ objectKey }, 'POST'));
+  },
 
   createSkill(input: CreateSkillInput): Promise<SkillDetail> {
     return request<SkillDetail>('/skills', json(input, 'POST'));
@@ -207,6 +253,24 @@ export const apiClient = {
       `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/upvote`,
       { method: 'DELETE', credentials: 'include' },
     );
+  },
+
+  bookmarkSkill(owner: string, slug: string): Promise<BaseSkill> {
+    return request<BaseSkill>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/bookmark`,
+      { method: 'POST', credentials: 'include' },
+    );
+  },
+
+  removeSkillBookmark(owner: string, slug: string): Promise<BaseSkill> {
+    return request<BaseSkill>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/bookmark`,
+      { method: 'DELETE', credentials: 'include' },
+    );
+  },
+
+  getMyBookmarks(): Promise<ListSkillsResponse> {
+    return request<ListSkillsResponse>('/users/me/bookmarks', { credentials: 'include' });
   },
 
   createSkillComment(

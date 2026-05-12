@@ -1,7 +1,11 @@
+import { CoverImageUpload } from '@/components/cover-image-upload';
+import { EmojiPicker } from '@/components/emoji-picker';
 import { Input } from '@/components/ui/input';
-import { ApiError } from '@/lib/api-client';
+import { ApiError, apiClient } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { useEffect, useMemo, useState } from 'react';
+
+const VIDEO_UPLOAD_MAX_BYTES = 500 * 1024 * 1024;
 
 const OFFICIAL_TAGS = [
   '编程开发',
@@ -26,6 +30,9 @@ export interface SkillFormValues {
   tags: string[];
   visibility: 'public' | 'private';
   skillMdContent: string;
+  icon: string | null;
+  coverImage: string | null;
+  demoVideoUrl: string | null;
 }
 
 export interface OwnerOption {
@@ -48,6 +55,10 @@ export interface SkillFormProps {
     name: string;
     tagline: string;
     tags: string[];
+    icon: string | null;
+    coverImage: string | null;
+    demoVideoUrl: string | null;
+    skillMdContent: string | null;
   }) => void;
 }
 
@@ -66,7 +77,7 @@ function nameToSlug(name: string): string {
     .slice(0, 64);
 }
 
-/** Parse simple YAML frontmatter from SKILL.md content. */
+/** Parse simple YAML frontmatter tags from SKILL.md content. */
 function parseFrontmatterTags(value: string | undefined): string[] {
   if (!value) return [];
   return value
@@ -76,55 +87,56 @@ function parseFrontmatterTags(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
-function splitSkillMd(md: string): { frontmatter: Record<string, string>; body: string } {
+function splitSkillMdDescription(md: string): string {
   const lines = md.split('\n');
-  if (lines[0] !== '---') return { frontmatter: {}, body: md };
-
-  const fm: Record<string, string> = {};
-  let endIndex = -1;
+  if (lines[0] !== '---') return '';
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
-    if (line === '---') {
-      endIndex = i;
-      break;
+    if (!line || line === '---') break;
+    if (line.startsWith('description:')) {
+      return line
+        .slice('description:'.length)
+        .trim()
+        .replace(/^["']|["']$/g, '');
     }
-    if (!line || !line.includes(':')) continue;
-    const idx = line.indexOf(':');
-    const key = line.slice(0, idx).trim();
-    const val = line
-      .slice(idx + 1)
-      .trim()
-      .replace(/^["']|["']$/g, '');
-    if (key) fm[key] = val;
   }
-
-  if (endIndex === -1) return { frontmatter: {}, body: md };
-  return {
-    frontmatter: fm,
-    body: lines
-      .slice(endIndex + 1)
-      .join('\n')
-      .replace(/^\n+/, ''),
-  };
+  return '';
 }
 
-function buildSkillMd(input: {
-  name: string;
-  tagline: string;
-  tags: string[];
-  body: string;
-  frontmatter: Record<string, string>;
-}) {
-  const nextFrontmatter = {
-    ...input.frontmatter,
-    name: input.name || 'my-skill',
-    description: input.tagline || '在这里填写一句话介绍',
-    tags: `[${input.tags.join(', ')}]`,
-  };
-  const frontmatterLines = Object.entries(nextFrontmatter).map(
-    ([key, value]) => `${key}: ${value}`,
-  );
-  return `---\n${frontmatterLines.join('\n')}\n---\n\n${input.body.trim()}\n`;
+function formatFileSize(bytes: number) {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${bytes}B`;
+}
+
+function inferVideoContentType(file: File): string | null {
+  if (file.type.toLowerCase().startsWith('video/')) return file.type;
+  const ext = file.name.split('.').pop()?.toLowerCase();
+  if (ext === 'mp4' || ext === 'm4v') return 'video/mp4';
+  if (ext === 'mov') return 'video/quicktime';
+  if (ext === 'webm') return 'video/webm';
+  if (ext === 'ogg' || ext === 'ogv') return 'video/ogg';
+  return null;
+}
+
+function isDirectVideoUrl(value: string | null): value is string {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return /\.(mp4|webm|mov|m4v|ogg|ogv)$/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function isManagedOssVideoUrl(value: string | null): value is string {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return url.pathname.includes('/skillhunt-videos/skillhunt/videos/');
+  } catch {
+    return false;
+  }
 }
 
 function FieldLabel({ children, hint }: { children: React.ReactNode; hint?: string }) {
@@ -147,9 +159,10 @@ export function SkillForm({
   submitLabel,
   onPreviewChange,
 }: SkillFormProps) {
-  const initialSkillMd = initial?.skillMdContent ?? defaultSkillMd(initial?.name ?? '');
-  const parsedSkillMd = splitSkillMd(initialSkillMd);
-  const initialTags = initial?.tags ?? parseFrontmatterTags(parsedSkillMd.frontmatter.tags);
+  // Raw SKILL.md content — never modified by form fields
+  const rawSkillMd = initial?.skillMdContent ?? defaultSkillMd(initial?.name ?? '');
+
+  const initialTags = initial?.tags ?? parseFrontmatterTagsFromMd(rawSkillMd);
   const initialOfficialTags = initialTags.filter((tag) =>
     OFFICIAL_TAGS.includes(tag as (typeof OFFICIAL_TAGS)[number]),
   );
@@ -161,7 +174,7 @@ export function SkillForm({
   const [owner, setOwner] = useState(initial?.owner ?? ownerOptions[0]?.handle ?? '');
   const [name, setName] = useState(initial?.name ?? initial?.slug ?? '');
   const [tagline, setTagline] = useState(
-    initial?.tagline ?? parsedSkillMd.frontmatter.description ?? '',
+    initial?.tagline ?? splitSkillMdDescription(rawSkillMd) ?? '',
   );
   // Slug is auto-derived from name in create mode; fixed in edit mode.
   const slug =
@@ -175,6 +188,12 @@ export function SkillForm({
   );
   const [selectedTags, setSelectedTags] = useState<string[]>(initialOfficialTags);
   const [customTagInput, setCustomTagInput] = useState(initialCustomTags.join(', '));
+  const [icon, setIcon] = useState<string | null>(initial?.icon ?? null);
+  const [coverImage, setCoverImage] = useState<string | null>(initial?.coverImage ?? null);
+  const [demoVideoUrl, setDemoVideoUrl] = useState<string | null>(initial?.demoVideoUrl ?? null);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
+  const [videoUploading, setVideoUploading] = useState(false);
+  const [videoUploadLabel, setVideoUploadLabel] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -192,22 +211,27 @@ export function SkillForm({
     () => [...selectedTags, ...customTags].slice(0, 5),
     [customTags, selectedTags],
   );
-  const skillMd = useMemo(
-    () =>
-      buildSkillMd({
-        name,
-        tagline,
-        tags: allTags,
-        body:
-          parsedSkillMd.body ||
-          `# ${name || 'my-skill'}\n\n## 何时使用\n\n描述触发条件或适用场景。\n`,
-        frontmatter: parsedSkillMd.frontmatter,
-      }),
-    [allTags, name, parsedSkillMd.body, parsedSkillMd.frontmatter, tagline],
-  );
 
   const slugProblem = !slug;
-  const tooShort = skillMd.trim().length < 20;
+  const tooShort = rawSkillMd.trim().length < 20;
+  const isManagedUploadedVideo = isManagedOssVideoUrl(demoVideoUrl);
+  const effectiveVideoPreviewUrl =
+    videoPreviewUrl ??
+    (demoVideoUrl && mode === 'edit'
+      ? apiClient.getSkillDemoVideoUrl(owner, slug)
+      : isDirectVideoUrl(demoVideoUrl)
+        ? demoVideoUrl
+        : null);
+
+  // Mutual exclusion: selecting one clears the other
+  const handleIconChange = (newIcon: string | null) => {
+    setIcon(newIcon);
+    if (newIcon) setCoverImage(null);
+  };
+  const handleCoverImageChange = (newImage: string | null) => {
+    setCoverImage(newImage);
+    if (newImage) setIcon(null);
+  };
 
   useEffect(() => {
     if (!onPreviewChange) return;
@@ -216,8 +240,23 @@ export function SkillForm({
       name: name.trim() || slug || '未命名 Skill',
       tagline: tagline.trim(),
       tags: allTags,
+      icon,
+      coverImage,
+      demoVideoUrl,
+      skillMdContent: rawSkillMd,
     });
-  }, [allTags, name, onPreviewChange, owner, slug, tagline]);
+  }, [
+    allTags,
+    coverImage,
+    demoVideoUrl,
+    icon,
+    name,
+    onPreviewChange,
+    owner,
+    rawSkillMd,
+    slug,
+    tagline,
+  ]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -225,6 +264,7 @@ export function SkillForm({
     if (slugProblem) return setError('slug 格式无效');
     if (tooShort) return setError('SKILL.md 至少需要 20 个字符');
     if (!tagline.trim()) return setError('请填写一句话介绍');
+    if (videoUploading) return setError('视频还在上传中，请稍等片刻');
 
     setSubmitting(true);
     try {
@@ -235,7 +275,10 @@ export function SkillForm({
         tagline: tagline.trim(),
         tags: allTags,
         visibility,
-        skillMdContent: skillMd,
+        skillMdContent: rawSkillMd,
+        icon,
+        coverImage,
+        demoVideoUrl,
       });
     } catch (err) {
       const msg =
@@ -246,6 +289,56 @@ export function SkillForm({
             : '提交失败';
       setError(msg);
       setSubmitting(false);
+    }
+  };
+
+  const handleVideoFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+    if (!file) return;
+
+    setError(null);
+    const contentType = inferVideoContentType(file);
+    if (!contentType) {
+      setError('请选择 MP4、WebM、MOV 或 OGG 视频文件');
+      return;
+    }
+    if (file.size > VIDEO_UPLOAD_MAX_BYTES) {
+      setError('演示视频不能超过 500MB');
+      return;
+    }
+
+    setVideoUploading(true);
+    setVideoUploadLabel(`${file.name} · 上传中`);
+    try {
+      const ticket = await apiClient.createVideoUpload({
+        fileName: file.name,
+        contentType,
+        size: file.size,
+      });
+      const uploadResponse = await fetch(ticket.uploadUrl, {
+        method: 'PUT',
+        headers: { 'content-type': contentType },
+        body: file,
+      });
+      if (!uploadResponse.ok) {
+        throw new Error(`视频上传失败：${uploadResponse.status}`);
+      }
+      const uploaded = await apiClient.completeVideoUpload(ticket.objectKey);
+      setDemoVideoUrl(uploaded.videoUrl);
+      setVideoPreviewUrl(uploaded.playbackUrl);
+      setVideoUploadLabel(`${file.name} · ${formatFileSize(uploaded.size)}`);
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? `${err.status}: ${err.body || '视频上传失败'}`
+          : err instanceof Error
+            ? err.message
+            : '视频上传失败';
+      setError(msg);
+      setVideoUploadLabel(null);
+    } finally {
+      setVideoUploading(false);
     }
   };
 
@@ -306,6 +399,103 @@ export function SkillForm({
           />
           <div className="mt-1 text-[12px] text-neutral-400">
             用一句话说清楚它的价值，建议控制在 40 字以内。
+          </div>
+        </div>
+
+        {/* Icon / Cover — mutually exclusive */}
+        <div>
+          <FieldLabel hint="二选一，用于列表页和详情页展示">图标</FieldLabel>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <div className="text-[12px] font-medium text-neutral-600 mb-2">Emoji 图标</div>
+              <EmojiPicker value={icon} onChange={handleIconChange} disabled={!!coverImage} />
+              {coverImage && (
+                <div className="mt-2 text-[11px] text-neutral-400">
+                  已选择封面图，Emoji 图标不可同时使用
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="text-[12px] font-medium text-neutral-600 mb-2">封面图片</div>
+              <CoverImageUpload
+                value={coverImage}
+                onChange={handleCoverImageChange}
+                disabled={!!icon}
+              />
+              {icon && (
+                <div className="mt-2 text-[11px] text-neutral-400">
+                  已选择 Emoji 图标，封面图不可同时使用
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Demo video upload */}
+        <div>
+          <FieldLabel hint="可选，上传到 SkillHunt OSS，单个视频不超过 500MB">演示视频</FieldLabel>
+          <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <div className="text-[13px] font-medium text-neutral-800">
+                  {demoVideoUrl
+                    ? videoUploadLabel || '已添加演示视频'
+                    : '上传一个演示视频，帮助别人快速判断实际效果'}
+                </div>
+                <div className="mt-1 text-[12px] text-neutral-500">
+                  支持 MP4、WebM、MOV、OGG，文件大小上限 500MB。
+                </div>
+                {isManagedUploadedVideo && (
+                  <div className="mt-2 text-[12px] text-emerald-700">
+                    视频已保存到 SkillHunt OSS，可在下方直接预览。
+                  </div>
+                )}
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <label
+                  className={cn(
+                    'inline-flex cursor-pointer items-center rounded-lg border border-neutral-300 bg-white px-3 py-2 text-[12px] font-medium text-neutral-700 transition hover:border-neutral-500',
+                    videoUploading && 'pointer-events-none opacity-50',
+                  )}
+                >
+                  <input
+                    type="file"
+                    accept="video/mp4,video/webm,video/quicktime,video/ogg,video/*"
+                    className="sr-only"
+                    disabled={videoUploading}
+                    onChange={handleVideoFileChange}
+                  />
+                  {videoUploading ? '上传中…' : demoVideoUrl ? '替换视频' : '选择视频'}
+                </label>
+                {demoVideoUrl && (
+                  <button
+                    type="button"
+                    disabled={videoUploading}
+                    onClick={() => {
+                      setDemoVideoUrl(null);
+                      setVideoPreviewUrl(null);
+                      setVideoUploadLabel(null);
+                    }}
+                    className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-[12px] text-neutral-500 transition hover:border-neutral-500 hover:text-neutral-900 disabled:opacity-50"
+                  >
+                    移除
+                  </button>
+                )}
+              </div>
+            </div>
+            {effectiveVideoPreviewUrl && (
+              <div className="mt-4 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-950">
+                <video
+                  key={effectiveVideoPreviewUrl}
+                  src={effectiveVideoPreviewUrl}
+                  controls
+                  preload="metadata"
+                  className="aspect-video w-full"
+                >
+                  <track kind="captions" label="暂无字幕" src="data:text/vtt,WEBVTT%0A" />
+                </video>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -385,32 +575,71 @@ export function SkillForm({
         </div>
       </div>
 
-      <div className="rounded-2xl border border-neutral-200 bg-white p-5">
-        <FieldLabel hint={`${skillMd.length} 字符`}>SKILL.md 预览</FieldLabel>
-        {skillMd ? (
-          <pre className="w-full font-mono text-[12.5px] border border-neutral-200 rounded-xl bg-neutral-50 px-4 py-3 leading-relaxed overflow-auto max-h-[480px] whitespace-pre-wrap break-words">
-            {skillMd}
-          </pre>
-        ) : (
-          <div className="font-mono text-[12px] text-neutral-400 py-6 text-center border border-dashed border-neutral-300 rounded-xl">
-            请先上传 SKILL.md 文件或文件夹
-          </div>
-        )}
-      </div>
-
       {error && (
         <div className="border border-red-300 bg-red-50 px-3 py-2 font-mono text-[12px] text-red-700 rounded-xl">
           {error}
         </div>
       )}
 
+      {/* Preview card */}
+      <div className="rounded-2xl border border-neutral-200 bg-white overflow-hidden">
+        <div className="px-5 py-4 border-b border-neutral-100 bg-neutral-50">
+          <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
+            发布预览
+          </div>
+        </div>
+        <div className="p-5">
+          <div className="rounded-2xl border border-neutral-200 bg-white overflow-hidden">
+            {coverImage ? (
+              <img src={coverImage} alt="封面" className="w-full h-32 object-cover" />
+            ) : null}
+            <div className="p-5">
+              <div className="flex items-center justify-between mb-3">
+                <span className="inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-emerald-700">
+                  {!coverImage && icon ? (
+                    <span className="text-[18px] leading-none">{icon}</span>
+                  ) : (
+                    <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-semibold">
+                      {(name || 'N').charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                  新发布
+                </span>
+                <span className="text-[11px] text-neutral-400">@{owner}</span>
+              </div>
+              <div className="text-[20px] font-semibold text-neutral-900 leading-tight">
+                {name.trim() || '未命名 Skill'}
+              </div>
+              <p className="mt-2 text-[14px] text-neutral-600 leading-relaxed">
+                {tagline.trim() || '一句话介绍会显示在这里'}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {(allTags.length > 0 ? allTags : ['待选择标签']).map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] text-neutral-600"
+                  >
+                    #{tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 rounded-xl border border-dashed border-neutral-200 px-4 py-4 text-[13px] text-neutral-500">
+            这张卡片会帮助你快速判断：社区在列表页第一眼看到的内容是否足够吸引人。
+          </div>
+        </div>
+      </div>
+
       <div className="flex gap-3 items-center">
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || videoUploading}
           className="font-mono text-[12px] uppercase tracking-[0.1em] bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-lg transition shadow-sm disabled:opacity-50"
         >
-          {submitting ? '…' : (submitLabel ?? (mode === 'create' ? '立即发布' : '保存'))}
+          {submitting || videoUploading
+            ? '…'
+            : (submitLabel ?? (mode === 'create' ? '立即发布' : '保存'))}
         </button>
         {onCancel && (
           <button
@@ -429,4 +658,17 @@ export function SkillForm({
 function defaultSkillMd(name: string): string {
   const displayName = name || 'my-skill';
   return `---\nname: ${displayName}\ndescription: 在这里填写一句话介绍\ntags: []\n---\n\n# ${displayName}\n\n## 何时使用\n\n描述触发条件或适用场景。\n\n## 如何使用\n\n写下 agent 应该遵循的步骤。\n`;
+}
+
+function parseFrontmatterTagsFromMd(md: string): string[] {
+  const lines = md.split('\n');
+  if (lines[0] !== '---') return [];
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line || line === '---') break;
+    if (line.startsWith('tags:')) {
+      return parseFrontmatterTags(line.slice('tags:'.length).trim());
+    }
+  }
+  return [];
 }

@@ -13,6 +13,9 @@ export interface BaseSkill {
   name: string;
   description: string;
   tags: string[];
+  icon: string | null;
+  coverImage: string | null;
+  demoVideoUrl: string | null;
   createdAt: string;
   updatedAt: string;
   owner: OwnerInfo;
@@ -20,6 +23,7 @@ export interface BaseSkill {
   commentCount: number;
   bookmarkCount: number;
   viewerHasUpvoted: boolean;
+  viewerHasBookmarked: boolean;
 }
 
 export interface OwnedSkillListItem extends BaseSkill {
