@@ -217,9 +217,6 @@ function TopNav() {
       <div className="mx-auto max-w-[1200px] px-6 h-[58px] flex items-center justify-between">
         <Link to="/" className="flex items-end gap-3">
           <Logo size={28} className="text-white" />
-          <span className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-neutral-500 ml-1 hidden sm:inline">
-            · mozia
-          </span>
         </Link>
         <nav className="flex items-center gap-3 font-mono text-[12.5px]">
           <Link
@@ -251,9 +248,9 @@ function Footer() {
   return (
     <footer className="border-t border-neutral-200 bg-neutral-50">
       <div className="mx-auto max-w-[1200px] px-6 py-12">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-8 mb-10">
-          <div className="col-span-2 md:col-span-1">
-            <div className="flex items-center gap-2 mb-3">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="mb-3 flex items-center gap-2">
               <Logo size={24} className="text-neutral-900" />
             </div>
             <div className="font-mono text-[11px] text-neutral-500 leading-relaxed">
@@ -261,87 +258,35 @@ function Footer() {
             </div>
           </div>
 
-          <div>
-            <div className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-neutral-500 mb-3">
-              产品
-            </div>
-            <ul className="space-y-2 text-[13px]">
-              <li>
-                <Link to="/" className="text-neutral-600 hover:text-neutral-900 transition">
-                  发现
-                </Link>
-              </li>
-              <li>
-                <Link to="/docs" className="text-neutral-600 hover:text-neutral-900 transition">
-                  文档
-                </Link>
-              </li>
-              <li>
-                <Link to="/publish" className="text-neutral-600 hover:text-neutral-900 transition">
-                  发布 Skill
-                </Link>
-              </li>
-            </ul>
-          </div>
+          <nav className="flex flex-wrap gap-x-5 gap-y-2 text-[13px]">
+            <Link to="/" className="text-neutral-600 hover:text-neutral-900 transition">
+              发现
+            </Link>
+            <Link to="/publish" className="text-neutral-600 hover:text-neutral-900 transition">
+              发布 Skill
+            </Link>
+            <a
+              href="https://mzsjai.com"
+              target="_blank"
+              rel="noreferrer"
+              className="text-neutral-600 hover:text-neutral-900 transition"
+            >
+              关于我们
+            </a>
+          </nav>
+        </div>
 
+        <div className="flex flex-col gap-2 text-[12px] text-neutral-500 sm:flex-row sm:items-center sm:justify-between">
+          <div>© 2026 摩智视界</div>
           <div>
-            <div className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-neutral-500 mb-3">
-              资源
-            </div>
-            <ul className="space-y-2 text-[13px]">
-              <li>
-                <Link
-                  to="/docs/api-reference"
-                  className="text-neutral-600 hover:text-neutral-900 transition"
-                >
-                  API 参考
-                </Link>
-              </li>
-              <li>
-                <span className="text-neutral-400">更新日志</span>
-              </li>
-              <li>
-                <span className="text-neutral-400">常见问题</span>
-              </li>
-            </ul>
-          </div>
-
-          <div>
-            <div className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-neutral-500 mb-3">
-              连接
-            </div>
-            <ul className="space-y-2 text-[13px]">
-              <li>
-                <span className="text-neutral-400">反馈</span>
-              </li>
-              <li>
-                <a
-                  href="https://github.com/MoziaVerse/mozia-skillhub"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-neutral-600 hover:text-neutral-900 transition"
-                >
-                  GitHub
-                </a>
-              </li>
-              <li>
-                <span className="text-neutral-400">联系</span>
-              </li>
-            </ul>
-          </div>
-
-          <div>
-            <div className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-neutral-500 mb-3">
-              法律
-            </div>
-            <ul className="space-y-2 text-[13px]">
-              <li>
-                <span className="text-neutral-400">服务条款</span>
-              </li>
-              <li>
-                <span className="text-neutral-400">隐私政策</span>
-              </li>
-            </ul>
+            <a
+              href="https://beian.miit.gov.cn/"
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-neutral-900 transition"
+            >
+              浙ICP备2025205413号-4
+            </a>
           </div>
         </div>
       </div>
