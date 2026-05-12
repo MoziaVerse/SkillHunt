@@ -138,6 +138,17 @@ export interface SkillWithOwner {
   viewerHasBookmarked: boolean;
 }
 
+export type SkillAccessScope =
+  | 'skills:read'
+  | 'skills:read_private'
+  | 'skills:files:read'
+  | 'skills:install';
+
+export interface SkillAccessActor {
+  userId: string | null;
+  scopes: readonly string[];
+}
+
 export interface ListSkillsOptions {
   type: 'owned' | 'referenced' | 'all';
   q?: string;
@@ -147,6 +158,7 @@ export interface ListSkillsOptions {
    * Used so that the viewer can see their own private skills in the list.
    */
   viewerUserId: string | null;
+  includePrivate?: boolean;
   sort?: 'recent' | 'hottest' | 'az';
   limit?: number;
   offset?: number;
@@ -214,6 +226,34 @@ function mapSkillRow<
   };
 }
 
+function actorHasScope(actor: SkillAccessActor, scope: SkillAccessScope): boolean {
+  return actor.scopes.includes(scope);
+}
+
+export function canReadSkill(skill: SkillWithOwner, actor: SkillAccessActor): boolean {
+  if (!actorHasScope(actor, 'skills:read')) return false;
+  if (skill.type !== 'owned') return true;
+  if (skill.visibility === 'public') return true;
+  return (
+    Boolean(actor.userId) &&
+    skill.ownerUserId === actor.userId &&
+    actorHasScope(actor, 'skills:read_private')
+  );
+}
+
+export function canReadSkillFiles(skill: SkillWithOwner, actor: SkillAccessActor): boolean {
+  if (!canReadSkill(skill, actor)) return false;
+  if (skill.type !== 'owned') return false;
+  if (skill.visibility === 'public') return true;
+  return actorHasScope(actor, 'skills:files:read');
+}
+
+export function canMintSkillInstallGrant(skill: SkillWithOwner, actor: SkillAccessActor): boolean {
+  if (!actor.userId) return false;
+  if (!actorHasScope(actor, 'skills:install')) return false;
+  return canReadSkill(skill, actor);
+}
+
 export async function listSkillsForApi(
   opts: ListSkillsOptions,
 ): Promise<{ items: SkillWithOwner[]; total: number }> {
@@ -225,9 +265,10 @@ export async function listSkillsForApi(
 
   // Visibility: public + referenced are visible to everyone. A logged-in
   // viewer additionally sees their own private skills.
-  const ownPrivate = opts.viewerUserId
-    ? and(eq(skills.visibility, 'private'), eq(skills.ownerUserId, opts.viewerUserId))
-    : undefined;
+  const ownPrivate =
+    opts.viewerUserId && opts.includePrivate
+      ? and(eq(skills.visibility, 'private'), eq(skills.ownerUserId, opts.viewerUserId))
+      : undefined;
   const visibilityCond = or(
     eq(skills.visibility, 'public'),
     eq(skills.type, 'referenced'),
@@ -448,6 +489,7 @@ export interface UserRow {
   name: string;
   handle: string;
   email: string;
+  ssoSub: string | null;
   image: string | null;
   isVirtual: boolean;
   canPublishAs: string[];
@@ -458,6 +500,7 @@ const userRowSelect = {
   name: user.name,
   handle: user.handle,
   email: user.email,
+  ssoSub: user.ssoSub,
   image: user.image,
   isVirtual: user.isVirtual,
   canPublishAs: user.canPublishAs,

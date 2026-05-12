@@ -252,7 +252,7 @@ export const RESERVED_HANDLES = new Set([
   'www',
 ]);
 
-// PATCH /api/users/me/profile — both name (display) and handle (URL) editable,
+// PATCH /api/me/profile — both name (display) and handle (URL) editable,
 // either independently. handle goes through SLUG_RE; name has no charset rule
 // beyond a length cap.
 export const updateProfileSchema = z
@@ -268,7 +268,7 @@ export const updateProfileSchema = z
 
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 
-// PATCH /api/users/me/avatar — accepts a base64 data-URL or clears with null.
+// PATCH /api/me/avatar — accepts a base64 data-URL or clears with null.
 export const updateAvatarSchema = z.object({
   image: z
     .string()

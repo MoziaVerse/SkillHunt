@@ -22,6 +22,16 @@ const OWNER_USER_ID = 'test-owner';
 const OTHER_USER_ID = 'test-other';
 const OWNER_NAME = 'tester';
 const OTHER_NAME = 'other';
+const FULL_TEST_SCOPES = [
+  'profile:read',
+  'skills:read',
+  'skills:read_private',
+  'skills:files:read',
+  'skills:install',
+  'skills:write',
+  'community:write',
+  'notifications:read',
+];
 
 // Per-request injected auth — read a custom test header so individual cases
 // can simulate "no session" vs "logged in".
@@ -34,14 +44,32 @@ mock.module('../lib/auth-context', () => ({
     req: { header: (k: string) => string | undefined };
   }): Promise<AuthContext> => {
     const userId = c.req.header(HEADER);
-    if (!userId) return { user: null };
+    if (!userId) {
+      return {
+        actorType: 'anonymous',
+        authMethod: 'anonymous',
+        user: null,
+        clientId: null,
+        scopes: ['skills:read'],
+      };
+    }
+    const scopedHeader = c.req.header('x-test-scopes');
     return {
+      actorType: 'user',
+      authMethod: 'cookie',
       user: {
         id: userId,
         email: `${userId}@example.com`,
         name: userId,
         ssoSub: `sso-${userId}`,
       },
+      clientId: null,
+      scopes: (scopedHeader
+        ? scopedHeader
+            .split(',')
+            .map((scope) => scope.trim())
+            .filter(Boolean)
+        : FULL_TEST_SCOPES) as AuthContext['scopes'],
     };
   },
 }));
@@ -158,6 +186,17 @@ const reqAnon = (path: string, init?: RequestInit) => new Request(`http://localh
 const reqAsUser = (path: string, userId: string, init?: RequestInit) => {
   const headers = new Headers(init?.headers);
   headers.set(HEADER, userId);
+  return new Request(`http://localhost${path}`, { ...init, headers });
+};
+const reqAsUserWithScopes = (
+  path: string,
+  userId: string,
+  scopes: string[],
+  init?: RequestInit,
+) => {
+  const headers = new Headers(init?.headers);
+  headers.set(HEADER, userId);
+  headers.set('x-test-scopes', scopes.join(','));
   return new Request(`http://localhost${path}`, { ...init, headers });
 };
 const jsonInit = (body: unknown, method = 'POST'): RequestInit => ({
@@ -925,6 +964,48 @@ describe('business API', () => {
     });
   });
 
+  describe('GET /api/skills/:owner/:slug/files and /package', () => {
+    it('lists public skill files for anonymous callers', async () => {
+      const res = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub/files`));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { items: Array<{ path: string }>; total: number };
+      expect(body.total).toBeGreaterThanOrEqual(1);
+      expect(body.items.some((file) => file.path === 'SKILL.md')).toBe(true);
+    });
+
+    it('returns a package snapshot for public owned skills', async () => {
+      const res = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub/package`));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        protocolName: string;
+        hash: string;
+        files: Array<{ path: string; content: string }>;
+      };
+      expect(body.protocolName).toBe(skillProtocolName(OWNER_NAME, 'test-owned-pub'));
+      expect(body.hash).toHaveLength(64);
+      expect(body.files.some((file) => file.path === 'SKILL.md')).toBe(true);
+    });
+
+    it('returns a private package to the owner with private/file scopes', async () => {
+      const res = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-priv/package`, OWNER_USER_ID),
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { files: Array<{ path: string; content: string }> };
+      expect(body.files.some((file) => file.path === 'references/private.md')).toBe(true);
+    });
+
+    it('hides private package when the actor lacks private-read scope', async () => {
+      const res = await app.fetch(
+        reqAsUserWithScopes(`/api/skills/${OWNER_NAME}/test-owned-priv/package`, OWNER_USER_ID, [
+          'skills:read',
+          'skills:files:read',
+        ]),
+      );
+      expect(res.status).toBe(404);
+    });
+  });
+
   describe('DELETE /api/skills/:owner/:slug/files/:path', () => {
     it('owner can remove an extra file', async () => {
       // First upload it
@@ -967,6 +1048,13 @@ describe('business API', () => {
       const body = (await res.json()) as { name: string; isVirtual: boolean };
       expect(body.name).toBe(OWNER_NAME);
       expect(body.isVirtual).toBe(false);
+    });
+
+    it('also supports the canonical /api/me endpoint', async () => {
+      const res = await app.fetch(reqAsUser('/api/me', OWNER_USER_ID));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { handle: string };
+      expect(body.handle).toBe(OWNER_NAME);
     });
   });
 
@@ -1038,6 +1126,15 @@ describe('business API', () => {
       const body = (await res.json()) as { items: Array<{ slug: string }> };
       expect(body.items.map((i) => i.slug).sort()).toEqual(['test-owned-priv', 'test-owned-pub']);
     });
+
+    it('supports /api/me/skills and honors private-read scope', async () => {
+      const res = await app.fetch(
+        reqAsUserWithScopes('/api/me/skills', OWNER_USER_ID, ['skills:read']),
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { items: Array<{ slug: string }> };
+      expect(body.items.map((i) => i.slug)).toEqual(['test-owned-pub']);
+    });
   });
 
   describe('GET /api/users/:owner/skills', () => {
@@ -1056,6 +1153,14 @@ describe('business API', () => {
       const res = await app.fetch(reqAsUser(`/api/users/${OWNER_NAME}/skills`, OWNER_USER_ID));
       const body = (await res.json()) as { items: Array<{ slug: string }> };
       expect(body.items.map((i) => i.slug).sort()).toEqual(['test-owned-priv', 'test-owned-pub']);
+    });
+
+    it('owner without private-read scope only sees their public skills', async () => {
+      const res = await app.fetch(
+        reqAsUserWithScopes(`/api/users/${OWNER_NAME}/skills`, OWNER_USER_ID, ['skills:read']),
+      );
+      const body = (await res.json()) as { items: Array<{ slug: string }> };
+      expect(body.items.map((i) => i.slug)).toEqual(['test-owned-pub']);
     });
 
     it('404 for unknown user', async () => {
