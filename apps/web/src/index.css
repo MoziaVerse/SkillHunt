@@ -157,6 +157,7 @@
   padding-bottom: 8px;
   border-bottom: 1px solid #e5e5e5;
   letter-spacing: -0.01em;
+  scroll-margin-top: 88px;
 }
 .prose-docs p {
   margin: 14px 0;

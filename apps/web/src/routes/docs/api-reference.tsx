@@ -1,3 +1,82 @@
+const codeBlockClass =
+  'my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto';
+const inlineCodeClass = 'text-[13px] font-mono bg-neutral-100 px-1.5 py-0.5';
+const tableClass =
+  'w-full text-[13px] font-mono border border-neutral-200 rounded-xl overflow-hidden';
+const tableHeadRowClass = 'border-b border-neutral-200 bg-neutral-50';
+const tableBodyRowClass = 'border-b border-neutral-100';
+const thClass = 'text-left px-3 py-2';
+const tdClass = 'px-3 py-2';
+const tdTextClass = 'px-3 py-2 text-[13px] font-sans';
+
+const scopeRows = [
+  ['profile:read', '读取当前登录用户资料', 'GET /me'],
+  ['skills:read', '读取公开 skill', 'GET /skills、GET /skills/:owner/:slug'],
+  ['skills:read_private', '读取当前用户可见的私有 skill 元信息', 'GET /me/skills'],
+  ['skills:files:read', '读取 skill 文件内容和安装包快照', 'GET /skills/:owner/:slug/package'],
+  ['skills:install', '为可访问的 skill 生成安装令牌', 'POST /install-tokens'],
+  ['skills:write', '创建、更新、删除 skill 和文件', 'POST /skills、PUT /skills/:owner/:slug'],
+  ['community:write', '评论、点赞、收藏等社区动作', 'POST /comments、POST /upvote'],
+  ['notifications:read', '读取和更新当前用户通知', 'GET /notifications'],
+];
+
+const endpointGroups = [
+  {
+    title: '公开发现',
+    rows: [
+      ['GET /skills', '无需认证', '搜索、筛选和分页获取公开 skill。'],
+      ['GET /skills/:owner/:slug', '无需认证', '读取公开 skill 详情。'],
+      ['GET /tags', '无需认证', '读取公开 skill 使用过的标签。'],
+    ],
+  },
+  {
+    title: '当前用户与私有内容',
+    rows: [
+      ['GET /me', 'profile:read', '读取当前登录用户资料。'],
+      ['GET /me/skills', 'skills:read_private', '读取当前用户发布、引用和可见的私有 skill。'],
+      ['GET /me/bookmarks', 'skills:read', '读取当前用户收藏的 skill。'],
+      [
+        'GET /users/:owner/skills',
+        'skills:read_private',
+        '读取指定用户公开 skill；本人可额外看到自己的私有 skill。',
+      ],
+      [
+        'GET /skills/:owner/:slug/package',
+        'skills:files:read',
+        '读取 Agent 可安装的完整文件快照。',
+      ],
+      ['GET /skills/:owner/:slug/files', 'skills:files:read', '读取文件列表。'],
+      ['GET /skills/:owner/:slug/files/:path', 'skills:files:read', '读取单个文件内容。'],
+    ],
+  },
+  {
+    title: '发布与维护',
+    rows: [
+      ['POST /skills', 'skills:write', '发布一个新 skill。'],
+      ['PUT /skills/:owner/:slug', 'skills:write', '更新 skill 的展示信息、可见性和 SKILL.md。'],
+      ['DELETE /skills/:owner/:slug', 'skills:write', '删除 skill。'],
+      ['POST /skills/:owner/:slug/files/:path', 'skills:write', '添加或更新附加文件。'],
+      [
+        'DELETE /skills/:owner/:slug/files/:path',
+        'skills:write',
+        '删除附加文件，不能删除 SKILL.md。',
+      ],
+    ],
+  },
+  {
+    title: '社区与安装',
+    rows: [
+      ['GET /skills/:owner/:slug/comments', '无需认证', '读取公开 skill 评论。'],
+      ['POST /skills/:owner/:slug/comments', 'community:write', '发表评论。'],
+      ['POST /skills/:owner/:slug/upvote', 'community:write', '点赞 skill。'],
+      ['DELETE /skills/:owner/:slug/upvote', 'community:write', '取消点赞。'],
+      ['POST /skills/:owner/:slug/bookmark', 'community:write', '收藏 skill。'],
+      ['DELETE /skills/:owner/:slug/bookmark', 'community:write', '取消收藏。'],
+      ['POST /install-tokens', 'skills:install', '为私有 skill 生成有时效、有限次数的安装链接。'],
+    ],
+  },
+];
+
 export default function ApiReference() {
   return (
     <>
@@ -9,414 +88,260 @@ export default function ApiReference() {
           API 参考
         </h1>
         <p className="mt-3 text-[16px] text-[#64748b] max-w-2xl">
-          SkillHunt REST API 的完整参考。所有端点均返回 JSON，使用 HTTPS。
+          这篇文档面向要接入 SkillHunt 的第三方应用和 Agent
+          客户端。阅读顺序建议是：先确认基础地址，再接入 SSO 登录，最后按业务场景选择端点。
         </p>
       </header>
 
-      {/* Base URL */}
-      <h2>基础地址</h2>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {'https://skillhunt.mozia.ai/api'}
+      <h2 id="base-url">基础地址</h2>
+      <p>所有 API 都以这个地址为前缀，响应格式均为 JSON。</p>
+      <pre className={codeBlockClass}>{'https://skillhunt.mozia.ai/api'}</pre>
+
+      <h2 id="quick-start">最快接入</h2>
+      <p>只读取公开 skill 时不需要登录；读取用户私有内容时，必须携带 SSO 返回的 access_token。</p>
+
+      <h3>1. 搜索公开 skill</h3>
+      <pre className={codeBlockClass}>
+        {`curl "https://skillhunt.mozia.ai/api/skills?q=video&sort=hottest&limit=20"`}
       </pre>
 
-      {/* Authentication */}
-      <h2>认证</h2>
+      <h3>2. 读取当前用户的 skill</h3>
+      <pre className={codeBlockClass}>
+        {`curl "https://skillhunt.mozia.ai/api/me/skills" \\
+  -H "Authorization: Bearer sso_access_token"`}
+      </pre>
+
+      <h3>3. 获取可安装的文件快照</h3>
+      <pre className={codeBlockClass}>
+        {`curl "https://skillhunt.mozia.ai/api/skills/alice/video-helper/package" \\
+  -H "Authorization: Bearer sso_access_token"`}
+      </pre>
+
+      <h2 id="auth">认证方式</h2>
       <p>
-        公开端点无需认证。创建、更新、删除 skill 需要通过 mozia-sso 登录获取 session
-        cookie。请求时浏览器会自动携带 cookie。
+        SkillHunt 目前只接受同一套 SSO 登录后获得的 OAuth/OIDC{' '}
+        <code className={inlineCodeClass}>access_token</code> 作为私有 API 凭据。
+      </p>
+      <pre className={codeBlockClass}>{'Authorization: Bearer sso_access_token'}</pre>
+      <p>
+        不要使用 <code className={inlineCodeClass}>id_token</code> 调用 API。id_token
+        只用于让客户端确认用户是谁；access_token 才用于访问 SkillHunt 资源。SkillHunt 会验证 token
+        的签名、签发方、过期时间和 scope。
       </p>
 
-      {/* Errors */}
-      <h2>错误</h2>
-      <p>所有错误响应格式一致：</p>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
+      <h2 id="scopes">Scope</h2>
+      <p>第三方应用只应申请自己业务需要的 scope。读取私有 skill 文件通常需要同时具备两个权限。</p>
+      <pre className={codeBlockClass}>{'skills:read_private skills:files:read'}</pre>
+      <div className="my-4 overflow-x-auto">
+        <table className={tableClass}>
+          <thead>
+            <tr className={tableHeadRowClass}>
+              <th className={thClass}>Scope</th>
+              <th className={thClass}>能力</th>
+              <th className={thClass}>常用端点</th>
+            </tr>
+          </thead>
+          <tbody>
+            {scopeRows.map(([scope, ability, endpoint], index) => (
+              <tr
+                key={scope}
+                className={index === scopeRows.length - 1 ? undefined : tableBodyRowClass}
+              >
+                <td className={tdClass}>{scope}</td>
+                <td className={tdTextClass}>{ability}</td>
+                <td className={tdClass}>{endpoint}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="common-flows">常用流程</h2>
+      <div className="my-4 overflow-x-auto">
+        <table className={tableClass}>
+          <thead>
+            <tr className={tableHeadRowClass}>
+              <th className={thClass}>目标</th>
+              <th className={thClass}>推荐调用顺序</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className={tableBodyRowClass}>
+              <td className={tdTextClass}>展示公开发现页</td>
+              <td className={tdClass}>GET /skills → GET /skills/:owner/:slug</td>
+            </tr>
+            <tr className={tableBodyRowClass}>
+              <td className={tdTextClass}>展示“我的 skills”</td>
+              <td className={tdClass}>SSO 登录 → GET /me → GET /me/skills</td>
+            </tr>
+            <tr className={tableBodyRowClass}>
+              <td className={tdTextClass}>给 Agent 安装 skill</td>
+              <td className={tdClass}>GET /skills/:owner/:slug/package → 写入本地 skill 目录</td>
+            </tr>
+            <tr>
+              <td className={tdTextClass}>同步私有 skill 文件</td>
+              <td className={tdClass}>
+                GET /me/skills → GET /skills/:owner/:slug/package 或 GET /files/:path
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="endpoints">端点速查</h2>
+      <p>下面只列最常用的正式端点。路径均省略基础地址前缀。</p>
+      {endpointGroups.map((group) => (
+        <section key={group.title}>
+          <h3>{group.title}</h3>
+          <div className="my-4 overflow-x-auto">
+            <table className={tableClass}>
+              <thead>
+                <tr className={tableHeadRowClass}>
+                  <th className={thClass}>端点</th>
+                  <th className={thClass}>所需 scope</th>
+                  <th className={thClass}>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                {group.rows.map(([endpoint, scope, description], index) => (
+                  <tr
+                    key={endpoint}
+                    className={index === group.rows.length - 1 ? undefined : tableBodyRowClass}
+                  >
+                    <td className={tdClass}>{endpoint}</td>
+                    <td className={tdClass}>{scope}</td>
+                    <td className={tdTextClass}>{description}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ))}
+
+      <h2 id="examples">核心示例</h2>
+
+      <h3>搜索参数</h3>
+      <div className="my-4 overflow-x-auto">
+        <table className={tableClass}>
+          <thead>
+            <tr className={tableHeadRowClass}>
+              <th className={thClass}>参数</th>
+              <th className={thClass}>说明</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className={tableBodyRowClass}>
+              <td className={tdClass}>q</td>
+              <td className={tdTextClass}>搜索关键词，最长 200 字符。</td>
+            </tr>
+            <tr className={tableBodyRowClass}>
+              <td className={tdClass}>tag</td>
+              <td className={tdTextClass}>
+                按标签过滤，可重复传入：<code>?tag=a&amp;tag=b</code>。
+              </td>
+            </tr>
+            <tr className={tableBodyRowClass}>
+              <td className={tdClass}>sort</td>
+              <td className={tdTextClass}>
+                <code>recent</code>、<code>hottest</code> 或 <code>az</code>，默认{' '}
+                <code>recent</code>。
+              </td>
+            </tr>
+            <tr>
+              <td className={tdClass}>limit / offset</td>
+              <td className={tdTextClass}>分页参数，limit 范围 1-100，默认 20。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>安装包快照响应</h3>
+      <p>
+        <code className={inlineCodeClass}>/package</code> 是 Agent
+        客户端最应该优先使用的端点。它返回安装所需的元信息和文件内容。
+      </p>
+      <pre className={codeBlockClass}>
+        {`{
+  "id": "uuid",
+  "owner": { "id": "uuid", "name": "Alice", "handle": "alice" },
+  "slug": "video-helper",
+  "name": "Video Helper",
+  "visibility": "private",
+  "protocolName": "alice-video-helper-a1b2c3d4",
+  "hash": "sha256:...",
+  "files": [
+    { "path": "SKILL.md", "content": "---\\nname: Video Helper\\n---\\n..." }
+  ],
+  "updatedAt": "2026-05-12T08:00:00.000Z"
+}`}
+      </pre>
+
+      <h3>发布 skill</h3>
+      <pre className={codeBlockClass}>
+        {`curl -X POST "https://skillhunt.mozia.ai/api/skills" \\
+  -H "Authorization: Bearer sso_access_token" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "owner": "alice",
+    "slug": "video-helper",
+    "name": "Video Helper",
+    "description": "辅助 Agent 分析视频内容",
+    "tags": ["video", "agent"],
+    "visibility": "private",
+    "skillMdContent": "---\\nname: Video Helper\\n---\\n# Video Helper\\n..."
+  }'`}
+      </pre>
+
+      <h2 id="errors">错误处理</h2>
+      <p>错误响应统一返回一个 JSON 对象：</p>
+      <pre className={codeBlockClass}>
         {`{
   "error": "error description"
 }`}
       </pre>
       <div className="my-4 overflow-x-auto">
-        <table className="w-full text-[13px] font-mono border border-neutral-200 rounded-xl overflow-hidden">
+        <table className={tableClass}>
           <thead>
-            <tr className="border-b border-neutral-200 bg-neutral-50">
-              <th className="text-left px-3 py-2">状态码</th>
-              <th className="text-left px-3 py-2">含义</th>
+            <tr className={tableHeadRowClass}>
+              <th className={thClass}>状态码</th>
+              <th className={thClass}>含义</th>
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b border-neutral-100">
-              <td className="px-3 py-2">400</td>
-              <td className="px-3 py-2 text-[13px] font-sans">请求参数无效</td>
+            <tr className={tableBodyRowClass}>
+              <td className={tdClass}>400</td>
+              <td className={tdTextClass}>请求参数无效。</td>
             </tr>
-            <tr className="border-b border-neutral-100">
-              <td className="px-3 py-2">401</td>
-              <td className="px-3 py-2 text-[13px] font-sans">未登录或 session 过期</td>
+            <tr className={tableBodyRowClass}>
+              <td className={tdClass}>401</td>
+              <td className={tdTextClass}>未登录、SSO access_token 无效或已过期。</td>
             </tr>
-            <tr className="border-b border-neutral-100">
-              <td className="px-3 py-2">404</td>
-              <td className="px-3 py-2 text-[13px] font-sans">资源不存在</td>
+            <tr className={tableBodyRowClass}>
+              <td className={tdClass}>403</td>
+              <td className={tdTextClass}>已认证，但缺少 scope 或没有资源操作权限。</td>
+            </tr>
+            <tr className={tableBodyRowClass}>
+              <td className={tdClass}>404</td>
+              <td className={tdTextClass}>资源不存在，或当前用户无权知道该私有资源是否存在。</td>
             </tr>
             <tr>
-              <td className="px-3 py-2">500</td>
-              <td className="px-3 py-2 text-[13px] font-sans">服务端错误</td>
+              <td className={tdClass}>500</td>
+              <td className={tdTextClass}>服务端错误。</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      {/* ── Skills ── */}
-      <h2>技能接口</h2>
-
-      {/* List */}
-      <h3>
-        <code className="text-[13px] font-mono bg-neutral-100 px-1.5 py-0.5">GET /skills</code>
-      </h3>
-      <p>列出和搜索 skill。</p>
-      <div className="my-4 overflow-x-auto">
-        <table className="w-full text-[13px] font-mono border border-neutral-200 rounded-xl overflow-hidden">
-          <thead>
-            <tr className="border-b border-neutral-200 bg-neutral-50">
-              <th className="text-left px-3 py-2">参数</th>
-              <th className="text-left px-3 py-2">类型</th>
-              <th className="text-left px-3 py-2">说明</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="border-b border-neutral-100">
-              <td className="px-3 py-2">type</td>
-              <td className="px-3 py-2">string</td>
-              <td className="px-3 py-2 text-[13px] font-sans">
-                <code>owned</code> | <code>referenced</code> | <code>all</code>（默认）
-              </td>
-            </tr>
-            <tr className="border-b border-neutral-100">
-              <td className="px-3 py-2">q</td>
-              <td className="px-3 py-2">string</td>
-              <td className="px-3 py-2 text-[13px] font-sans">搜索关键词（1-200 字符）</td>
-            </tr>
-            <tr>
-              <td className="px-3 py-2">tag</td>
-              <td className="px-3 py-2">string</td>
-              <td className="px-3 py-2 text-[13px] font-sans">
-                按标签过滤，可多个 <code>?tag=a&tag=b</code>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <p>示例：</p>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl "https://skillhunt.mozia.ai/api/skills?q=react&tag=frontend"`}
-      </pre>
-      <p>响应：</p>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`{
-  "items": [
-    {
-      "id": "uuid",
-      "slug": "react-hooks",
-      "name": "React Hooks",
-      "description": "...",
-      "tags": ["react", "frontend"],
-      "type": "owned",
-      "visibility": "public",
-      "owner": {
-        "id": "uuid",
-        "name": "alice",
-        "handle": "alice"
-      },
-      "createdAt": "2026-01-15T08:00:00.000Z",
-      "updatedAt": "2026-03-01T12:00:00.000Z"
-    }
-  ],
-  "total": 42
-}`}
-      </pre>
-
-      {/* Detail */}
-      <h3>
-        <code className="text-[13px] font-mono bg-neutral-100 px-1.5 py-0.5">
-          GET /skills/:owner/:slug
-        </code>
-      </h3>
-      <p>获取单个 skill 的完整信息，包含 SKILL.md 内容和文件列表。</p>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl "https://skillhunt.mozia.ai/api/skills/alice/react-hooks"`}
-      </pre>
-      <p>响应：</p>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`{
-  "id": "uuid",
-  "slug": "react-hooks",
-  "name": "React Hooks",
-  "description": "...",
-  "tags": ["react", "frontend"],
-  "type": "owned",
-  "visibility": "public",
-  "owner": { "id": "uuid", "name": "alice", "handle": "alice" },
-  "skillMdContent": "---\\nname: React Hooks\\n---\\n...",
-  "files": ["SKILL.md", "examples/usage.md"],
-  "installCommand": "npx skills add https://skillhunt.mozia.ai --skill alice/react-hooks",
-  "createdAt": "2026-01-15T08:00:00.000Z",
-  "updatedAt": "2026-03-01T12:00:00.000Z"
-}`}
-      </pre>
-
-      {/* Create */}
-      <h3>
-        <code className="text-[13px] font-mono bg-neutral-100 px-1.5 py-0.5">POST /skills</code>
-      </h3>
-      <p>创建新 skill。需要登录。</p>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl -X POST "https://skillhunt.mozia.ai/api/skills" \\
-  -H "Content-Type: application/json" \\
-  -b "session_cookie" \\
-  -d '{
-    "owner": "alice",
-    "slug": "react-hooks",
-    "name": "React Hooks",
-    "description": "React Hooks 最佳实践",
-    "tags": ["react", "frontend"],
-    "visibility": "public",
-    "skillMdContent": "---\\nname: React Hooks\\n---\\n..."
-  }'`}
-      </pre>
+      <h2 id="well-known">公开 Agent 协议</h2>
       <p>
-        响应：<code>201 Created</code>，返回创建的 skill 对象。
+        <code className={inlineCodeClass}>/.well-known/agent-skills</code> 只用于公开 skill
+        的自动发现和安装。需要登录用户上下文或私有 skill 时，请使用上面的{' '}
+        <code className={inlineCodeClass}>/api</code> 端点。
       </p>
-
-      {/* Update */}
-      <h3>
-        <code className="text-[13px] font-mono bg-neutral-100 px-1.5 py-0.5">
-          PUT /skills/:owner/:slug
-        </code>
-      </h3>
-      <p>更新 skill。仅 owner 可操作，所有字段可选。</p>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl -X PUT "https://skillhunt.mozia.ai/api/skills/alice/react-hooks" \\
-  -H "Content-Type: application/json" \\
-  -b "session_cookie" \\
-  -d '{
-    "description": "更新后的描述",
-    "tags": ["react", "frontend", "hooks"]
-  }'`}
-      </pre>
-
-      {/* Delete */}
-      <h3>
-        <code className="text-[13px] font-mono bg-neutral-100 px-1.5 py-0.5">
-          DELETE /skills/:owner/:slug
-        </code>
-      </h3>
-      <p>删除 skill。仅 owner 可操作。</p>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl -X DELETE "https://skillhunt.mozia.ai/api/skills/alice/react-hooks" \\
-  -b "session_cookie"`}
-      </pre>
-      <p>
-        响应：<code>204 No Content</code>
-      </p>
-
-      {/* ── Skill Files ── */}
-      <h2>技能文件</h2>
-
-      {/* Upsert file */}
-      <h3>
-        <code className="text-[13px] font-mono bg-neutral-100 px-1.5 py-0.5">
-          POST /skills/:owner/:slug/files/:path
-        </code>
-      </h3>
-      <p>添加或更新 skill 的附加文件。仅 owner 可操作。</p>
-      <div className="my-4 overflow-x-auto">
-        <table className="w-full text-[13px] font-mono border border-neutral-200 rounded-xl overflow-hidden">
-          <thead>
-            <tr className="border-b border-neutral-200 bg-neutral-50">
-              <th className="text-left px-3 py-2">参数</th>
-              <th className="text-left px-3 py-2">类型</th>
-              <th className="text-left px-3 py-2">说明</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="border-b border-neutral-100">
-              <td className="px-3 py-2">path</td>
-              <td className="px-3 py-2">string</td>
-              <td className="px-3 py-2 text-[13px] font-sans">
-                文件路径（无前导 <code>/</code>，无 <code>..</code>，最长 512 字符）
-              </td>
-            </tr>
-            <tr>
-              <td className="px-3 py-2">content</td>
-              <td className="px-3 py-2">string</td>
-              <td className="px-3 py-2 text-[13px] font-sans">文件内容（最长 200,000 字符）</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl -X POST "https://skillhunt.mozia.ai/api/skills/alice/react-hooks/files/examples/usage.md" \\
-  -H "Content-Type: application/json" \\
-  -b "session_cookie" \\
-  -d '{ "content": "# Usage Examples\\n..." }'`}
-      </pre>
-      <p>
-        响应：<code>204 No Content</code>
-      </p>
-
-      {/* Delete file */}
-      <h3>
-        <code className="text-[13px] font-mono bg-neutral-100 px-1.5 py-0.5">
-          DELETE /skills/:owner/:slug/files/:path
-        </code>
-      </h3>
-      <p>
-        删除附加文件。不能删除 <code>SKILL.md</code>。
-      </p>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl -X DELETE "https://skillhunt.mozia.ai/api/skills/alice/react-hooks/files/examples/usage.md" \\
-  -b "session_cookie"`}
-      </pre>
-      <p>
-        响应：<code>204 No Content</code>
-      </p>
-
-      {/* ── Users ── */}
-      <h2>用户</h2>
-
-      {/* Current user */}
-      <h3>
-        <code className="text-[13px] font-mono bg-neutral-100 px-1.5 py-0.5">GET /users/me</code>
-      </h3>
-      <p>获取当前登录用户信息。需要登录。</p>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl "https://skillhunt.mozia.ai/api/users/me" -b "session_cookie"`}
-      </pre>
-      <p>响应：</p>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`{
-  "id": "uuid",
-  "name": "Alice",
-  "handle": "alice",
-  "email": "alice@example.com",
-  "image": null,
-  "isVirtual": false,
-  "canPublishAs": ["team-org"]
-}`}
-      </pre>
-
-      {/* User's skills */}
-      <h3>
-        <code className="text-[13px] font-mono bg-neutral-100 px-1.5 py-0.5">
-          GET /users/:owner/skills
-        </code>
-      </h3>
-      <p>获取指定用户公开的 skill 列表。</p>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl "https://skillhunt.mozia.ai/api/users/alice/skills"`}
-      </pre>
-
-      {/* ── Install Tokens ── */}
-      <h2>安装令牌</h2>
-      <p>为私有 skill 生成有时效、有次数限制的安装链接。</p>
-
-      <h3>
-        <code className="text-[13px] font-mono bg-neutral-100 px-1.5 py-0.5">
-          POST /install-tokens
-        </code>
-      </h3>
-      <p>创建安装令牌。需要登录且为 skill owner。</p>
-      <div className="my-4 overflow-x-auto">
-        <table className="w-full text-[13px] font-mono border border-neutral-200 rounded-xl overflow-hidden">
-          <thead>
-            <tr className="border-b border-neutral-200 bg-neutral-50">
-              <th className="text-left px-3 py-2">参数</th>
-              <th className="text-left px-3 py-2">类型</th>
-              <th className="text-left px-3 py-2">说明</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="border-b border-neutral-100">
-              <td className="px-3 py-2">skillId</td>
-              <td className="px-3 py-2">string</td>
-              <td className="px-3 py-2 text-[13px] font-sans">skill UUID</td>
-            </tr>
-            <tr className="border-b border-neutral-100">
-              <td className="px-3 py-2">expiresInHours</td>
-              <td className="px-3 py-2">number</td>
-              <td className="px-3 py-2 text-[13px] font-sans">过期时间（1-168 小时，默认 24）</td>
-            </tr>
-            <tr>
-              <td className="px-3 py-2">maxUses</td>
-              <td className="px-3 py-2">number</td>
-              <td className="px-3 py-2 text-[13px] font-sans">最大使用次数（1-100，默认 1）</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl -X POST "https://skillhunt.mozia.ai/api/install-tokens" \\
-  -H "Content-Type: application/json" \\
-  -b "session_cookie" \\
-  -d '{
-    "skillId": "uuid-of-skill",
-    "expiresInHours": 48,
-    "maxUses": 5
-  }'`}
-      </pre>
-      <p>响应：</p>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`{
-  "token": "abc123...",
-  "expiresAt": "2026-05-08T12:00:00.000Z",
-  "maxUses": 5,
-  "installCommand": "npx skills add https://skillhunt.mozia.ai/i/abc123..."
-}`}
-      </pre>
-
-      {/* ── Well-Known ── */}
-      <h2>Well-Known 协议</h2>
-      <p>
-        SkillHunt 实现了{' '}
-        <code className="text-[13px] font-mono bg-neutral-100 px-1.5 py-0.5">
-          /.well-known/agent-skills
-        </code>{' '}
-        协议，支持 agent 自动发现和安装 skill。
-      </p>
-
-      <h3>
-        <code className="text-[13px] font-mono bg-neutral-100 px-1.5 py-0.5">
-          GET /.well-known/agent-skills/index.json
-        </code>
-      </h3>
-      <p>列出所有公开 skill 的索引。</p>
-
-      <h3>
-        <code className="text-[13px] font-mono bg-neutral-100 px-1.5 py-0.5">
-          GET /.well-known/agent-skills/:owner/:slug/:file
-        </code>
-      </h3>
-      <p>获取指定 skill 的文件内容。</p>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`# 安装 skill
-npx skills add https://skillhunt.mozia.ai --skill alice/react-hooks
-
-# 通过 capability URL 安装私有 skill
-npx skills add https://skillhunt.mozia.ai/i/TOKEN`}
-      </pre>
-
-      {/* ── Tags ── */}
-      <h2>标签</h2>
-
-      <h3>
-        <code className="text-[13px] font-mono bg-neutral-100 px-1.5 py-0.5">GET /tags</code>
-      </h3>
-      <p>获取所有公开 skill 使用的标签列表。</p>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`curl "https://skillhunt.mozia.ai/api/tags"`}
-      </pre>
-      <p>响应：</p>
-      <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
-        {`{
-  "tags": ["react", "frontend", "backend", "testing", "devops"]
-}`}
+      <pre className={codeBlockClass}>
+        {`GET /.well-known/agent-skills/index.json
+GET /.well-known/agent-skills/:owner/:slug/:file`}
       </pre>
     </>
   );
