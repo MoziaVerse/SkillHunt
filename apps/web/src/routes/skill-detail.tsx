@@ -41,6 +41,62 @@ function shouldPreviewDemoVideo(value: string) {
   return isManagedOssVideoUrl(value) || isDirectVideoUrl(value);
 }
 
+function extractInstallTarget(installCommand: string) {
+  return installCommand.replace(/^npx skills add\s+/, '').trim();
+}
+
+function buildAgentInstallPrompt(skill: SkillDetail) {
+  const installCommand = skill.type === 'owned' ? skill.installCommand : skill.sourceInstallCommand;
+  const lines = [
+    '请帮我安装这个 Skill，并使用你当前环境支持的通用 Skill 安装方式完成，不要假设某个特定的 Agent 客户端。',
+    '',
+    `Skill 名称：${skill.name}`,
+    `发布者：@${skill.owner.handle}`,
+  ];
+
+  if (skill.type === 'owned') {
+    lines.push(`Skill 标识：${skill.owner.handle}/${skill.slug}`);
+  } else {
+    lines.push(`来源仓库：${skill.sourceRepo}`);
+    if (skill.sourceUrl) {
+      lines.push(`来源地址：${skill.sourceUrl}`);
+    }
+  }
+
+  lines.push(
+    `通用安装命令：${installCommand}`,
+    '',
+    '安装完成后，请确认这个 Skill 已经可用，并告诉我下一步如何调用它。',
+  );
+
+  return lines.join('\n');
+}
+
+function buildPrivateInstallPrompt(
+  skill: Extract<SkillDetail, { type: 'owned' }>,
+  grant: {
+    installCommand: string;
+    expiresAt: string;
+    maxUses: number;
+  },
+) {
+  const expiresAt = new Date(grant.expiresAt).toLocaleString();
+
+  return [
+    '请帮我安装这个私有 Skill，并使用你当前环境支持的通用 Skill 安装方式完成，不要公开分享下面的一次性安装入口，也不要假设某个特定的 Agent 客户端。',
+    '',
+    `Skill 名称：${skill.name}`,
+    `发布者：@${skill.owner.handle}`,
+    `Skill 标识：${skill.owner.handle}/${skill.slug}`,
+    `一次性安装入口：${extractInstallTarget(grant.installCommand)}`,
+    `通用安装命令：${grant.installCommand}`,
+    `有效期：${expiresAt}`,
+    `可用次数：${grant.maxUses}`,
+    '',
+    '安装完成后，请确认这个 Skill 已经可用，并告诉我下一步如何调用它。',
+  ].join('\n');
+}
+
 function sortFiles(files: string[]) {
   return [...files].sort((a, b) => {
     if (a === 'SKILL.md') return -1;
@@ -382,21 +438,48 @@ function PrivateInstallSection({
     expiresAt: string;
     maxUses: number;
   } | null>(null);
+  const [tab, setTab] = useState<'agent' | 'human'>('agent');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const installPrompt = grant ? buildPrivateInstallPrompt(skill, grant) : '';
+  const activeInstallContent = tab === 'agent' ? installPrompt : (grant?.installCommand ?? '');
 
   return (
     <section className="rounded-3xl bg-gradient-to-br  from-amber-50 to-white  p-6 shadow-sm shadow-amber-100/70">
       <div id="install-section" className="scroll-mt-24">
         <h2 className="text-[20px] font-semibold text-amber-950">安装使用</h2>
         <p className="mt-2 text-[14px] leading-7 text-amber-900">
-          这是一个私有 Skill。你可以在这里生成一次性安装命令，分享给需要访问的人。
+          这是一个私有
+          Skill。你可以在这里生成一次性安装提示词，或复制通用安装命令，发给需要访问的人。
         </p>
       </div>
       <div className="mt-5">
         {grant ? (
           <>
-            <InstallCommand command={grant.installCommand} />
+            <div className="flex divide-x divide-amber-200 rounded-xl overflow-hidden bg-amber-100/70 w-fit">
+              {(['agent', 'human'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setTab(mode)}
+                  className={cn(
+                    'px-4 py-2 text-[12px] font-medium transition',
+                    tab === mode
+                      ? 'bg-amber-950 text-white'
+                      : 'bg-transparent text-amber-800 hover:text-amber-950',
+                  )}
+                >
+                  {mode === 'agent' ? '面向 Agent' : '面向人工'}
+                </button>
+              ))}
+            </div>
+            <div className="mt-4">
+              <InstallCommand
+                command={activeInstallContent}
+                style={tab === 'agent' ? 'prompt' : 'terminal'}
+                title={tab === 'agent' ? '给 Agent 的提示词' : '通用安装命令'}
+              />
+            </div>
             <p className="mt-2 text-[12px] text-amber-800">
               Token 过期时间：{new Date(grant.expiresAt).toLocaleString()} · 可用次数：
               {grant.maxUses}
@@ -425,7 +508,7 @@ function PrivateInstallSection({
               disabled={busy}
               className="inline-flex items-center rounded-xl bg-neutral-900 px-4 py-2.5 text-[13px] font-medium text-white disabled:opacity-50"
             >
-              {busy ? '生成中…' : '生成一次性安装命令'}
+              {busy ? '生成中…' : '生成一次性安装提示词'}
             </button>
             {error && <p className="mt-3 text-[12px] text-red-700">{error}</p>}
           </div>
@@ -448,7 +531,9 @@ function PublicInstallSection({
   onFork: () => Promise<void>;
 }) {
   const installCommand = skill.type === 'owned' ? skill.installCommand : skill.sourceInstallCommand;
+  const installPrompt = buildAgentInstallPrompt(skill);
   const [tab, setTab] = useState<'agent' | 'human'>('agent');
+  const activeInstallContent = tab === 'agent' ? installPrompt : installCommand;
 
   return (
     <section className="rounded-3xl bg-white p-6 shadow-sm shadow-neutral-100/80 border border-neutral-200">
@@ -478,16 +563,20 @@ function PublicInstallSection({
       </div>
 
       <div className="mt-5">
-        <InstallCommand command={installCommand} />
+        <InstallCommand
+          command={activeInstallContent}
+          style={tab === 'agent' ? 'prompt' : 'terminal'}
+          title={tab === 'agent' ? '给 Agent 的提示词' : '通用安装命令'}
+        />
       </div>
 
       <div className="mt-5 flex items-center gap-3 flex-wrap">
         <button
           type="button"
-          onClick={() => navigator.clipboard.writeText(installCommand)}
+          onClick={() => navigator.clipboard.writeText(activeInstallContent)}
           className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 text-[13px] font-medium text-neutral-700 rounded-lg transition"
         >
-          复制命令
+          {tab === 'agent' ? '复制提示词' : '复制命令'}
         </button>
         <button
           type="button"

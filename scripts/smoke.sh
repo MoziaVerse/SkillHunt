@@ -72,7 +72,7 @@ jq_check "/api/tags → tags is array"                 "$API/api/tags"          
 jq_check "/api/skills/mozia/project-mental-map → owned" "$API/api/skills/mozia/project-mental-map" ".type == \"owned\""
 jq_check "  → owner.name = mozia"                       "$API/api/skills/mozia/project-mental-map" ".owner.name == \"mozia\""
 jq_check "  → skillMdContent non-empty"                 "$API/api/skills/mozia/project-mental-map" ".skillMdContent | length > 0"
-jq_check "  → installCommand has local URL"             "$API/api/skills/mozia/project-mental-map" ".installCommand | contains(\"localhost:3333\")"
+jq_check "  → installCommand has generic local form"    "$API/api/skills/mozia/project-mental-map" ".installCommand == \"npx skills add http://localhost:3333 --skill mozia/project-mental-map\""
 jq_check "/api/skills/mozia/frontend-design → referenced" "$API/api/skills/mozia/frontend-design"  ".type == \"referenced\""
 jq_check "  → sourceInstallCommand present"             "$API/api/skills/mozia/frontend-design"    ".sourceInstallCommand | length > 0"
 check   "legacy /api/skills/:slug returns 302"          bash -c "[ \$(curl -sS -o /dev/null -w '%{http_code}' $API/api/skills/project-mental-map) = '302' ]"
@@ -110,7 +110,7 @@ if [ "$SKIP_CLI" != "1" ]; then
   check "npx skills add --list lists $FIRST_SLUG" \
     bash -c "npx -y skills@latest add $API --list 2>&1 | grep -q '$FIRST_SLUG'"
   check "npx skills add --skill $FIRST_SLUG executes without error" \
-    bash -c "npx -y skills@latest add $API --skill $FIRST_SLUG -a claude-code -y 2>&1 | grep -qi 'install\\|added\\|success'"
+    bash -c "npx -y skills@latest add $API --skill $FIRST_SLUG 2>&1 | grep -qi 'install\\|added\\|success'"
 
   popd > /dev/null
   rm -rf "$TMP"

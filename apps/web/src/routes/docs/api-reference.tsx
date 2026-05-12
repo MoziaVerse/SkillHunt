@@ -155,7 +155,7 @@ export default function ApiReference() {
   "owner": { "id": "uuid", "name": "alice", "handle": "alice" },
   "skillMdContent": "---\\nname: React Hooks\\n---\\n...",
   "files": ["SKILL.md", "examples/usage.md"],
-  "installCommand": "npx skills add https://skillhunt.mozia.ai/.well-known/agent-skills/alice/react-hooks/SKILL.md",
+  "installCommand": "npx skills add https://skillhunt.mozia.ai --skill alice/react-hooks",
   "createdAt": "2026-01-15T08:00:00.000Z",
   "updatedAt": "2026-03-01T12:00:00.000Z"
 }`}
@@ -367,7 +367,7 @@ export default function ApiReference() {
   "token": "abc123...",
   "expiresAt": "2026-05-08T12:00:00.000Z",
   "maxUses": 5,
-  "installCommand": "npx skills add https://skillhunt.mozia.ai/i/abc123.../.well-known/agent-skills/..."
+  "installCommand": "npx skills add https://skillhunt.mozia.ai/i/abc123..."
 }`}
       </pre>
 
@@ -396,10 +396,10 @@ export default function ApiReference() {
       <p>获取指定 skill 的文件内容。</p>
       <pre className="my-4 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 font-mono text-[13px] overflow-x-auto">
         {`# 安装 skill
-npx skills add https://skillhunt.mozia.ai/.well-known/agent-skills/alice/react-hooks/SKILL.md
+npx skills add https://skillhunt.mozia.ai --skill alice/react-hooks
 
 # 通过 capability URL 安装私有 skill
-npx skills add https://skillhunt.mozia.ai/i/TOKEN/.well-known/agent-skills/alice/react-hooks/SKILL.md`}
+npx skills add https://skillhunt.mozia.ai/i/TOKEN`}
       </pre>
 
       {/* ── Tags ── */}

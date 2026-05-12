@@ -126,7 +126,7 @@ const toDetail = async (
     const files = await listSkillFilesWithContent(skill.id);
     const skillMd = files.find((f) => f.path === 'SKILL.md');
     if (!skillMd) return { error: 'Skill data corrupted' };
-    const installCommand = `npx skills add ${origin} --skill ${skillProtocolName(skill.owner.handle, skill.slug)} --agent claude-code -y`;
+    const installCommand = `npx skills add ${origin} --skill ${skillProtocolName(skill.owner.handle, skill.slug)}`;
     return {
       ...base,
       type: 'owned',
@@ -882,7 +882,7 @@ apiRoute.post('/install-tokens', zValidator('json', mintInstallTokenSchema), asy
   });
 
   const origin = new URL(c.req.url).origin;
-  const installCommand = `npx skills add ${origin}/i/${grant.token} --agent claude-code -y`;
+  const installCommand = `npx skills add ${origin}/i/${grant.token}`;
   return c.json(
     {
       token: grant.token,

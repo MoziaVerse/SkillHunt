@@ -248,7 +248,7 @@ describe('business API', () => {
   });
 
   describe('GET /api/skills/:owner/:slug (canonical)', () => {
-    it('owned public skill returns skillMdContent + installCommand + id', async () => {
+    it('owned public skill returns skillMdContent + generic installCommand + id', async () => {
       const res = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`));
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
@@ -266,7 +266,7 @@ describe('business API', () => {
         `npx skills add http://localhost --skill ${skillProtocolName(
           OWNER_NAME,
           'test-owned-pub',
-        )} --agent claude-code -y`,
+        )}`,
       );
       expect(body.files).toContain('SKILL.md');
     });
@@ -1091,9 +1091,7 @@ describe('business API', () => {
       expect(mint.status).toBe(201);
       const mintBody = (await mint.json()) as { token: string; installCommand: string };
       expect(mintBody.token).toBeDefined();
-      expect(mintBody.installCommand).toBe(
-        `npx skills add http://localhost/i/${mintBody.token} --agent claude-code -y`,
-      );
+      expect(mintBody.installCommand).toBe(`npx skills add http://localhost/i/${mintBody.token}`);
     });
 
     it('non-owner cannot mint token for someone else private skill (404)', async () => {
