@@ -66,17 +66,45 @@ export default function WhatIsASkill() {
         </li>
       </ol>
 
-      <h2>参考链接</h2>
+      <h2>延伸阅读</h2>
       <ul>
         <li>
-          <a href="https://agentskills.io" target="_blank" rel="noreferrer">
-            agentskills.io
+          <a href="https://agentskills.io/" target="_blank" rel="noreferrer">
+            Agent Skills Overview
           </a>
+          ：了解 Agent Skills 的基本概念、使用场景和渐进式加载机制。
         </li>
         <li>
-          <a href="https://github.com/anthropics/skills" target="_blank" rel="noreferrer">
-            github.com/anthropics/skills
+          <a href="https://agentskills.io/specification" target="_blank" rel="noreferrer">
+            Agent Skills Specification
           </a>
+          ：查看 <code>SKILL.md</code>、frontmatter、目录结构和资源加载的完整规范。
+        </li>
+        <li>
+          <a href="https://claude.com/docs/skills/overview" target="_blank" rel="noreferrer">
+            Claude Skills Overview
+          </a>
+          ：Anthropic 官方对 Skills、MCP、Projects、Custom Instructions 等能力边界的说明。
+        </li>
+        <li>
+          <a
+            href="https://learn.microsoft.com/en-us/agent-framework/agents/skills"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Microsoft Agent Framework · Agent Skills
+          </a>
+          ：了解 Skills 在其他 Agent 框架中的实现方式和安全注意事项。
+        </li>
+        <li>
+          <a
+            href="https://modelcontextprotocol.io/specification/2025-06-18/basic"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Model Context Protocol Specification
+          </a>
+          ：如果想深入理解 MCP 与 Skill 的区别，可以阅读 MCP 官方协议说明。
         </li>
       </ul>
     </>

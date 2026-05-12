@@ -4,6 +4,11 @@ import { Link, Outlet, useLocation } from 'react-router';
 
 export const DOCS = [
   { slug: 'what-is-a-skill', title: '什么是 Skill？', icon: '📖' },
+  { slug: 'write-skill-md', title: '如何写一份合格的 SKILL.md', icon: '📝' },
+  { slug: 'quick-start', title: '快速开始：发布第一个 Skill', icon: '🚀' },
+  { slug: 'file-structure', title: 'Skill 文件结构与上传规范', icon: '📁' },
+  { slug: 'publish-info', title: '发布信息填写指南', icon: '🎯' },
+  { slug: 'quality-checklist', title: '优秀 Skill 自检清单', icon: '✅' },
   { slug: 'api-reference', title: 'API 参考', icon: '🔌' },
 ];
 
