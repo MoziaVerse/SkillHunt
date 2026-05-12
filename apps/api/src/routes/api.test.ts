@@ -4,15 +4,18 @@ import { Hono } from 'hono';
 import {
   db,
   notifications,
+  skillComments,
   skillFiles,
   skillReleases,
   skillSubscriptions,
   skillSyncEvents,
+  skillUpvotes,
   skills,
   user,
+  userBookmarks,
 } from '../db';
 import type { AuthContext } from '../lib/auth-context';
-import { skillListItemSchema } from '../lib/dto';
+import { VIDEO_UPLOAD_MAX_BYTES, skillListItemSchema } from '../lib/dto';
 import { skillProtocolName } from '../lib/protocol-name';
 
 const OWNER_USER_ID = 'test-owner';
@@ -52,6 +55,9 @@ beforeAll(async () => {
 
 async function resetAndSeed() {
   await db.delete(notifications);
+  await db.delete(userBookmarks);
+  await db.delete(skillUpvotes);
+  await db.delete(skillComments);
   await db.delete(skillSyncEvents);
   await db.delete(skillSubscriptions);
   await db.delete(skillReleases);
@@ -331,6 +337,48 @@ describe('business API', () => {
       const body = (await res.json()) as { tags: string[] };
       expect(body.tags.sort()).toEqual(['design', 'tooling']);
       expect(body.tags).not.toContain('writing');
+    });
+  });
+
+  describe('POST /api/uploads/videos', () => {
+    const validBody = {
+      fileName: 'demo.mp4',
+      contentType: 'video/mp4',
+      size: 1024,
+    };
+
+    it('rejects anonymous users', async () => {
+      const res = await app.fetch(reqAnon('/api/uploads/videos', jsonInit(validBody)));
+      expect(res.status).toBe(401);
+    });
+
+    it('rejects non-video content types', async () => {
+      const res = await app.fetch(
+        reqAsUser(
+          '/api/uploads/videos',
+          OWNER_USER_ID,
+          jsonInit({ ...validBody, contentType: 'image/png' }),
+        ),
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects videos larger than 500MB', async () => {
+      const res = await app.fetch(
+        reqAsUser(
+          '/api/uploads/videos',
+          OWNER_USER_ID,
+          jsonInit({ ...validBody, size: VIDEO_UPLOAD_MAX_BYTES + 1 }),
+        ),
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 503 when OSS is not configured', async () => {
+      const res = await app.fetch(
+        reqAsUser('/api/uploads/videos', OWNER_USER_ID, jsonInit(validBody)),
+      );
+      expect(res.status).toBe(503);
     });
   });
 
@@ -1123,6 +1171,177 @@ describe('business API', () => {
         new Request(`http://localhost/i/${token}/.well-known/agent-skills/not-the-skill/SKILL.md`),
       );
       expect(r1.status).toBe(404);
+    });
+  });
+
+  describe('GET /api/skills (pagination & sorting)', () => {
+    it('returns paginated results with default limit', async () => {
+      const res = await app.fetch(reqAnon('/api/skills?limit=1'));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { items: unknown[]; total: number };
+      expect(body.items.length).toBeLessThanOrEqual(1);
+      expect(body.total).toBeGreaterThanOrEqual(1);
+    });
+
+    it('returns second page with offset', async () => {
+      const res1 = await app.fetch(reqAnon('/api/skills?limit=1&offset=0'));
+      const body1 = (await res1.json()) as { items: Array<{ slug: string }> };
+      const firstSlug = body1.items[0]?.slug;
+
+      const res2 = await app.fetch(reqAnon('/api/skills?limit=1&offset=1'));
+      const body2 = (await res2.json()) as { items: Array<{ slug: string }> };
+      if (body2.items.length > 0) {
+        expect(body2.items[0]?.slug).not.toBe(firstSlug);
+      }
+    });
+
+    it('sorts by hottest', async () => {
+      const res = await app.fetch(reqAnon('/api/skills?sort=hottest'));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { items: unknown[] };
+      expect(Array.isArray(body.items)).toBe(true);
+    });
+
+    it('sorts by recent (default)', async () => {
+      const res = await app.fetch(reqAnon('/api/skills?sort=recent'));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { items: unknown[] };
+      expect(Array.isArray(body.items)).toBe(true);
+    });
+
+    it('sorts by A-Z', async () => {
+      const res = await app.fetch(reqAnon('/api/skills?sort=az'));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { items: Array<{ name: string }> };
+      const names = body.items.map((i) => i.name);
+      for (let i = 1; i < names.length; i++) {
+        const current = names[i];
+        const prev = names[i - 1];
+        if (current && prev) {
+          expect(current >= prev).toBe(true);
+        }
+      }
+    });
+
+    it('filters by tag with pagination', async () => {
+      const res = await app.fetch(reqAnon('/api/skills?tag=design&limit=10'));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { items: Array<{ tags: string[] }>; total: number };
+      for (const item of body.items) {
+        expect(item.tags).toContain('design');
+      }
+    });
+  });
+
+  describe('POST /api/skills/:owner/:slug/bookmark', () => {
+    it('authenticated user can bookmark a skill', async () => {
+      const res = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/bookmark`, OTHER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { bookmarkCount: number; viewerHasBookmarked: boolean };
+      expect(body.viewerHasBookmarked).toBe(true);
+      expect(body.bookmarkCount).toBeGreaterThanOrEqual(1);
+    });
+
+    it('duplicate bookmark is idempotent', async () => {
+      await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/bookmark`, OTHER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+      const res = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/bookmark`, OTHER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+      expect(res.status).toBe(200);
+    });
+
+    it('anonymous user cannot bookmark', async () => {
+      const res = await app.fetch(
+        reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub/bookmark`, { method: 'POST' }),
+      );
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe('DELETE /api/skills/:owner/:slug/bookmark', () => {
+    it('authenticated user can remove their bookmark', async () => {
+      await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/bookmark`, OTHER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+      const res = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/bookmark`, OTHER_USER_ID, {
+          method: 'DELETE',
+        }),
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { viewerHasBookmarked: boolean };
+      expect(body.viewerHasBookmarked).toBe(false);
+    });
+  });
+
+  describe('GET /api/users/me/bookmarks', () => {
+    it('returns bookmarks for authenticated user', async () => {
+      await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/bookmark`, OTHER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+      const res = await app.fetch(reqAsUser('/api/users/me/bookmarks', OTHER_USER_ID));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { items: Array<{ slug: string }> };
+      expect(body.items.length).toBeGreaterThanOrEqual(1);
+      expect(body.items.some((i) => i.slug === 'test-owned-pub')).toBe(true);
+    });
+
+    it('401 for anonymous', async () => {
+      const res = await app.fetch(reqAnon('/api/users/me/bookmarks'));
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe('Comments with parentId (nested)', () => {
+    it('creates a top-level comment', async () => {
+      const res = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/comments`, OTHER_USER_ID, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ content: 'Top level comment' }),
+        }),
+      );
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { parentId: string | null; content: string };
+      expect(body.parentId).toBeNull();
+      expect(body.content).toBe('Top level comment');
+    });
+
+    it('creates a reply comment with parentId', async () => {
+      const parentRes = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/comments`, OTHER_USER_ID, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ content: 'Parent comment' }),
+        }),
+      );
+      const parent = (await parentRes.json()) as { id: string };
+
+      const res = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/comments`, OWNER_USER_ID, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ content: 'Reply to parent', parentId: parent.id }),
+        }),
+      );
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { parentId: string | null; content: string };
+      expect(body.parentId).toBe(parent.id);
+      expect(body.content).toBe('Reply to parent');
     });
   });
 });

@@ -85,7 +85,8 @@ function toV1Skill(
 }
 
 async function publicSkills() {
-  return listSkillsForApi({ type: 'all', tags: [], viewerUserId: null });
+  const { items } = await listSkillsForApi({ type: 'all', tags: [], viewerUserId: null });
+  return items;
 }
 
 function matchesV1Id(origin: string, skill: SkillWithOwner, id: string) {
@@ -182,12 +183,12 @@ apiV1Route.get('/skills/search', async (c) => {
   const wantsSemantic = /\s/.test(q);
   if (wantsSemantic && process.env.SKILLHUB_SEMANTIC_SEARCH !== '1') {
     return c.json(
-      error('temporarily_unavailable', 'Semantic search is not configured for this SkillHub.'),
+      error('temporarily_unavailable', 'Semantic search is not configured for this SkillHunt.'),
       503,
     );
   }
 
-  const rows = await listSkillsForApi({ type: 'all', q, tags: [], viewerUserId: null });
+  const { items: rows } = await listSkillsForApi({ type: 'all', q, tags: [], viewerUserId: null });
   const data = (await v1SkillsForRows(origin, rows))
     .sort((a, b) => b.stats.total - a.stats.total)
     .slice(0, limit)

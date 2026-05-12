@@ -7,7 +7,7 @@ import { capabilityWellknownRoute, wellknownRoute } from './routes/wellknown';
 
 const app = new Hono();
 
-app.get('/healthz', (c) => c.json({ ok: true, service: 'skillhub-api' }));
+app.get('/healthz', (c) => c.json({ ok: true, service: 'skillhunt-api' }));
 
 // Tiny status endpoint so the web UI can disable the Sign-in button when
 // mozia-sso isn't wired yet (avoids a confusing 500 on click).
@@ -44,4 +44,4 @@ export default {
   fetch: app.fetch,
 };
 
-console.log(`[skillhub-api] listening on http://localhost:${port}`);
+console.log(`[skillhunt-api] listening on http://localhost:${port}`);

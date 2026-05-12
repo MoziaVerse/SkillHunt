@@ -6,9 +6,11 @@ import {
   type SkillComment,
   type SkillDetail,
   type SkillListItem,
+  completeVideoUploadSchema,
   createReleaseSchema,
   createSkillCommentSchema,
   createSkillSchema,
+  createVideoUploadSchema,
   filePathSchema,
   forkSkillSchema,
   listSkillsQuerySchema,
@@ -23,7 +25,15 @@ import {
 import { skillProtocolName } from '../lib/protocol-name';
 import { mintGrant } from '../services/install-grant-service';
 import {
+  completeUploadedVideo,
+  createDemoVideoPlaybackUrl,
+  createVideoUploadTicket,
+  isS3StorageConfigured,
+  isVideoObjectKeyForUser,
+} from '../services/s3-storage';
+import {
   type SkillWithOwner,
+  addSkillBookmark,
   addSkillUpvote,
   createOwnedSkill,
   createSkillComment,
@@ -49,8 +59,10 @@ import {
   listSkillsByOwner,
   listSkillsForApi,
   listSyncEvents,
+  listUserBookmarks,
   markAllNotificationsRead,
   markNotificationRead,
+  removeSkillBookmark,
   removeSkillUpvote,
   setSkillSubscription,
   syncForkWithUpstream,
@@ -67,6 +79,9 @@ const baseFromRow = (r: SkillWithOwner) => ({
   name: r.name,
   description: r.description,
   tags: r.tags,
+  icon: r.icon ?? null,
+  coverImage: r.coverImage ?? null,
+  demoVideoUrl: r.demoVideoUrl ?? null,
   owner: r.owner,
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
@@ -74,6 +89,7 @@ const baseFromRow = (r: SkillWithOwner) => ({
   commentCount: r.commentCount,
   bookmarkCount: r.bookmarkCount,
   viewerHasUpvoted: r.viewerHasUpvoted,
+  viewerHasBookmarked: r.viewerHasBookmarked,
 });
 
 const toComment = (
@@ -167,14 +183,59 @@ const toRawReleaseDto = (release: {
   createdAt: release.createdAt.toISOString(),
 });
 
+// ─── OSS uploads ─────────────────────────────────────────────────────
+
+apiRoute.post('/uploads/videos', zValidator('json', createVideoUploadSchema), async (c) => {
+  const input = c.req.valid('json');
+  const { user } = await getAuthContext(c);
+  if (!user) return c.json({ error: 'Authentication required' }, 401);
+  if (!isS3StorageConfigured()) return c.json({ error: 'OSS storage is not configured' }, 503);
+
+  const ticket = createVideoUploadTicket({
+    userId: user.id,
+    fileName: input.fileName,
+  });
+  return c.json(ticket, 201);
+});
+
+apiRoute.post(
+  '/uploads/videos/complete',
+  zValidator('json', completeVideoUploadSchema),
+  async (c) => {
+    const input = c.req.valid('json');
+    const { user } = await getAuthContext(c);
+    if (!user) return c.json({ error: 'Authentication required' }, 401);
+    if (!isS3StorageConfigured()) return c.json({ error: 'OSS storage is not configured' }, 503);
+    if (!isVideoObjectKeyForUser(input.objectKey, user.id)) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    try {
+      const metadata = await completeUploadedVideo(input.objectKey);
+      return c.json(metadata);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'OSS 对象校验失败';
+      return c.json({ error: message }, 400);
+    }
+  },
+);
+
 // ─── List + tags ──────────────────────────────────────────────────────
 
 apiRoute.get('/skills', zValidator('query', listSkillsQuerySchema), async (c) => {
-  const { type, q, tag } = c.req.valid('query');
+  const { type, q, tag, sort, limit, offset } = c.req.valid('query');
   const { user } = await getAuthContext(c);
-  const rows = await listSkillsForApi({ type, q, tags: tag, viewerUserId: user?.id ?? null });
+  const { items: rows, total } = await listSkillsForApi({
+    type,
+    q,
+    tags: tag,
+    viewerUserId: user?.id ?? null,
+    sort,
+    limit,
+    offset,
+  });
   const items = rows.map(toListItem);
-  return c.json({ items, total: items.length });
+  return c.json({ items, total });
 });
 
 apiRoute.get('/tags', async (c) => {
@@ -199,6 +260,18 @@ apiRoute.get('/skills/:owner/:slug', async (c) => {
   const detail = await toDetail(origin, skill);
   if ('error' in detail) return c.json(detail, 500);
   return c.json(detail);
+});
+
+apiRoute.get('/skills/:owner/:slug/demo-video', async (c) => {
+  const ownerHandle = c.req.param('owner');
+  const slug = c.req.param('slug');
+  const { user } = await getAuthContext(c);
+  const skill = await findSkillByOwnerAndSlug(ownerHandle, slug, user?.id ?? null);
+  if (!skill || !canViewSkill(skill, user?.id ?? null)) return c.json({ error: 'Not Found' }, 404);
+  if (!skill.demoVideoUrl) return c.json({ error: 'Not Found' }, 404);
+
+  const playbackUrl = createDemoVideoPlaybackUrl(skill.demoVideoUrl) ?? skill.demoVideoUrl;
+  return c.redirect(playbackUrl, 302);
 });
 
 // Legacy: /api/skills/:slug — auto-resolves to mozia/<slug> via slug uniqueness
@@ -246,6 +319,9 @@ apiRoute.post('/skills', zValidator('json', createSkillSchema), async (c) => {
     visibility: input.visibility,
     skillMdContent: input.skillMdContent,
     frontmatter: input.frontmatter,
+    icon: input.icon,
+    coverImage: input.coverImage,
+    demoVideoUrl: input.demoVideoUrl,
   });
 
   const origin = new URL(c.req.url).origin;
@@ -577,6 +653,14 @@ apiRoute.get('/users/me/skills', async (c) => {
   return c.json({ items, total: items.length });
 });
 
+apiRoute.get('/users/me/bookmarks', async (c) => {
+  const { user } = await getAuthContext(c);
+  if (!user) return c.json({ error: 'Authentication required' }, 401);
+  const rows = await listUserBookmarks(user.id);
+  const items = rows.map(toListItem);
+  return c.json({ items, total: items.length });
+});
+
 apiRoute.get('/users/:owner/skills', async (c) => {
   const ownerHandle = c.req.param('owner');
   const ownerRow = await findUserByHandle(ownerHandle);
@@ -730,6 +814,48 @@ apiRoute.delete('/skills/:owner/:slug/upvote', async (c) => {
   }
 
   await removeSkillUpvote(skill.id, user.id);
+  const refreshed = await findSkillById(skill.id, user.id);
+  if (!refreshed) return c.json({ error: 'Not Found' }, 404);
+  return c.json(baseFromRow(refreshed));
+});
+
+// ─── Bookmarks ───────────────────────────────────────────────────────
+
+apiRoute.post('/skills/:owner/:slug/bookmark', async (c) => {
+  const ownerHandle = c.req.param('owner');
+  const slug = c.req.param('slug');
+  const { user } = await getAuthContext(c);
+  if (!user) return c.json({ error: 'Authentication required' }, 401);
+
+  const skill = await findSkillByOwnerAndSlug(ownerHandle, slug, user.id);
+  if (!skill) return c.json({ error: 'Not Found' }, 404);
+
+  const isOwner = skill.ownerUserId === user.id;
+  if (skill.type === 'owned' && skill.visibility === 'private' && !isOwner) {
+    return c.json({ error: 'Not Found' }, 404);
+  }
+
+  await addSkillBookmark(skill.id, user.id);
+  const refreshed = await findSkillById(skill.id, user.id);
+  if (!refreshed) return c.json({ error: 'Not Found' }, 404);
+  return c.json(baseFromRow(refreshed));
+});
+
+apiRoute.delete('/skills/:owner/:slug/bookmark', async (c) => {
+  const ownerHandle = c.req.param('owner');
+  const slug = c.req.param('slug');
+  const { user } = await getAuthContext(c);
+  if (!user) return c.json({ error: 'Authentication required' }, 401);
+
+  const skill = await findSkillByOwnerAndSlug(ownerHandle, slug, user.id);
+  if (!skill) return c.json({ error: 'Not Found' }, 404);
+
+  const isOwner = skill.ownerUserId === user.id;
+  if (skill.type === 'owned' && skill.visibility === 'private' && !isOwner) {
+    return c.json({ error: 'Not Found' }, 404);
+  }
+
+  await removeSkillBookmark(skill.id, user.id);
   const refreshed = await findSkillById(skill.id, user.id);
   if (!refreshed) return c.json({ error: 'Not Found' }, 404);
   return c.json(baseFromRow(refreshed));

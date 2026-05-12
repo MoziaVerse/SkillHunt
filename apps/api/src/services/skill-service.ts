@@ -10,6 +10,7 @@ import {
   skillUpvotes,
   skills,
   user,
+  userBookmarks,
 } from '../db';
 import { skillProtocolName } from '../lib/protocol-name';
 
@@ -116,6 +117,9 @@ export interface SkillWithOwner {
   sourceInstallCommand: string | null;
   sourceUrl: string | null;
   frontmatter: Record<string, unknown> | null;
+  icon: string | null;
+  coverImage: string | null;
+  demoVideoUrl: string | null;
   parentSkillId: string | null;
   rootSkillId: string | null;
   forkSourceReleaseId: string | null;
@@ -131,6 +135,7 @@ export interface SkillWithOwner {
   commentCount: number;
   bookmarkCount: number;
   viewerHasUpvoted: boolean;
+  viewerHasBookmarked: boolean;
 }
 
 export interface ListSkillsOptions {
@@ -142,6 +147,9 @@ export interface ListSkillsOptions {
    * Used so that the viewer can see their own private skills in the list.
    */
   viewerUserId: string | null;
+  sort?: 'recent' | 'hottest' | 'az';
+  limit?: number;
+  offset?: number;
 }
 
 export interface SkillCommentWithAuthor {
@@ -164,12 +172,22 @@ const skillSelectExtras = (viewerUserId: string | null) => ({
     select count(*) from ${skillComments}
     where ${skillComments.skillId} = ${skills.id}
   )`,
-  bookmarkCount: sql<number>`0`,
+  bookmarkCount: sql<number>`(
+    select count(*) from ${userBookmarks}
+    where ${userBookmarks.skillId} = ${skills.id}
+  )`,
   viewerHasUpvoted: viewerUserId
     ? sql<number>`exists(
         select 1 from ${skillUpvotes}
         where ${skillUpvotes.skillId} = ${skills.id}
           and ${skillUpvotes.userId} = ${viewerUserId}
+      )`
+    : sql<number>`0`,
+  viewerHasBookmarked: viewerUserId
+    ? sql<number>`exists(
+        select 1 from ${userBookmarks}
+        where ${userBookmarks.skillId} = ${skills.id}
+          and ${userBookmarks.userId} = ${viewerUserId}
       )`
     : sql<number>`0`,
 });
@@ -182,6 +200,7 @@ function mapSkillRow<
     commentCount: number;
     bookmarkCount: number;
     viewerHasUpvoted: number | boolean;
+    viewerHasBookmarked: number | boolean;
   },
 >(row: T): SkillWithOwner {
   return {
@@ -191,10 +210,13 @@ function mapSkillRow<
     commentCount: Number(row.commentCount ?? 0),
     bookmarkCount: Number(row.bookmarkCount ?? 0),
     viewerHasUpvoted: Boolean(row.viewerHasUpvoted),
+    viewerHasBookmarked: Boolean(row.viewerHasBookmarked),
   };
 }
 
-export async function listSkillsForApi(opts: ListSkillsOptions): Promise<SkillWithOwner[]> {
+export async function listSkillsForApi(
+  opts: ListSkillsOptions,
+): Promise<{ items: SkillWithOwner[]; total: number }> {
   const conditions = [];
 
   if (opts.type !== 'all') {
@@ -224,16 +246,51 @@ export async function listSkillsForApi(opts: ListSkillsOptions): Promise<SkillWi
     if (cond) conditions.push(cond);
   }
 
-  const rows = await db
-    .select({ skill: skills, owner: ownerSelect, ...skillSelectExtras(opts.viewerUserId) })
-    .from(skills)
-    .innerJoin(user, eq(skills.ownerUserId, user.id))
-    .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(sql`${skills.updatedAt} DESC`);
+  // Tag filtering in SQL (instead of post-filtering in JS)
+  if (opts.tags.length > 0) {
+    conditions.push(
+      sql`exists (select 1 from json_each(${skills.tags}) where json_each.value in (${sql.join(
+        opts.tags.map((t) => sql`${t}`),
+        sql`, `,
+      )}))`,
+    );
+  }
 
-  const mapped = rows.map(mapSkillRow);
-  if (opts.tags.length === 0) return mapped;
-  return mapped.filter((r) => opts.tags.some((tag) => r.tags.includes(tag)));
+  const where = conditions.length ? and(...conditions) : undefined;
+
+  // Determine ORDER BY
+  const sort = opts.sort ?? 'recent';
+  let orderBy: ReturnType<typeof sql>;
+  if (sort === 'az') {
+    orderBy = sql`${skills.name} ASC`;
+  } else if (sort === 'hottest') {
+    orderBy = sql`(select count(*) from ${skillUpvotes} where ${skillUpvotes.skillId} = ${skills.id}) * 3 + (select count(*) from ${skillComments} where ${skillComments.skillId} = ${skills.id}) DESC`;
+  } else {
+    orderBy = sql`${skills.updatedAt} DESC`;
+  }
+
+  const limit = opts.limit ?? 20;
+  const offset = opts.offset ?? 0;
+
+  // Run count + data queries in parallel
+  const [countRow, rows] = await Promise.all([
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(skills)
+      .innerJoin(user, eq(skills.ownerUserId, user.id))
+      .where(where),
+    db
+      .select({ skill: skills, owner: ownerSelect, ...skillSelectExtras(opts.viewerUserId) })
+      .from(skills)
+      .innerJoin(user, eq(skills.ownerUserId, user.id))
+      .where(where)
+      .orderBy(orderBy)
+      .limit(limit)
+      .offset(offset),
+  ]);
+
+  const total = Number(countRow[0]?.count ?? 0);
+  return { items: rows.map(mapSkillRow), total };
 }
 
 export async function findSkillBySlug(
@@ -422,7 +479,7 @@ export async function findUserByHandle(handle: string): Promise<UserRow | null> 
  * Used by the matrix proxy auth path (spec 04): matrix backend forwards
  * `Authorization: Bearer <SKILLHUB_SERVICE_TOKEN>` + `X-SSO-SUB: <sub>`
  * and we resolve the sub to a local user row. Returns null if the user has
- * never signed in to SkillHub directly — caller should 401 + nudge them.
+ * never signed in to SkillHunt directly — caller should 401 + nudge them.
  */
 export async function findUserBySsoSub(sub: string): Promise<UserRow | null> {
   const rows = await db.select(userRowSelect).from(user).where(eq(user.ssoSub, sub)).limit(1);
@@ -498,6 +555,9 @@ export interface CreateSkillData {
   visibility: 'public' | 'private';
   skillMdContent: string;
   frontmatter?: Record<string, unknown>;
+  icon?: string | null;
+  coverImage?: string | null;
+  demoVideoUrl?: string | null;
   parentSkillId?: string | null;
   rootSkillId?: string | null;
   forkSourceReleaseId?: string | null;
@@ -517,6 +577,9 @@ export async function createOwnedSkill(input: CreateSkillData): Promise<SkillWit
         visibility: input.visibility,
         tags: input.tags,
         frontmatter: input.frontmatter ?? parseFrontmatter(input.skillMdContent),
+        icon: input.icon ?? null,
+        coverImage: input.coverImage ?? null,
+        demoVideoUrl: input.demoVideoUrl ?? null,
         parentSkillId: input.parentSkillId ?? null,
         rootSkillId: input.rootSkillId ?? null,
         forkSourceReleaseId: input.forkSourceReleaseId ?? null,
@@ -545,6 +608,7 @@ export async function createOwnedSkill(input: CreateSkillData): Promise<SkillWit
       commentCount: 0,
       bookmarkCount: 0,
       viewerHasUpvoted: false,
+      viewerHasBookmarked: false,
     };
   });
 }
@@ -556,6 +620,9 @@ export interface UpdateSkillData {
   visibility?: 'public' | 'private';
   skillMdContent?: string;
   frontmatter?: Record<string, unknown>;
+  icon?: string | null;
+  coverImage?: string | null;
+  demoVideoUrl?: string | null;
 }
 
 export async function updateOwnedSkill(
@@ -568,6 +635,9 @@ export async function updateOwnedSkill(
     if (input.description !== undefined) patch.description = input.description;
     if (input.tags !== undefined) patch.tags = input.tags;
     if (input.visibility !== undefined) patch.visibility = input.visibility;
+    if (input.icon !== undefined) patch.icon = input.icon;
+    if (input.coverImage !== undefined) patch.coverImage = input.coverImage;
+    if (input.demoVideoUrl !== undefined) patch.demoVideoUrl = input.demoVideoUrl;
     if (input.frontmatter !== undefined) {
       patch.frontmatter = input.frontmatter;
     } else if (input.skillMdContent !== undefined) {
@@ -602,6 +672,7 @@ export async function updateOwnedSkill(
       commentCount: 0,
       bookmarkCount: 0,
       viewerHasUpvoted: false,
+      viewerHasBookmarked: false,
     };
   });
 }
@@ -702,6 +773,53 @@ export async function removeSkillUpvote(skillId: string, userId: string): Promis
     .where(and(eq(skillUpvotes.skillId, skillId), eq(skillUpvotes.userId, userId)))
     .returning({ id: skillUpvotes.id });
   return rows.length > 0;
+}
+
+// ─── Bookmarks ──────────────────────────────────────────────────────
+
+export async function addSkillBookmark(skillId: string, userId: string): Promise<boolean> {
+  const existing = await db
+    .select({ id: userBookmarks.id })
+    .from(userBookmarks)
+    .where(and(eq(userBookmarks.skillId, skillId), eq(userBookmarks.userId, userId)))
+    .limit(1);
+  if (existing[0]) return false;
+
+  await db.insert(userBookmarks).values({ skillId, userId });
+
+  // Notify skill owner
+  const skill = await findSkillById(skillId, null);
+  if (skill && skill.ownerUserId !== userId) {
+    await db.insert(notifications).values({
+      userId: skill.ownerUserId,
+      type: 'bookmark',
+      actorId: userId,
+      skillId,
+      read: 0,
+    });
+  }
+
+  return true;
+}
+
+export async function removeSkillBookmark(skillId: string, userId: string): Promise<boolean> {
+  const rows = await db
+    .delete(userBookmarks)
+    .where(and(eq(userBookmarks.skillId, skillId), eq(userBookmarks.userId, userId)))
+    .returning({ id: userBookmarks.id });
+  return rows.length > 0;
+}
+
+export async function listUserBookmarks(userId: string): Promise<SkillWithOwner[]> {
+  const rows = await db
+    .select({ skill: skills, owner: ownerSelect, ...skillSelectExtras(userId) })
+    .from(userBookmarks)
+    .innerJoin(skills, eq(userBookmarks.skillId, skills.id))
+    .innerJoin(user, eq(skills.ownerUserId, user.id))
+    .where(eq(userBookmarks.userId, userId))
+    .orderBy(desc(userBookmarks.createdAt));
+
+  return rows.map(mapSkillRow);
 }
 
 export async function deleteSkill(skillId: string): Promise<boolean> {

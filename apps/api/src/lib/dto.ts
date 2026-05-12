@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export const VIDEO_UPLOAD_MAX_BYTES = 500 * 1024 * 1024;
+
 // ─── Query ─────────────────────────────────────────────────────────────
 
 export const listSkillsQuerySchema = z.object({
@@ -12,6 +14,10 @@ export const listSkillsQuerySchema = z.object({
     .union([z.string(), z.array(z.string())])
     .optional()
     .transform((v) => (v === undefined ? [] : Array.isArray(v) ? v : [v])),
+
+  sort: z.enum(['recent', 'hottest', 'az']).optional().default('recent'),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  offset: z.coerce.number().int().min(0).optional().default(0),
 });
 
 // ─── Owner ─────────────────────────────────────────────────────────────
@@ -35,6 +41,9 @@ const baseSkillDto = z.object({
   name: z.string(),
   description: z.string(),
   tags: z.array(z.string()),
+  icon: z.string().nullable(),
+  coverImage: z.string().nullable(),
+  demoVideoUrl: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
   owner: ownerInfoSchema,
@@ -42,6 +51,7 @@ const baseSkillDto = z.object({
   commentCount: z.number().int().nonnegative(),
   bookmarkCount: z.number().int().nonnegative(),
   viewerHasUpvoted: z.boolean(),
+  viewerHasBookmarked: z.boolean(),
 });
 
 export const ownedSkillListItemSchema = baseSkillDto.extend({
@@ -108,7 +118,7 @@ export const slugSegmentSchema = z
   .string()
   .regex(/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/, 'must be lowercase alphanumeric with dashes');
 
-export const createSkillSchema = z.object({
+const createSkillSchemaInner = z.object({
   // owner = the publishing user's URL handle (or a virtual handle from
   // canPublishAs, e.g. "mozia"). Must satisfy SLUG_RE.
   owner: slugSegmentSchema,
@@ -122,12 +132,32 @@ export const createSkillSchema = z.object({
   skillMdContent: z.string().min(20).max(200_000),
   // Optional: pre-parsed frontmatter; if absent we extract from skillMdContent.
   frontmatter: z.record(z.string(), z.unknown()).optional(),
+  // SkillHunt display fields (decoupled from SKILL.md content).
+  icon: z.string().max(10).optional().nullable(),
+  coverImage: z
+    .string()
+    .max(2_000_000, 'image data too large')
+    .optional()
+    .nullable()
+    .refine(
+      (v) => v === null || v === undefined || v.startsWith('data:image/'),
+      'must be a data:image/ URL or null',
+    ),
+  demoVideoUrl: z.string().url().max(500).optional().nullable(),
 });
+
+export const createSkillSchema = createSkillSchemaInner.refine(
+  (data) => !(data.icon && data.coverImage),
+  {
+    message: 'icon and coverImage are mutually exclusive',
+    path: ['icon'],
+  },
+);
 
 export type CreateSkillInput = z.infer<typeof createSkillSchema>;
 
 // Update can change everything except identity (owner, slug).
-export const updateSkillSchema = createSkillSchema.omit({ owner: true, slug: true }).partial();
+export const updateSkillSchema = createSkillSchemaInner.omit({ owner: true, slug: true }).partial();
 
 export type UpdateSkillInput = z.infer<typeof updateSkillSchema>;
 
@@ -158,6 +188,27 @@ export const updateSubscriptionSchema = z.object({
 });
 
 export type UpdateSubscriptionInput = z.infer<typeof updateSubscriptionSchema>;
+
+// ─── OSS video upload ─────────────────────────────────────────────────
+
+export const createVideoUploadSchema = z.object({
+  fileName: z.string().trim().min(1).max(255),
+  contentType: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .refine((value) => value.toLowerCase().startsWith('video/'), 'must be a video file'),
+  size: z.number().int().positive().max(VIDEO_UPLOAD_MAX_BYTES),
+});
+
+export type CreateVideoUploadInput = z.infer<typeof createVideoUploadSchema>;
+
+export const completeVideoUploadSchema = z.object({
+  objectKey: z.string().min(1).max(1024),
+});
+
+export type CompleteVideoUploadInput = z.infer<typeof completeVideoUploadSchema>;
 
 // File path constraint: no leading slash, no `..`, max 512 chars (matches DB constraint)
 export const filePathSchema = z

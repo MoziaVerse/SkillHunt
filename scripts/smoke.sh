@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SkillHub Phase 0 smoke test
+# SkillHunt Phase 0 smoke test
 # ---
 # Assumes:
 #   - `pnpm dev` is already running (api on :3333, web on :5180)
@@ -56,9 +56,9 @@ if ! command -v jq > /dev/null; then
 fi
 
 cyan "═══ 1. Health ═══"
-check "api /healthz"                    bash -c "curl -fsS $API/healthz | grep -q skillhub-api"
+check "api /healthz"                    bash -c "curl -fsS $API/healthz | grep -q skillhunt-api"
 check "web / returns HTML"              bash -c "curl -fsS $WEB/ | grep -q '<div id=\"root\"'"
-check "web / exposes SkillHub title"    bash -c "curl -fsS $WEB/ | grep -q 'SkillHub'"
+check "web / exposes SkillHunt title"    bash -c "curl -fsS $WEB/ | grep -q 'SkillHunt'"
 
 cyan "═══ 2. Business API ═══"
 jq_check "/api/skills → items is array"              "$API/api/skills"                             ".items | type == \"array\""

@@ -33,6 +33,11 @@ export const skills = sqliteTable(
     // owned-only field: original SKILL.md frontmatter, kept verbatim for future restore.
     frontmatter: text('frontmatter', { mode: 'json' }).$type<Record<string, unknown>>(),
 
+    // SkillHunt display fields (decoupled from SKILL.md content).
+    icon: text('icon'), // emoji character, e.g. "🚀"
+    coverImage: text('cover_image'), // base64 data URL
+    demoVideoUrl: text('demo_video_url'), // external video URL
+
     // GitHub-like fork lineage. Null means this is an original skill.
     parentSkillId: text('parent_skill_id'),
     rootSkillId: text('root_skill_id'),
@@ -166,7 +171,7 @@ export type SkillSubscription = typeof skillSubscriptions.$inferSelect;
 // ─── Phase 2 spec 03 · capability URL (single-shot install grant) ─────
 //
 // PAT was removed in 0006 — Bearer auth is forwarded to matrix's central
-// key system in spec 04 instead of maintaining a parallel SkillHub table.
+// key system in spec 04 instead of maintaining a parallel SkillHunt table.
 
 export const installGrants = sqliteTable(
   'install_grants',
