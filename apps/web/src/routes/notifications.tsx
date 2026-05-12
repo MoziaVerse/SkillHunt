@@ -1,5 +1,6 @@
 import { Avatar } from '@/components/avatar';
 import { type Notification, apiClient } from '@/lib/api-client';
+import { publishUnreadNotificationCount } from '@/lib/notifications';
 import { cn } from '@/lib/utils';
 import type { NotificationType } from '@/types/api';
 import { useEffect, useState } from 'react';
@@ -52,6 +53,7 @@ export default function NotificationsPage() {
         if (cancelled) return;
         setNotifications(listRes.items);
         setUnreadCount(countRes.count);
+        publishUnreadNotificationCount(countRes.count);
         setError(null);
       })
       .catch((e: unknown) => {
@@ -67,15 +69,20 @@ export default function NotificationsPage() {
   }, []);
 
   const handleMarkRead = async (id: string) => {
+    if (notifications.find((n) => n.id === id)?.read) return;
+
     await apiClient.markNotificationRead(id);
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-    setUnreadCount((c) => Math.max(0, c - 1));
+    const countRes = await apiClient.getUnreadNotificationCount();
+    setUnreadCount(countRes.count);
+    publishUnreadNotificationCount(countRes.count);
   };
 
   const handleMarkAllRead = async () => {
     await apiClient.markAllNotificationsRead();
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     setUnreadCount(0);
+    publishUnreadNotificationCount(0);
   };
 
   const filtered =

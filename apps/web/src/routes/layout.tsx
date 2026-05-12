@@ -1,6 +1,7 @@
 import { Avatar } from '@/components/avatar';
 import { Logo } from '@/components/logo';
 import { type MeResponse, apiClient } from '@/lib/api-client';
+import { subscribeUnreadNotificationCount } from '@/lib/notifications';
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router';
@@ -9,10 +10,14 @@ function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
+    const unsubscribe = subscribeUnreadNotificationCount(setUnreadCount);
+
     apiClient.getUnreadNotificationCount().then(
       (res) => setUnreadCount(res.count),
       () => setUnreadCount(0),
     );
+
+    return unsubscribe;
   }, []);
 
   return (
