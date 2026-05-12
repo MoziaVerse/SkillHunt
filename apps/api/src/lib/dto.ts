@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export const VIDEO_UPLOAD_MAX_BYTES = 500 * 1024 * 1024;
+
 // ─── Query ─────────────────────────────────────────────────────────────
 
 export const listSkillsQuerySchema = z.object({
@@ -12,6 +14,10 @@ export const listSkillsQuerySchema = z.object({
     .union([z.string(), z.array(z.string())])
     .optional()
     .transform((v) => (v === undefined ? [] : Array.isArray(v) ? v : [v])),
+
+  sort: z.enum(['recent', 'hottest', 'az']).optional().default('recent'),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  offset: z.coerce.number().int().min(0).optional().default(0),
 });
 
 // ─── Owner ─────────────────────────────────────────────────────────────
@@ -35,9 +41,17 @@ const baseSkillDto = z.object({
   name: z.string(),
   description: z.string(),
   tags: z.array(z.string()),
+  icon: z.string().nullable(),
+  coverImage: z.string().nullable(),
+  demoVideoUrl: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
   owner: ownerInfoSchema,
+  upvoteCount: z.number().int().nonnegative(),
+  commentCount: z.number().int().nonnegative(),
+  bookmarkCount: z.number().int().nonnegative(),
+  viewerHasUpvoted: z.boolean(),
+  viewerHasBookmarked: z.boolean(),
 });
 
 export const ownedSkillListItemSchema = baseSkillDto.extend({
@@ -78,6 +92,25 @@ export const skillDetailSchema = z.discriminatedUnion('type', [
 
 export type SkillDetail = z.infer<typeof skillDetailSchema>;
 
+export const skillCommentSchema = z.object({
+  id: z.string(),
+  skillId: z.string(),
+  parentId: z.string().nullable(),
+  content: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  author: ownerInfoSchema,
+});
+
+export type SkillComment = z.infer<typeof skillCommentSchema>;
+
+export const createSkillCommentSchema = z.object({
+  content: z.string().trim().min(1).max(5_000),
+  parentId: z.string().optional().nullable(),
+});
+
+export type CreateSkillCommentInput = z.infer<typeof createSkillCommentSchema>;
+
 // ─── Mutations ─────────────────────────────────────────────────────────
 
 // Slug / owner segment: lowercase, 1-64, [a-z0-9-], no leading/trailing dash.
@@ -85,7 +118,7 @@ export const slugSegmentSchema = z
   .string()
   .regex(/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/, 'must be lowercase alphanumeric with dashes');
 
-export const createSkillSchema = z.object({
+const createSkillSchemaInner = z.object({
   // owner = the publishing user's URL handle (or a virtual handle from
   // canPublishAs, e.g. "mozia"). Must satisfy SLUG_RE.
   owner: slugSegmentSchema,
@@ -99,14 +132,83 @@ export const createSkillSchema = z.object({
   skillMdContent: z.string().min(20).max(200_000),
   // Optional: pre-parsed frontmatter; if absent we extract from skillMdContent.
   frontmatter: z.record(z.string(), z.unknown()).optional(),
+  // SkillHunt display fields (decoupled from SKILL.md content).
+  icon: z.string().max(10).optional().nullable(),
+  coverImage: z
+    .string()
+    .max(2_000_000, 'image data too large')
+    .optional()
+    .nullable()
+    .refine(
+      (v) => v === null || v === undefined || v.startsWith('data:image/'),
+      'must be a data:image/ URL or null',
+    ),
+  demoVideoUrl: z.string().url().max(500).optional().nullable(),
 });
+
+export const createSkillSchema = createSkillSchemaInner.refine(
+  (data) => !(data.icon && data.coverImage),
+  {
+    message: 'icon and coverImage are mutually exclusive',
+    path: ['icon'],
+  },
+);
 
 export type CreateSkillInput = z.infer<typeof createSkillSchema>;
 
 // Update can change everything except identity (owner, slug).
-export const updateSkillSchema = createSkillSchema.omit({ owner: true, slug: true }).partial();
+export const updateSkillSchema = createSkillSchemaInner.omit({ owner: true, slug: true }).partial();
 
 export type UpdateSkillInput = z.infer<typeof updateSkillSchema>;
+
+export const forkSkillSchema = z.object({
+  slug: slugSegmentSchema.optional(),
+  note: z.string().max(500).optional(),
+});
+
+export type ForkSkillInput = z.infer<typeof forkSkillSchema>;
+
+export const createReleaseSchema = z.object({
+  title: z.string().trim().min(1).max(120).default('发布更新'),
+  changelog: z.string().trim().max(5_000).default(''),
+});
+
+export type CreateReleaseInput = z.infer<typeof createReleaseSchema>;
+
+export const syncUpstreamSchema = z.object({
+  strategy: z.enum(['auto']).default('auto'),
+});
+
+export type SyncUpstreamInput = z.infer<typeof syncUpstreamSchema>;
+
+export const updateSubscriptionSchema = z.object({
+  active: z.boolean(),
+  notifyOnRelease: z.boolean().optional().default(true),
+  notifyOnSync: z.boolean().optional().default(true),
+});
+
+export type UpdateSubscriptionInput = z.infer<typeof updateSubscriptionSchema>;
+
+// ─── OSS video upload ─────────────────────────────────────────────────
+
+export const createVideoUploadSchema = z.object({
+  fileName: z.string().trim().min(1).max(255),
+  contentType: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .refine((value) => value.toLowerCase().startsWith('video/'), 'must be a video file'),
+  size: z.number().int().positive().max(VIDEO_UPLOAD_MAX_BYTES),
+});
+
+export type CreateVideoUploadInput = z.infer<typeof createVideoUploadSchema>;
+
+export const completeVideoUploadSchema = z.object({
+  objectKey: z.string().min(1).max(1024),
+});
+
+export type CompleteVideoUploadInput = z.infer<typeof completeVideoUploadSchema>;
 
 // File path constraint: no leading slash, no `..`, max 512 chars (matches DB constraint)
 export const filePathSchema = z
@@ -150,7 +252,7 @@ export const RESERVED_HANDLES = new Set([
   'www',
 ]);
 
-// PATCH /api/users/me/profile — both name (display) and handle (URL) editable,
+// PATCH /api/me/profile — both name (display) and handle (URL) editable,
 // either independently. handle goes through SLUG_RE; name has no charset rule
 // beyond a length cap.
 export const updateProfileSchema = z
@@ -165,6 +267,17 @@ export const updateProfileSchema = z
   });
 
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+
+// PATCH /api/me/avatar — accepts a base64 data-URL or clears with null.
+export const updateAvatarSchema = z.object({
+  image: z
+    .string()
+    .max(2_000_000, 'image data too large')
+    .nullable()
+    .refine((v) => v === null || v.startsWith('data:image/'), 'must be a data:image/ URL or null'),
+});
+
+export type UpdateAvatarInput = z.infer<typeof updateAvatarSchema>;
 
 // ─── Capability URL ────────────────────────────────────────────────────
 

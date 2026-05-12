@@ -1,4 +1,17 @@
-import type { ListSkillsResponse, ListTagsResponse, OwnerInfo, SkillDetail } from '@/types/api';
+import type {
+  BaseSkill,
+  ListSkillsResponse,
+  ListTagsResponse,
+  Notification,
+  OwnerInfo,
+  SkillComment,
+  SkillDetail,
+  SkillRelease,
+  SkillSubscription,
+  UpstreamStatus,
+} from '@/types/api';
+
+export type { Notification } from '@/types/api';
 
 const BASE = '/api';
 
@@ -38,6 +51,9 @@ export interface ListSkillsParams {
   type?: 'all' | 'owned' | 'referenced';
   q?: string;
   tag?: string[];
+  sort?: 'recent' | 'hottest' | 'az';
+  limit?: number;
+  offset?: number;
 }
 
 export interface SessionUser {
@@ -76,6 +92,33 @@ export interface OwnerSkillsResponse {
   total: number;
 }
 
+export interface SkillCommentsResponse {
+  items: SkillComment[];
+  total: number;
+}
+
+export interface CreateVideoUploadInput {
+  fileName: string;
+  contentType: string;
+  size: number;
+}
+
+export interface VideoUploadTicket {
+  uploadUrl: string;
+  objectKey: string;
+  videoUrl: string;
+  maxSizeBytes: number;
+  expiresInSeconds: number;
+}
+
+export interface UploadedVideoMetadata {
+  objectKey: string;
+  videoUrl: string;
+  playbackUrl: string;
+  size: number;
+  contentType: string | null;
+}
+
 export interface CreateSkillInput {
   owner: string;
   slug: string;
@@ -84,6 +127,9 @@ export interface CreateSkillInput {
   tags: string[];
   visibility: 'public' | 'private';
   skillMdContent: string;
+  icon?: string | null;
+  coverImage?: string | null;
+  demoVideoUrl?: string | null;
 }
 
 export interface UpdateSkillInput {
@@ -92,6 +138,9 @@ export interface UpdateSkillInput {
   tags?: string[];
   visibility?: 'public' | 'private';
   skillMdContent?: string;
+  icon?: string | null;
+  coverImage?: string | null;
+  demoVideoUrl?: string | null;
 }
 
 export const apiClient = {
@@ -102,6 +151,9 @@ export const apiClient = {
     if (params.type) usp.set('type', params.type);
     if (params.q) usp.set('q', params.q);
     if (params.tag) for (const t of params.tag) usp.append('tag', t);
+    if (params.sort) usp.set('sort', params.sort);
+    if (params.limit) usp.set('limit', String(params.limit));
+    if (params.offset) usp.set('offset', String(params.offset));
     const qs = usp.toString();
     return request<ListSkillsResponse>(`/skills${qs ? `?${qs}` : ''}`, { credentials: 'include' });
   },
@@ -111,6 +163,18 @@ export const apiClient = {
       `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}`,
       { credentials: 'include' },
     );
+  },
+
+  async getSkillFile(owner: string, slug: string, path: string): Promise<string> {
+    const res = await fetch(
+      `${BASE}/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/files/${encodePath(path)}`,
+      { credentials: 'include' },
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new ApiError(res.status, text);
+    }
+    return res.text();
   },
 
   getSkillBySlug(slug: string): Promise<SkillDetail> {
@@ -124,7 +188,26 @@ export const apiClient = {
     return request<ListTagsResponse>('/tags', { credentials: 'include' });
   },
 
+  listSkillComments(owner: string, slug: string): Promise<SkillCommentsResponse> {
+    return request<SkillCommentsResponse>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/comments`,
+      { credentials: 'include' },
+    );
+  },
+
+  getSkillDemoVideoUrl(owner: string, slug: string): string {
+    return `${BASE}/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/demo-video`;
+  },
+
   // ─── Mutations ───────────────────────────────────────────────────────
+
+  createVideoUpload(input: CreateVideoUploadInput): Promise<VideoUploadTicket> {
+    return request<VideoUploadTicket>('/uploads/videos', json(input, 'POST'));
+  },
+
+  completeVideoUpload(objectKey: string): Promise<UploadedVideoMetadata> {
+    return request<UploadedVideoMetadata>('/uploads/videos/complete', json({ objectKey }, 'POST'));
+  },
 
   createSkill(input: CreateSkillInput): Promise<SkillDetail> {
     return request<SkillDetail>('/skills', json(input, 'POST'));
@@ -158,18 +241,127 @@ export const apiClient = {
     );
   },
 
+  upvoteSkill(owner: string, slug: string): Promise<BaseSkill> {
+    return request<BaseSkill>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/upvote`,
+      { method: 'POST', credentials: 'include' },
+    );
+  },
+
+  removeSkillUpvote(owner: string, slug: string): Promise<BaseSkill> {
+    return request<BaseSkill>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/upvote`,
+      { method: 'DELETE', credentials: 'include' },
+    );
+  },
+
+  bookmarkSkill(owner: string, slug: string): Promise<BaseSkill> {
+    return request<BaseSkill>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/bookmark`,
+      { method: 'POST', credentials: 'include' },
+    );
+  },
+
+  removeSkillBookmark(owner: string, slug: string): Promise<BaseSkill> {
+    return request<BaseSkill>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/bookmark`,
+      { method: 'DELETE', credentials: 'include' },
+    );
+  },
+
+  getMyBookmarks(): Promise<ListSkillsResponse> {
+    return request<ListSkillsResponse>('/me/bookmarks', { credentials: 'include' });
+  },
+
+  createSkillComment(
+    owner: string,
+    slug: string,
+    input: { content: string; parentId?: string | null },
+  ): Promise<SkillComment> {
+    return request<SkillComment>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/comments`,
+      json(input, 'POST'),
+    );
+  },
+
+  forkSkill(owner: string, slug: string, input: { slug?: string } = {}): Promise<SkillDetail> {
+    return request<SkillDetail>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/fork`,
+      json(input, 'POST'),
+    );
+  },
+
+  listSkillReleases(
+    owner: string,
+    slug: string,
+  ): Promise<{ items: SkillRelease[]; total: number }> {
+    return request<{ items: SkillRelease[]; total: number }>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/releases`,
+      { credentials: 'include' },
+    );
+  },
+
+  createSkillRelease(
+    owner: string,
+    slug: string,
+    input: { title: string; changelog?: string },
+  ): Promise<SkillRelease> {
+    return request<SkillRelease>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/releases`,
+      json(input, 'POST'),
+    );
+  },
+
+  getUpstreamStatus(owner: string, slug: string): Promise<UpstreamStatus> {
+    return request<UpstreamStatus>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/upstream-status`,
+      { credentials: 'include' },
+    );
+  },
+
+  syncUpstream(
+    owner: string,
+    slug: string,
+  ): Promise<
+    | { status: 'success'; latestUpstreamRelease: SkillRelease; forkRelease: SkillRelease }
+    | { status: 'conflict'; conflictFiles: string[]; latestUpstreamRelease: SkillRelease }
+  > {
+    return request(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/sync-upstream`,
+      json({ strategy: 'auto' }, 'POST'),
+    );
+  },
+
+  getSkillSubscription(owner: string, slug: string): Promise<SkillSubscription> {
+    return request<SkillSubscription>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/subscription`,
+      { credentials: 'include' },
+    );
+  },
+
+  setSkillSubscription(
+    owner: string,
+    slug: string,
+    input: { active: boolean; notifyOnRelease?: boolean; notifyOnSync?: boolean },
+  ): Promise<SkillSubscription> {
+    return request<SkillSubscription>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/subscription`,
+      json(input, 'PUT'),
+    );
+  },
+
   // ─── Users ───────────────────────────────────────────────────────────
 
   getMe(): Promise<MeResponse> {
-    return request<MeResponse>('/users/me', { credentials: 'include' });
+    return request<MeResponse>('/me', { credentials: 'include' });
   },
 
-  updateProfile(input: { name?: string; handle?: string }): Promise<MeResponse> {
-    return request<MeResponse>('/users/me/profile', json(input, 'PATCH'));
+  updateAvatar(image: string | null): Promise<{ image: string | null }> {
+    return request<{ image: string | null }>('/me/avatar', json({ image }, 'PATCH'));
   },
 
   getMySkills(): Promise<ListSkillsResponse> {
-    return request<ListSkillsResponse>('/users/me/skills', { credentials: 'include' });
+    return request<ListSkillsResponse>('/me/skills', { credentials: 'include' });
   },
 
   getOwnerSkills(ownerName: string): Promise<OwnerSkillsResponse> {
@@ -186,6 +378,34 @@ export const apiClient = {
     maxUses?: number;
   }): Promise<MintTokenResult> {
     return request<MintTokenResult>('/install-tokens', json(input, 'POST'));
+  },
+
+  // ─── Notifications ───────────────────────────────────────────────────
+
+  listNotifications(): Promise<{ items: Notification[]; total: number }> {
+    return request<{ items: Notification[]; total: number }>('/notifications', {
+      credentials: 'include',
+    });
+  },
+
+  getUnreadNotificationCount(): Promise<{ count: number }> {
+    return request<{ count: number }>('/notifications/unread-count', {
+      credentials: 'include',
+    });
+  },
+
+  markNotificationRead(id: string): Promise<{ status: 'ok' }> {
+    return request<{ status: 'ok' }>(`/notifications/${id}/read`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+  },
+
+  markAllNotificationsRead(): Promise<{ status: 'ok' }> {
+    return request<{ status: 'ok' }>('/notifications/read-all', {
+      method: 'POST',
+      credentials: 'include',
+    });
   },
 
   // ─── Auth status ─────────────────────────────────────────────────────

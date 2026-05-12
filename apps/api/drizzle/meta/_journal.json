@@ -1,54 +1,40 @@
 {
   "version": "7",
-  "dialect": "postgresql",
+  "dialect": "sqlite",
   "entries": [
     {
       "idx": 0,
-      "version": "7",
-      "when": 1776840511229,
-      "tag": "0000_wild_santa_claus",
+      "version": "6",
+      "when": 1777533121785,
+      "tag": "0000_perfect_firelord",
       "breakpoints": true
     },
     {
       "idx": 1,
-      "version": "7",
-      "when": 1776907437102,
-      "tag": "0001_curved_red_shift",
+      "version": "6",
+      "when": 1777533997354,
+      "tag": "0001_overconfident_marten_broadcloak",
       "breakpoints": true
     },
     {
       "idx": 2,
-      "version": "7",
-      "when": 1777529900000,
-      "tag": "0002_visibility_public_private",
+      "version": "6",
+      "when": 1778307129979,
+      "tag": "0002_skillhunt_community",
       "breakpoints": true
     },
     {
       "idx": 3,
-      "version": "7",
-      "when": 1777534800000,
-      "tag": "0003_owner_user_id",
+      "version": "6",
+      "when": 1778310000000,
+      "tag": "0003_skillhunt_fork_sync",
       "breakpoints": true
     },
     {
       "idx": 4,
-      "version": "7",
-      "when": 1777538400000,
-      "tag": "0004_user_handle",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1777542000000,
-      "tag": "0005_pat_and_install_grants",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1777545600000,
-      "tag": "0006_drop_pat",
+      "version": "6",
+      "when": 1778382813110,
+      "tag": "0004_thick_silver_sable",
       "breakpoints": true
     }
   ]

@@ -1,13 +1,25 @@
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
-import { sql } from 'drizzle-orm';
+import { inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
-import { db, skillFiles, skills } from '../db';
+import { db, skillFiles, skills, user } from '../db';
+import { skillProtocolName } from '../lib/protocol-name';
 import { wellknownRoute } from './wellknown';
 
 const app = new Hono().route('/.well-known', wellknownRoute);
+const OWNER_ID = 'mozia-virtual';
+const ALICE_ID = 'alice-owner';
 
 async function resetAndSeed() {
-  await db.execute(sql`TRUNCATE TABLE skillhub.skills RESTART IDENTITY CASCADE`);
+  await db.delete(skills);
+  await db.delete(user).where(inArray(user.id, [OWNER_ID, ALICE_ID]));
+  await db.insert(user).values({
+    id: OWNER_ID,
+    name: 'Mozia',
+    handle: 'mozia',
+    email: 'mozia@example.com',
+    emailVerified: true,
+    isVirtual: true,
+  });
 
   const [ownedPublic] = await db
     .insert(skills)
@@ -19,7 +31,7 @@ async function resetAndSeed() {
       visibility: 'public',
       tags: [],
       frontmatter: { name: 'test-owned-public' },
-      ownerUserId: 'mozia-virtual',
+      ownerUserId: OWNER_ID,
     })
     .returning();
   if (!ownedPublic) throw new Error('seed: ownedPublic insert failed');
@@ -43,7 +55,7 @@ async function resetAndSeed() {
       visibility: 'private',
       tags: [],
       frontmatter: { name: 'test-owned-private' },
-      ownerUserId: 'mozia-virtual',
+      ownerUserId: OWNER_ID,
     })
     .returning();
   if (!ownedPriv) throw new Error('seed: ownedPriv insert failed');
@@ -65,12 +77,13 @@ async function resetAndSeed() {
     sourceSkillName: 'test-ref',
     sourceInstallCommand: 'npx skills add test/repo --skill test-ref',
     sourceUrl: 'https://example.com',
-    ownerUserId: 'mozia-virtual',
+    ownerUserId: OWNER_ID,
   });
 }
 
 async function cleanup() {
-  await db.execute(sql`TRUNCATE TABLE skillhub.skills RESTART IDENTITY CASCADE`);
+  await db.delete(skills);
+  await db.delete(user).where(inArray(user.id, [OWNER_ID, ALICE_ID]));
 }
 
 describe('well-known endpoint', () => {
@@ -157,6 +170,52 @@ describe('well-known endpoint', () => {
       expect(isValidSkillEntry(entry)).toBe(true);
     }
   });
+
+  it('non-mozia public skills use CLI-safe protocol names, not owner/slug', async () => {
+    await db.insert(user).values({
+      id: ALICE_ID,
+      name: 'Alice',
+      handle: 'alice',
+      email: 'alice@example.com',
+      emailVerified: true,
+    });
+
+    const [skill] = await db
+      .insert(skills)
+      .values({
+        slug: 'shared-skill',
+        name: 'shared-skill',
+        description: 'alice owned public skill',
+        type: 'owned',
+        visibility: 'public',
+        tags: [],
+        frontmatter: { name: 'shared-skill' },
+        ownerUserId: ALICE_ID,
+      })
+      .returning();
+    if (!skill) throw new Error('seed: alice skill insert failed');
+
+    await db.insert(skillFiles).values({
+      skillId: skill.id,
+      path: 'SKILL.md',
+      content: '---\nname: shared-skill\n---\n# alice body\n',
+    });
+
+    const index = await app.fetch(
+      new Request('http://localhost/.well-known/agent-skills/index.json'),
+    );
+    const body = (await index.json()) as { skills: Array<{ name: string }> };
+    const names = body.skills.map((s) => s.name);
+    const protocolName = skillProtocolName('alice', 'shared-skill');
+    expect(names).toContain(protocolName);
+    expect(names).not.toContain('alice/shared-skill');
+
+    const file = await app.fetch(
+      new Request(`http://localhost/.well-known/agent-skills/${protocolName}/SKILL.md`),
+    );
+    expect(file.status).toBe(200);
+    expect(await file.text()).toContain('alice body');
+  });
 });
 
 // Mirrors vercel-labs/skills src/providers/wellknown.ts isValidSkillEntry.
@@ -164,6 +223,7 @@ function isValidSkillEntry(entry: unknown): boolean {
   if (!entry || typeof entry !== 'object') return false;
   const e = entry as Record<string, unknown>;
   if (typeof e.name !== 'string' || e.name.length === 0) return false;
+  if (!/^[a-z0-9-]+$/.test(e.name)) return false;
   if (typeof e.description !== 'string' || e.description.length === 0) return false;
   if (!Array.isArray(e.files) || e.files.length === 0) return false;
   let hasSkillMd = false;

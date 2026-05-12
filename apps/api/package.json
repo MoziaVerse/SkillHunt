@@ -14,15 +14,18 @@
     "db:migrate": "bun run src/db/migrate.ts",
     "db:migrate:test": "bun --env-file=.env.test run src/db/migrate.ts",
     "db:migrate:bridge": "bun --env-file=.env.testbridge run src/db/migrate.ts",
+    "db:push": "drizzle-kit push",
+    "db:reset": "bun run src/db/reset.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.7.0",
     "@mozia/skillhub-shared": "workspace:*",
     "better-auth": "^1.6.7",
+    "better-sqlite3": "^12.9.0",
     "drizzle-orm": "^0.45.0",
     "hono": "^4.6.0",
-    "postgres": "^3.4.0",
+    "jose": "^6.2.2",
     "zod": "^3.25.0"
   },
   "devDependencies": {

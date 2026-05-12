@@ -1,12 +1,16 @@
 import { Navigate, RouterProvider, createBrowserRouter, useParams } from 'react-router';
-import HowToInstall from './routes/docs/how-to-install';
-import HowToPublish from './routes/docs/how-to-publish';
+import ApiReference from './routes/docs/api-reference';
+import FileStructure from './routes/docs/file-structure';
 import DocsIndex from './routes/docs/index';
 import DocsLayout from './routes/docs/layout';
+import PublishInfo from './routes/docs/publish-info';
+import QualityChecklist from './routes/docs/quality-checklist';
+import QuickStart from './routes/docs/quick-start';
 import WhatIsASkill from './routes/docs/what-is-a-skill';
+import WriteSkillMd from './routes/docs/write-skill-md';
 import Layout from './routes/layout';
+import NotificationsPage from './routes/notifications';
 import PublishPage from './routes/publish';
-import SettingsProfilePage from './routes/settings-profile';
 import SkillDetail from './routes/skill-detail';
 import SkillEditPage from './routes/skill-edit';
 import SkillsList from './routes/skills-list';
@@ -28,16 +32,20 @@ const router = createBrowserRouter([
       { path: 'skills/:owner/:slug/edit', element: <SkillEditPage /> },
       { path: 'skills/:slug', element: <LegacySkillRedirect /> },
       { path: 'publish', element: <PublishPage /> },
+      { path: 'notifications', element: <NotificationsPage /> },
       { path: 'u/:owner', element: <UserPage /> },
-      { path: 'settings/profile', element: <SettingsProfilePage /> },
       {
         path: 'docs',
         element: <DocsLayout />,
         children: [
           { index: true, element: <DocsIndex /> },
           { path: 'what-is-a-skill', element: <WhatIsASkill /> },
-          { path: 'how-to-install', element: <HowToInstall /> },
-          { path: 'how-to-publish', element: <HowToPublish /> },
+          { path: 'quick-start', element: <QuickStart /> },
+          { path: 'write-skill-md', element: <WriteSkillMd /> },
+          { path: 'file-structure', element: <FileStructure /> },
+          { path: 'publish-info', element: <PublishInfo /> },
+          { path: 'quality-checklist', element: <QualityChecklist /> },
+          { path: 'api-reference', element: <ApiReference /> },
         ],
       },
     ],

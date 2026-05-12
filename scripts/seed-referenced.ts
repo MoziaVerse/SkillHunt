@@ -3,9 +3,32 @@
 
 import { readFile } from 'node:fs/promises';
 import { and, eq } from 'drizzle-orm';
-import { db, skills } from '../apps/api/src/db';
+import { db, skills, user } from '../apps/api/src/db';
 
 const SEED_OWNER_ID = 'mozia-virtual';
+const SEED_OWNER_HANDLE = 'mozia';
+
+async function ensureSeedOwner() {
+  await db
+    .insert(user)
+    .values({
+      id: SEED_OWNER_ID,
+      name: 'mozia',
+      handle: SEED_OWNER_HANDLE,
+      email: 'mozia-virtual@skillhub.local',
+      emailVerified: true,
+      isVirtual: true,
+    })
+    .onConflictDoUpdate({
+      target: user.id,
+      set: {
+        name: 'mozia',
+        handle: SEED_OWNER_HANDLE,
+        isVirtual: true,
+        updatedAt: new Date(),
+      },
+    });
+}
 
 export interface ReferencedEntry {
   slug: string;
@@ -31,6 +54,7 @@ export async function seedReferenced(
 ): Promise<{ inserted: number; skipped: number }> {
   let inserted = 0;
   let skipped = 0;
+  await ensureSeedOwner();
 
   for (const entry of entries) {
     const existing = await db

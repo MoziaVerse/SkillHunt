@@ -11,5 +11,9 @@ dist/
 .env.server.local
 .DS_Store
 *.log
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 .vite/
 apps/*/dist/
+apps/api/data/
