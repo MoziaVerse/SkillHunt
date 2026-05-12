@@ -270,7 +270,7 @@ export const apiClient = {
   },
 
   getMyBookmarks(): Promise<ListSkillsResponse> {
-    return request<ListSkillsResponse>('/users/me/bookmarks', { credentials: 'include' });
+    return request<ListSkillsResponse>('/me/bookmarks', { credentials: 'include' });
   },
 
   createSkillComment(
@@ -353,15 +353,15 @@ export const apiClient = {
   // ─── Users ───────────────────────────────────────────────────────────
 
   getMe(): Promise<MeResponse> {
-    return request<MeResponse>('/users/me', { credentials: 'include' });
+    return request<MeResponse>('/me', { credentials: 'include' });
   },
 
   updateAvatar(image: string | null): Promise<{ image: string | null }> {
-    return request<{ image: string | null }>('/users/me/avatar', json({ image }, 'PATCH'));
+    return request<{ image: string | null }>('/me/avatar', json({ image }, 'PATCH'));
   },
 
   getMySkills(): Promise<ListSkillsResponse> {
-    return request<ListSkillsResponse>('/users/me/skills', { credentials: 'include' });
+    return request<ListSkillsResponse>('/me/skills', { credentials: 'include' });
   },
 
   getOwnerSkills(ownerName: string): Promise<OwnerSkillsResponse> {
