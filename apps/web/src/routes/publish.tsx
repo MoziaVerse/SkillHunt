@@ -33,7 +33,11 @@ export default function PublishPage() {
               <Logo size={16} className="text-neutral-900" />
             </Link>
             <span className="text-neutral-300">/</span>
-            <span className="text-neutral-900 font-medium">发布</span>
+            <Link to="/publish" className="text-neutral-500 hover:text-neutral-900 transition">
+              发布
+            </Link>
+            <span className="text-neutral-300">/</span>
+            <span className="text-neutral-900 font-medium">Skill</span>
           </div>
         </nav>
 
@@ -76,7 +80,11 @@ export default function PublishPage() {
               <Logo size={16} className="text-neutral-900" />
             </Link>
             <span className="text-neutral-300">/</span>
-            <span className="text-neutral-900 font-medium">发布</span>
+            <Link to="/publish" className="text-neutral-500 hover:text-neutral-900 transition">
+              发布
+            </Link>
+            <span className="text-neutral-300">/</span>
+            <span className="text-neutral-900 font-medium">Skill</span>
           </div>
         </nav>
 
@@ -146,7 +154,11 @@ export default function PublishPage() {
             <Logo size={16} className="text-neutral-900" />
           </Link>
           <span className="text-neutral-300">/</span>
-          <span className="text-neutral-900 font-medium">发布</span>
+          <Link to="/publish" className="text-neutral-500 hover:text-neutral-900 transition">
+            发布
+          </Link>
+          <span className="text-neutral-300">/</span>
+          <span className="text-neutral-900 font-medium">Skill</span>
         </div>
       </nav>
 

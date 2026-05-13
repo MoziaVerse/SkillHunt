@@ -52,6 +52,36 @@ export interface ReferencedSkillDetail extends ReferencedSkillListItem {
 
 export type SkillDetail = OwnedSkillDetail | ReferencedSkillDetail;
 
+export interface SkillPackageListItem {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  visibility: 'public' | 'private';
+  tags: string[];
+  icon: string | null;
+  coverImage: string | null;
+  owner: OwnerInfo;
+  skillCount: number;
+  installCommand: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SkillPackageSkill {
+  itemId: string;
+  position: number;
+  note: string | null;
+  pinnedReleaseId: string | null;
+  protocolName: string;
+  files: string[];
+  skill: OwnedSkillListItem;
+}
+
+export interface SkillPackageDetail extends SkillPackageListItem {
+  skills: SkillPackageSkill[];
+}
+
 export interface SkillComment {
   id: string;
   skillId: string;
@@ -139,6 +169,11 @@ export type UpstreamStatus =
 
 export interface ListSkillsResponse {
   items: SkillListItem[];
+  total: number;
+}
+
+export interface ListPackagesResponse {
+  items: SkillPackageListItem[];
   total: number;
 }
 

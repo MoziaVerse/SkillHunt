@@ -227,6 +227,61 @@ export const skillInstallEvents = sqliteTable(
 
 export type SkillInstallEvent = typeof skillInstallEvents.$inferSelect;
 
+// ─── SkillHunt: Skill Packages ─────
+
+export const skillPackages = sqliteTable(
+  'skill_packages',
+  {
+    id: text('id').primaryKey().$defaultFn(randomId),
+    ownerUserId: text('owner_user_id').notNull(),
+    slug: text('slug').notNull(),
+    name: text('name').notNull(),
+    description: text('description').notNull(),
+    visibility: text('visibility', { enum: ['public', 'private'] })
+      .notNull()
+      .default('private'),
+    tags: text('tags', { mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
+    icon: text('icon'),
+    coverImage: text('cover_image'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+  },
+  (t) => [
+    uniqueIndex('skill_packages_owner_slug_idx').on(t.ownerUserId, t.slug),
+    index('skill_packages_visibility_idx').on(t.visibility),
+    index('skill_packages_updated_at_idx').on(t.updatedAt),
+  ],
+);
+
+export const skillPackageItems = sqliteTable(
+  'skill_package_items',
+  {
+    id: text('id').primaryKey().$defaultFn(randomId),
+    packageId: text('package_id')
+      .notNull()
+      .references(() => skillPackages.id, { onDelete: 'cascade' }),
+    skillId: text('skill_id')
+      .notNull()
+      .references(() => skills.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull().default(0),
+    note: text('note'),
+    pinnedReleaseId: text('pinned_release_id').references(() => skillReleases.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+  },
+  (t) => [
+    uniqueIndex('skill_package_items_package_skill_idx').on(t.packageId, t.skillId),
+    index('skill_package_items_package_position_idx').on(t.packageId, t.position),
+    index('skill_package_items_skill_idx').on(t.skillId),
+  ],
+);
+
+export type SkillPackage = typeof skillPackages.$inferSelect;
+export type NewSkillPackage = typeof skillPackages.$inferInsert;
+export type SkillPackageItem = typeof skillPackageItems.$inferSelect;
+export type NewSkillPackageItem = typeof skillPackageItems.$inferInsert;
+
 // ─── SkillHunt: Community Features ─────
 
 // Upvotes table: each user can upvote a skill only once

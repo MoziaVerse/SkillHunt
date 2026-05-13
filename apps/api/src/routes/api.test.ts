@@ -6,6 +6,8 @@ import {
   notifications,
   skillComments,
   skillFiles,
+  skillPackageItems,
+  skillPackages,
   skillReleases,
   skillSubscriptions,
   skillSyncEvents,
@@ -89,6 +91,8 @@ async function resetAndSeed() {
   await db.delete(skillSyncEvents);
   await db.delete(skillSubscriptions);
   await db.delete(skillReleases);
+  await db.delete(skillPackageItems);
+  await db.delete(skillPackages);
   await db.delete(skills);
   await db.delete(user).where(inArray(user.id, [OWNER_USER_ID, OTHER_USER_ID]));
 
@@ -178,6 +182,8 @@ async function cleanup() {
   await db.delete(skillSyncEvents);
   await db.delete(skillSubscriptions);
   await db.delete(skillReleases);
+  await db.delete(skillPackageItems);
+  await db.delete(skillPackages);
   await db.delete(skills);
   await db.delete(user).where(inArray(user.id, [OWNER_USER_ID, OTHER_USER_ID]));
 }
@@ -376,6 +382,166 @@ describe('business API', () => {
       const body = (await res.json()) as { tags: string[] };
       expect(body.tags.sort()).toEqual(['design', 'tooling']);
       expect(body.tags).not.toContain('writing');
+    });
+  });
+
+  describe('Skill Package API', () => {
+    async function publicSkillId() {
+      const res = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`));
+      const body = (await res.json()) as { id: string };
+      return body.id;
+    }
+
+    async function privateSkillId() {
+      const res = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-priv`, OWNER_USER_ID),
+      );
+      const body = (await res.json()) as { id: string };
+      return body.id;
+    }
+
+    it('creates a public package with an install command tailored for npx skills', async () => {
+      const skillId = await publicSkillId();
+      const res = await app.fetch(
+        reqAsUser(
+          '/api/packages',
+          OWNER_USER_ID,
+          jsonInit({
+            owner: OWNER_NAME,
+            slug: 'case-suite',
+            name: '案件处理工作包',
+            description: '一次安装案件处理相关 skills',
+            visibility: 'public',
+            tags: ['case'],
+            skillIds: [skillId],
+          }),
+        ),
+      );
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as {
+        slug: string;
+        installCommand: string;
+        skills: Array<{ protocolName: string; skill: { slug: string } }>;
+      };
+      expect(body.slug).toBe('case-suite');
+      expect(body.installCommand).toBe(
+        `npx skills add http://localhost/p/${OWNER_NAME}/case-suite --skill '*' -y`,
+      );
+      expect(body.skills).toHaveLength(1);
+      expect(body.skills[0]?.protocolName).toBe(skillProtocolName(OWNER_NAME, 'test-owned-pub'));
+    });
+
+    it('lists public packages for anonymous users', async () => {
+      const skillId = await publicSkillId();
+      await app.fetch(
+        reqAsUser(
+          '/api/packages',
+          OWNER_USER_ID,
+          jsonInit({
+            owner: OWNER_NAME,
+            slug: 'public-suite',
+            name: '公开工作包',
+            description: '公开发现和安装',
+            visibility: 'public',
+            tags: [],
+            skillIds: [skillId],
+          }),
+        ),
+      );
+
+      const res = await app.fetch(reqAnon('/api/packages'));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { items: Array<{ slug: string; skillCount: number }> };
+      expect(body.items.map((item) => item.slug)).toContain('public-suite');
+      expect(body.items.find((item) => item.slug === 'public-suite')?.skillCount).toBe(1);
+    });
+
+    it('hides private packages from anonymous users', async () => {
+      await app.fetch(
+        reqAsUser(
+          '/api/packages',
+          OWNER_USER_ID,
+          jsonInit({
+            owner: OWNER_NAME,
+            slug: 'private-suite',
+            name: '私有工作包',
+            description: '仅自己可见',
+            visibility: 'private',
+            tags: [],
+            skillIds: [],
+          }),
+        ),
+      );
+
+      const hidden = await app.fetch(reqAnon(`/api/packages/${OWNER_NAME}/private-suite`));
+      expect(hidden.status).toBe(404);
+
+      const ownerView = await app.fetch(
+        reqAsUser(`/api/packages/${OWNER_NAME}/private-suite`, OWNER_USER_ID),
+      );
+      expect(ownerView.status).toBe(200);
+    });
+
+    it('rejects private skills in public packages', async () => {
+      const skillId = await privateSkillId();
+      const res = await app.fetch(
+        reqAsUser(
+          '/api/packages',
+          OWNER_USER_ID,
+          jsonInit({
+            owner: OWNER_NAME,
+            slug: 'bad-suite',
+            name: '错误工作包',
+            description: '不能公开私有 skill',
+            visibility: 'public',
+            tags: [],
+            skillIds: [skillId],
+          }),
+        ),
+      );
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('private_skill_in_public_package');
+    });
+
+    it('adds and removes package items', async () => {
+      const skillId = await publicSkillId();
+      const created = await app.fetch(
+        reqAsUser(
+          '/api/packages',
+          OWNER_USER_ID,
+          jsonInit({
+            owner: OWNER_NAME,
+            slug: 'editable-suite',
+            name: '可编辑工作包',
+            description: '用于测试添加和移除',
+            visibility: 'public',
+            tags: [],
+            skillIds: [],
+          }),
+        ),
+      );
+      expect(created.status).toBe(201);
+
+      const added = await app.fetch(
+        reqAsUser(
+          `/api/packages/${OWNER_NAME}/editable-suite/items`,
+          OWNER_USER_ID,
+          jsonInit({ skillId }),
+        ),
+      );
+      expect(added.status).toBe(201);
+      const addedBody = (await added.json()) as { skills: Array<{ itemId: string }> };
+      expect(addedBody.skills).toHaveLength(1);
+
+      const itemId = addedBody.skills[0]?.itemId;
+      if (!itemId) throw new Error('expected package item id');
+      const deleted = await app.fetch(
+        reqAsUser(`/api/packages/${OWNER_NAME}/editable-suite/items/${itemId}`, OWNER_USER_ID, {
+          method: 'DELETE',
+        }),
+      );
+      expect(deleted.status).toBe(204);
     });
   });
 

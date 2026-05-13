@@ -20,6 +20,17 @@ export const listSkillsQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).optional().default(0),
 });
 
+export const listPackagesQuerySchema = z.object({
+  q: z.string().trim().min(1).max(200).optional(),
+  tag: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .transform((v) => (v === undefined ? [] : Array.isArray(v) ? v : [v])),
+  sort: z.enum(['recent', 'az']).optional().default('recent'),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  offset: z.coerce.number().int().min(0).optional().default(0),
+});
+
 // ─── Owner ─────────────────────────────────────────────────────────────
 
 export const ownerInfoSchema = z.object({
@@ -92,6 +103,41 @@ export const skillDetailSchema = z.discriminatedUnion('type', [
 
 export type SkillDetail = z.infer<typeof skillDetailSchema>;
 
+// ─── Skill Package ────────────────────────────────────────────────────
+
+export const skillPackageListItemSchema = z.object({
+  id: z.string(),
+  slug: z.string(),
+  name: z.string(),
+  description: z.string(),
+  visibility: z.enum(['public', 'private']),
+  tags: z.array(z.string()),
+  icon: z.string().nullable(),
+  coverImage: z.string().nullable(),
+  owner: ownerInfoSchema,
+  skillCount: z.number().int().nonnegative(),
+  installCommand: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const skillPackageSkillSchema = z.object({
+  itemId: z.string(),
+  position: z.number().int().nonnegative(),
+  note: z.string().nullable(),
+  pinnedReleaseId: z.string().nullable(),
+  protocolName: z.string(),
+  files: z.array(z.string()),
+  skill: ownedSkillListItemSchema,
+});
+
+export const skillPackageDetailSchema = skillPackageListItemSchema.extend({
+  skills: z.array(skillPackageSkillSchema),
+});
+
+export type SkillPackageListItem = z.infer<typeof skillPackageListItemSchema>;
+export type SkillPackageDetail = z.infer<typeof skillPackageDetailSchema>;
+
 export const skillCommentSchema = z.object({
   id: z.string(),
   skillId: z.string(),
@@ -160,6 +206,62 @@ export type CreateSkillInput = z.infer<typeof createSkillSchema>;
 export const updateSkillSchema = createSkillSchemaInner.omit({ owner: true, slug: true }).partial();
 
 export type UpdateSkillInput = z.infer<typeof updateSkillSchema>;
+
+const packageDisplayFields = z.object({
+  name: z.string().min(1).max(120),
+  description: z.string().min(1).max(500),
+  tags: z.array(z.string().min(1).max(40)).max(10).default([]),
+  visibility: z.enum(['public', 'private']).default('private'),
+  icon: z.string().max(10).optional().nullable(),
+  coverImage: z
+    .string()
+    .max(2_000_000, 'image data too large')
+    .optional()
+    .nullable()
+    .refine(
+      (v) => v === null || v === undefined || v.startsWith('data:image/'),
+      'must be a data:image/ URL or null',
+    ),
+});
+
+export const createSkillPackageSchema = packageDisplayFields
+  .extend({
+    owner: slugSegmentSchema,
+    slug: slugSegmentSchema,
+    skillIds: z.array(z.string().min(1)).max(50).optional().default([]),
+  })
+  .refine((data) => !(data.icon && data.coverImage), {
+    message: 'icon and coverImage are mutually exclusive',
+    path: ['icon'],
+  });
+
+export type CreateSkillPackageInput = z.infer<typeof createSkillPackageSchema>;
+
+export const updateSkillPackageSchema = packageDisplayFields
+  .partial()
+  .refine((data) => !(data.icon && data.coverImage), {
+    message: 'icon and coverImage are mutually exclusive',
+    path: ['icon'],
+  });
+
+export type UpdateSkillPackageInput = z.infer<typeof updateSkillPackageSchema>;
+
+export const createSkillPackageItemSchema = z.object({
+  skillId: z.string().min(1),
+  position: z.number().int().min(0).optional(),
+  note: z.string().max(500).optional().nullable(),
+  pinnedReleaseId: z.string().min(1).optional().nullable(),
+});
+
+export type CreateSkillPackageItemInput = z.infer<typeof createSkillPackageItemSchema>;
+
+export const updateSkillPackageItemSchema = z.object({
+  position: z.number().int().min(0).optional(),
+  note: z.string().max(500).optional().nullable(),
+  pinnedReleaseId: z.string().min(1).optional().nullable(),
+});
+
+export type UpdateSkillPackageItemInput = z.infer<typeof updateSkillPackageItemSchema>;
 
 export const forkSkillSchema = z.object({
   slug: slugSegmentSchema.optional(),

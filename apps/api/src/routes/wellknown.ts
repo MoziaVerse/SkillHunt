@@ -8,6 +8,10 @@ import {
 } from '../services/install-grant-service';
 import { recordSkillInstall } from '../services/install-stats-service';
 import {
+  getPublicPackageSkillFile,
+  listPublicPackageSkillEntries,
+} from '../services/skill-package-service';
+import {
   findPublicOwnedSkillByOwnerAndSlug,
   findPublicOwnedSkillByProtocolName,
   getSkillFileContent,
@@ -17,6 +21,7 @@ import {
 
 export const wellknownRoute = new Hono();
 export const capabilityWellknownRoute = new Hono();
+export const packageWellknownRoute = new Hono();
 
 const isUnsafePath = (p: string) => !p || p.includes('..') || p.startsWith('/');
 
@@ -134,3 +139,60 @@ wellknownRoute.get('/agent-skills/:a/:b', handleAgentSkillsFile);
 wellknownRoute.get('/agent-skills/:a/:b/*', handleAgentSkillsFile);
 capabilityWellknownRoute.get('/:token/.well-known/agent-skills/:skillName', handleCapabilityFile);
 capabilityWellknownRoute.get('/:token/.well-known/agent-skills/:skillName/*', handleCapabilityFile);
+
+// GET /p/:owner/:packageSlug/.well-known/agent-skills/index.json
+packageWellknownRoute.get('/:owner/:packageSlug/.well-known/agent-skills/index.json', async (c) => {
+  const ownerHandle = c.req.param('owner');
+  const packageSlug = c.req.param('packageSlug');
+  const items = await listPublicPackageSkillEntries(ownerHandle, packageSlug);
+  if (!items) return c.notFound();
+
+  return c.json({
+    skills: items
+      .map((item) => ({
+        name: item.protocolName,
+        description: item.skill.description,
+        files: item.files,
+      }))
+      .filter((entry) => entry.files.some((file) => file === 'SKILL.md')),
+  });
+});
+
+const handlePackageFile = async (c: import('hono').Context) => {
+  const ownerHandle = c.req.param('owner');
+  const packageSlug = c.req.param('packageSlug');
+  const skillName = c.req.param('skillName');
+  if (!ownerHandle || !packageSlug || !skillName) return c.notFound();
+
+  const prefix = `/p/${ownerHandle}/${packageSlug}/.well-known/agent-skills/${skillName}/`;
+  if (!c.req.path.startsWith(prefix)) return c.text('File path required', 400);
+  const filePath = c.req.path.slice(prefix.length);
+  if (isUnsafePath(filePath)) return c.text('Invalid path', 400);
+
+  const result = await getPublicPackageSkillFile({
+    ownerHandle,
+    packageSlug,
+    protocolName: skillName,
+    path: filePath,
+  });
+  if (!result) return c.notFound();
+
+  if (filePath.toLowerCase() === 'skill.md') {
+    await recordSkillInstall(result.skillId, 'well-known', {
+      ip: c.req.header('x-forwarded-for') ?? null,
+      userAgent: c.req.header('user-agent') ?? null,
+    });
+  }
+
+  c.header('Content-Type', mimeFromPath(filePath));
+  return c.body(result.content);
+};
+
+packageWellknownRoute.get(
+  '/:owner/:packageSlug/.well-known/agent-skills/:skillName',
+  handlePackageFile,
+);
+packageWellknownRoute.get(
+  '/:owner/:packageSlug/.well-known/agent-skills/:skillName/*',
+  handlePackageFile,
+);

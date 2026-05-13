@@ -1,11 +1,13 @@
 import type {
   BaseSkill,
+  ListPackagesResponse,
   ListSkillsResponse,
   ListTagsResponse,
   Notification,
   OwnerInfo,
   SkillComment,
   SkillDetail,
+  SkillPackageDetail,
   SkillRelease,
   SkillSubscription,
   UpstreamStatus,
@@ -52,6 +54,14 @@ export interface ListSkillsParams {
   q?: string;
   tag?: string[];
   sort?: 'recent' | 'hottest' | 'az';
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListPackagesParams {
+  q?: string;
+  tag?: string[];
+  sort?: 'recent' | 'az';
   limit?: number;
   offset?: number;
 }
@@ -143,6 +153,18 @@ export interface UpdateSkillInput {
   demoVideoUrl?: string | null;
 }
 
+export interface CreateSkillPackageInput {
+  owner: string;
+  slug: string;
+  name: string;
+  description: string;
+  tags: string[];
+  visibility: 'public' | 'private';
+  icon?: string | null;
+  coverImage?: string | null;
+  skillIds: string[];
+}
+
 export const apiClient = {
   // ─── Read ────────────────────────────────────────────────────────────
 
@@ -186,6 +208,30 @@ export const apiClient = {
 
   listTags(): Promise<ListTagsResponse> {
     return request<ListTagsResponse>('/tags', { credentials: 'include' });
+  },
+
+  listPackages(params: ListPackagesParams = {}): Promise<ListPackagesResponse> {
+    const usp = new URLSearchParams();
+    if (params.q) usp.set('q', params.q);
+    if (params.tag) for (const t of params.tag) usp.append('tag', t);
+    if (params.sort) usp.set('sort', params.sort);
+    if (params.limit) usp.set('limit', String(params.limit));
+    if (params.offset) usp.set('offset', String(params.offset));
+    const qs = usp.toString();
+    return request<ListPackagesResponse>(`/packages${qs ? `?${qs}` : ''}`, {
+      credentials: 'include',
+    });
+  },
+
+  getPackage(owner: string, slug: string): Promise<SkillPackageDetail> {
+    return request<SkillPackageDetail>(
+      `/packages/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}`,
+      { credentials: 'include' },
+    );
+  },
+
+  createPackage(input: CreateSkillPackageInput): Promise<SkillPackageDetail> {
+    return request<SkillPackageDetail>('/packages', json(input, 'POST'));
   },
 
   listSkillComments(owner: string, slug: string): Promise<SkillCommentsResponse> {

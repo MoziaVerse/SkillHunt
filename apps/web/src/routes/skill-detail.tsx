@@ -2,6 +2,7 @@ import { InstallCommand } from '@/components/install-command';
 import { Logo } from '@/components/logo';
 import { MarkdownView } from '@/components/markdown-view';
 import { type MeResponse, apiClient } from '@/lib/api-client';
+import { DEFAULT_REFERENCED_SKILL_ICON, DEFAULT_SKILL_ICON } from '@/lib/default-icons';
 import { formatRelative } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { SkillComment, SkillDetail, UpstreamStatus } from '@/types/api';
@@ -1407,8 +1408,11 @@ function HeroSection({
           )}
 
           <div className="flex items-center gap-3 flex-wrap">
-            {!skill.coverImage && skill.icon && (
-              <span className="text-[36px] leading-none select-none">{skill.icon}</span>
+            {!skill.coverImage && (
+              <span className="text-[36px] leading-none select-none">
+                {skill.icon ??
+                  (skill.type === 'owned' ? DEFAULT_SKILL_ICON : DEFAULT_REFERENCED_SKILL_ICON)}
+              </span>
             )}
             <h1 className="text-[34px] font-bold tracking-[-0.03em] text-[#0f172a]">
               {skill.name}

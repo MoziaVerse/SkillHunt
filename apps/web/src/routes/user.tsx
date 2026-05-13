@@ -1,6 +1,7 @@
 import { Avatar } from '@/components/avatar';
 import { Logo } from '@/components/logo';
 import { ApiError, type OwnerSkillsResponse, apiClient } from '@/lib/api-client';
+import { DEFAULT_REFERENCED_SKILL_ICON, DEFAULT_SKILL_ICON } from '@/lib/default-icons';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 
@@ -49,7 +50,8 @@ function UserSkillCard({ skill }: { skill: import('@/types/api').SkillListItem }
     <Link to={`/skills/${skill.owner.handle}/${skill.slug}`} className="skill-card flex flex-col">
       {/* Thumbnail */}
       <div className="aspect-square bg-gradient-to-br from-neutral-50 to-neutral-100 flex items-center justify-center text-[48px] select-none">
-        {skill.type === 'owned' ? '📦' : '🔗'}
+        {skill.icon ??
+          (skill.type === 'owned' ? DEFAULT_SKILL_ICON : DEFAULT_REFERENCED_SKILL_ICON)}
       </div>
 
       {/* Content */}

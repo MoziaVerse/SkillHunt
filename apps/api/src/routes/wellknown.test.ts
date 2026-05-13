@@ -1,15 +1,18 @@
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import { inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
-import { db, skillFiles, skills, user } from '../db';
+import { db, skillFiles, skillPackageItems, skillPackages, skills, user } from '../db';
 import { skillProtocolName } from '../lib/protocol-name';
-import { wellknownRoute } from './wellknown';
+import { packageWellknownRoute, wellknownRoute } from './wellknown';
 
 const app = new Hono().route('/.well-known', wellknownRoute);
+const packageApp = new Hono().route('/p', packageWellknownRoute);
 const OWNER_ID = 'mozia-virtual';
 const ALICE_ID = 'alice-owner';
 
 async function resetAndSeed() {
+  await db.delete(skillPackageItems);
+  await db.delete(skillPackages);
   await db.delete(skills);
   await db.delete(user).where(inArray(user.id, [OWNER_ID, ALICE_ID]));
   await db.insert(user).values({
@@ -79,9 +82,46 @@ async function resetAndSeed() {
     sourceUrl: 'https://example.com',
     ownerUserId: OWNER_ID,
   });
+
+  const [pkg] = await db
+    .insert(skillPackages)
+    .values({
+      ownerUserId: OWNER_ID,
+      slug: 'case-suite',
+      name: '案件工作包',
+      description: '一次安装案件处理相关 skills',
+      visibility: 'public',
+      tags: [],
+    })
+    .returning();
+  if (!pkg) throw new Error('seed: package insert failed');
+
+  await db.insert(skillPackageItems).values([
+    {
+      packageId: pkg.id,
+      skillId: ownedPublic.id,
+      position: 0,
+    },
+    {
+      packageId: pkg.id,
+      skillId: ownedPriv.id,
+      position: 1,
+    },
+  ]);
+
+  await db.insert(skillPackages).values({
+    ownerUserId: OWNER_ID,
+    slug: 'private-suite',
+    name: '私有工作包',
+    description: '不会暴露给 npx skills',
+    visibility: 'private',
+    tags: [],
+  });
 }
 
 async function cleanup() {
+  await db.delete(skillPackageItems);
+  await db.delete(skillPackages);
   await db.delete(skills);
   await db.delete(user).where(inArray(user.id, [OWNER_ID, ALICE_ID]));
 }
@@ -215,6 +255,54 @@ describe('well-known endpoint', () => {
     );
     expect(file.status).toBe(200);
     expect(await file.text()).toContain('alice body');
+  });
+
+  it('package index exposes only public owned skills inside the package', async () => {
+    const res = await packageApp.fetch(
+      new Request('http://localhost/p/mozia/case-suite/.well-known/agent-skills/index.json'),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { skills: Array<{ name: string; files: string[] }> };
+    expect(body.skills).toHaveLength(1);
+    expect(body.skills[0]?.name).toBe('test-owned-public');
+    expect(body.skills[0]?.files).toContain('SKILL.md');
+    expect(body.skills[0]?.files).toContain('extra.md');
+  });
+
+  it('package file route returns files for npx skills add', async () => {
+    const res = await packageApp.fetch(
+      new Request(
+        'http://localhost/p/mozia/case-suite/.well-known/agent-skills/test-owned-public/SKILL.md',
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/markdown');
+    expect(await res.text()).toContain('test-owned-public');
+  });
+
+  it('package file route does not expose private package items', async () => {
+    const res = await packageApp.fetch(
+      new Request(
+        'http://localhost/p/mozia/case-suite/.well-known/agent-skills/test-owned-private/SKILL.md',
+      ),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('private packages are hidden from package well-known routes', async () => {
+    const res = await packageApp.fetch(
+      new Request('http://localhost/p/mozia/private-suite/.well-known/agent-skills/index.json'),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('package well-known route rejects path traversal', async () => {
+    const res = await packageApp.fetch(
+      new Request(
+        'http://localhost/p/mozia/case-suite/.well-known/agent-skills/test-owned-public/..%2Fetc%2Fpasswd',
+      ),
+    );
+    expect([400, 404]).toContain(res.status);
   });
 });
 

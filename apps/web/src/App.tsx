@@ -10,7 +10,11 @@ import WhatIsASkill from './routes/docs/what-is-a-skill';
 import WriteSkillMd from './routes/docs/write-skill-md';
 import Layout from './routes/layout';
 import NotificationsPage from './routes/notifications';
+import PackageCreate from './routes/package-create';
+import PackageDetail from './routes/package-detail';
+import PackagesList from './routes/packages-list';
 import PublishPage from './routes/publish';
+import PublishChoicePage from './routes/publish-choice';
 import SkillDetail from './routes/skill-detail';
 import SkillEditPage from './routes/skill-edit';
 import SkillsList from './routes/skills-list';
@@ -31,7 +35,12 @@ const router = createBrowserRouter([
       { path: 'skills/:owner/:slug', element: <SkillDetail /> },
       { path: 'skills/:owner/:slug/edit', element: <SkillEditPage /> },
       { path: 'skills/:slug', element: <LegacySkillRedirect /> },
-      { path: 'publish', element: <PublishPage /> },
+      { path: 'packages', element: <PackagesList /> },
+      { path: 'packages/new', element: <Navigate to="/publish/package" replace /> },
+      { path: 'packages/:owner/:slug', element: <PackageDetail /> },
+      { path: 'publish', element: <PublishChoicePage /> },
+      { path: 'publish/skill', element: <PublishPage /> },
+      { path: 'publish/package', element: <PackageCreate /> },
       { path: 'notifications', element: <NotificationsPage /> },
       { path: 'u/:owner', element: <UserPage /> },
       {

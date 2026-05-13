@@ -1,4 +1,5 @@
 import { useSkills } from '@/hooks/use-skills';
+import { DEFAULT_REFERENCED_SKILL_ICON, DEFAULT_SKILL_ICON } from '@/lib/default-icons';
 import { cn } from '@/lib/utils';
 import type { SkillListItem } from '@/types/api';
 import { useState } from 'react';
@@ -146,7 +147,8 @@ function SkillCard({ skill }: { skill: SkillListItem }) {
     <Link to={`/skills/${skill.owner.handle}/${skill.slug}`} className="skill-card flex flex-col">
       {/* Thumbnail */}
       <div className="aspect-square h-40 bg-gradient-to-br from-neutral-50 to-neutral-100 flex items-center justify-center text-[48px] select-none">
-        {skill.type === 'owned' ? '📦' : '🔗'}
+        {skill.icon ??
+          (skill.type === 'owned' ? DEFAULT_SKILL_ICON : DEFAULT_REFERENCED_SKILL_ICON)}
       </div>
 
       {/* Content */}

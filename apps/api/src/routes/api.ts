@@ -10,15 +10,20 @@ import {
   completeVideoUploadSchema,
   createReleaseSchema,
   createSkillCommentSchema,
+  createSkillPackageItemSchema,
+  createSkillPackageSchema,
   createSkillSchema,
   createVideoUploadSchema,
   filePathSchema,
   forkSkillSchema,
+  listPackagesQuerySchema,
   listSkillsQuerySchema,
   mintInstallTokenSchema,
   syncUpstreamSchema,
   updateAvatarSchema,
   updateProfileSchema,
+  updateSkillPackageItemSchema,
+  updateSkillPackageSchema,
   updateSkillSchema,
   updateSubscriptionSchema,
   upsertFileBodySchema,
@@ -32,6 +37,20 @@ import {
   isS3StorageConfigured,
   isVideoObjectKeyForUser,
 } from '../services/s3-storage';
+import {
+  type SkillPackageDetail as SkillPackageDetailRow,
+  SkillPackageError,
+  type SkillPackageWithOwner,
+  addSkillPackageItem,
+  createSkillPackage,
+  deleteSkillPackage,
+  deleteSkillPackageItem,
+  findSkillPackageByOwnerAndSlug,
+  getSkillPackageDetail,
+  listSkillPackagesForApi,
+  updateSkillPackage,
+  updateSkillPackageItem,
+} from '../services/skill-package-service';
 import {
   type SkillWithOwner,
   addSkillBookmark,
@@ -200,6 +219,46 @@ const toRawReleaseDto = (release: {
   createdAt: release.createdAt.toISOString(),
 });
 
+function packageInstallCommand(origin: string, pkg: SkillPackageWithOwner) {
+  return `npx skills add ${origin}/p/${pkg.owner.handle}/${pkg.slug} --skill '*' -y`;
+}
+
+const toPackageListItem = (origin: string, pkg: SkillPackageWithOwner) => ({
+  id: pkg.id,
+  slug: pkg.slug,
+  name: pkg.name,
+  description: pkg.description,
+  visibility: pkg.visibility,
+  tags: pkg.tags,
+  icon: pkg.icon,
+  coverImage: pkg.coverImage,
+  owner: pkg.owner,
+  skillCount: pkg.skillCount,
+  installCommand: packageInstallCommand(origin, pkg),
+  createdAt: pkg.createdAt.toISOString(),
+  updatedAt: pkg.updatedAt.toISOString(),
+});
+
+const toPackageDetail = (origin: string, pkg: SkillPackageDetailRow) => ({
+  ...toPackageListItem(origin, pkg),
+  skills: pkg.skills.map((item) => ({
+    itemId: item.id,
+    position: item.position,
+    note: item.note,
+    pinnedReleaseId: item.pinnedReleaseId,
+    protocolName: item.protocolName,
+    files: item.files,
+    skill: toListItem(item.skill),
+  })),
+});
+
+const packageErrorResponse = (c: import('hono').Context, error: unknown) => {
+  if (error instanceof SkillPackageError) {
+    return c.json({ error: error.message, code: error.code }, error.status as 400 | 404 | 409);
+  }
+  throw error;
+};
+
 // ─── User-context API: uploads ───────────────────────────────────────
 
 apiRoute.post('/uploads/videos', zValidator('json', createVideoUploadSchema), async (c) => {
@@ -330,6 +389,208 @@ async function authorizeOwner(ctx: AuthContext, ownerHandle: string) {
   if (actorRow.canPublishAs.includes(ownerHandle)) return { ok: true as const, ownerRow, actorRow };
   return { ok: false as const, status: 403 as const, message: 'Forbidden' };
 }
+
+// ─── Mutations + discovery: skill packages ───────────────────────────
+
+apiRoute.get('/packages', zValidator('query', listPackagesQuerySchema), async (c) => {
+  const { q, tag, sort, limit, offset } = c.req.valid('query');
+  const auth = await getAuthContext(c);
+  const { items, total } = await listSkillPackagesForApi({
+    q,
+    tags: tag,
+    sort,
+    limit,
+    offset,
+    viewerUserId: viewerUserId(auth),
+    includePrivate: canIncludePrivateSkills(auth),
+  });
+  const origin = new URL(c.req.url).origin;
+  return c.json({ items: items.map((item) => toPackageListItem(origin, item)), total });
+});
+
+apiRoute.get('/packages/:owner/:slug', async (c) => {
+  const ownerHandle = c.req.param('owner');
+  const slug = c.req.param('slug');
+  const auth = await getAuthContext(c);
+  const pkg = await getSkillPackageDetail(ownerHandle, slug, {
+    viewerUserId: viewerUserId(auth),
+    includePrivate: canIncludePrivateSkills(auth),
+  });
+  if (!pkg) return c.json({ error: 'Not Found' }, 404);
+  const origin = new URL(c.req.url).origin;
+  return c.json(toPackageDetail(origin, pkg));
+});
+
+apiRoute.post('/packages', zValidator('json', createSkillPackageSchema), async (c) => {
+  const input = c.req.valid('json');
+  const authContext = await getAuthContext(c);
+  const ownerAuth = await authorizeOwner(authContext, input.owner);
+  if (!ownerAuth.ok) return c.json({ error: ownerAuth.message }, ownerAuth.status);
+
+  const existing = await findSkillPackageByOwnerAndSlug(input.owner, input.slug, {
+    viewerUserId: ownerAuth.ownerRow.id,
+    includePrivate: true,
+  });
+  if (existing) return c.json({ error: 'Skill package already exists' }, 409);
+
+  try {
+    const created = await createSkillPackage({
+      ownerUserId: ownerAuth.ownerRow.id,
+      slug: input.slug,
+      name: input.name,
+      description: input.description,
+      visibility: input.visibility,
+      tags: input.tags,
+      icon: input.icon,
+      coverImage: input.coverImage,
+      skillIds: input.skillIds,
+    });
+    const detail = await getSkillPackageDetail(input.owner, created.slug, {
+      viewerUserId: ownerAuth.ownerRow.id,
+      includePrivate: true,
+    });
+    if (!detail) return c.json({ error: 'Not Found' }, 404);
+    const origin = new URL(c.req.url).origin;
+    return c.json(toPackageDetail(origin, detail), 201);
+  } catch (error) {
+    return packageErrorResponse(c, error);
+  }
+});
+
+apiRoute.put('/packages/:owner/:slug', zValidator('json', updateSkillPackageSchema), async (c) => {
+  const ownerHandle = c.req.param('owner');
+  const slug = c.req.param('slug');
+  const input = c.req.valid('json');
+  const authContext = await getAuthContext(c);
+  const ownerAuth = await authorizeOwner(authContext, ownerHandle);
+  if (!ownerAuth.ok) return c.json({ error: ownerAuth.message }, ownerAuth.status);
+
+  const pkg = await findSkillPackageByOwnerAndSlug(ownerHandle, slug, {
+    viewerUserId: ownerAuth.ownerRow.id,
+    includePrivate: true,
+  });
+  if (!pkg) return c.json({ error: 'Not Found' }, 404);
+
+  try {
+    await updateSkillPackage(pkg.id, input);
+    const detail = await getSkillPackageDetail(ownerHandle, slug, {
+      viewerUserId: ownerAuth.ownerRow.id,
+      includePrivate: true,
+    });
+    if (!detail) return c.json({ error: 'Not Found' }, 404);
+    const origin = new URL(c.req.url).origin;
+    return c.json(toPackageDetail(origin, detail));
+  } catch (error) {
+    return packageErrorResponse(c, error);
+  }
+});
+
+apiRoute.delete('/packages/:owner/:slug', async (c) => {
+  const ownerHandle = c.req.param('owner');
+  const slug = c.req.param('slug');
+  const authContext = await getAuthContext(c);
+  const ownerAuth = await authorizeOwner(authContext, ownerHandle);
+  if (!ownerAuth.ok) return c.json({ error: ownerAuth.message }, ownerAuth.status);
+
+  const pkg = await findSkillPackageByOwnerAndSlug(ownerHandle, slug, {
+    viewerUserId: ownerAuth.ownerRow.id,
+    includePrivate: true,
+  });
+  if (!pkg) return c.json({ error: 'Not Found' }, 404);
+  const ok = await deleteSkillPackage(pkg.id);
+  return ok ? c.body(null, 204) : c.json({ error: 'Not Found' }, 404);
+});
+
+apiRoute.post(
+  '/packages/:owner/:slug/items',
+  zValidator('json', createSkillPackageItemSchema),
+  async (c) => {
+    const ownerHandle = c.req.param('owner');
+    const slug = c.req.param('slug');
+    const input = c.req.valid('json');
+    const authContext = await getAuthContext(c);
+    const ownerAuth = await authorizeOwner(authContext, ownerHandle);
+    if (!ownerAuth.ok) return c.json({ error: ownerAuth.message }, ownerAuth.status);
+
+    const pkg = await findSkillPackageByOwnerAndSlug(ownerHandle, slug, {
+      viewerUserId: ownerAuth.ownerRow.id,
+      includePrivate: true,
+    });
+    if (!pkg) return c.json({ error: 'Not Found' }, 404);
+
+    try {
+      await addSkillPackageItem({
+        packageId: pkg.id,
+        packageVisibility: pkg.visibility,
+        skillId: input.skillId,
+        position: input.position,
+        note: input.note,
+        pinnedReleaseId: input.pinnedReleaseId,
+      });
+      const detail = await getSkillPackageDetail(ownerHandle, slug, {
+        viewerUserId: ownerAuth.ownerRow.id,
+        includePrivate: true,
+      });
+      if (!detail) return c.json({ error: 'Not Found' }, 404);
+      const origin = new URL(c.req.url).origin;
+      return c.json(toPackageDetail(origin, detail), 201);
+    } catch (error) {
+      return packageErrorResponse(c, error);
+    }
+  },
+);
+
+apiRoute.put(
+  '/packages/:owner/:slug/items/:itemId',
+  zValidator('json', updateSkillPackageItemSchema),
+  async (c) => {
+    const ownerHandle = c.req.param('owner');
+    const slug = c.req.param('slug');
+    const itemId = c.req.param('itemId');
+    const input = c.req.valid('json');
+    const authContext = await getAuthContext(c);
+    const ownerAuth = await authorizeOwner(authContext, ownerHandle);
+    if (!ownerAuth.ok) return c.json({ error: ownerAuth.message }, ownerAuth.status);
+
+    const pkg = await findSkillPackageByOwnerAndSlug(ownerHandle, slug, {
+      viewerUserId: ownerAuth.ownerRow.id,
+      includePrivate: true,
+    });
+    if (!pkg) return c.json({ error: 'Not Found' }, 404);
+
+    try {
+      const updated = await updateSkillPackageItem(pkg.id, itemId, input);
+      if (!updated) return c.json({ error: 'Not Found' }, 404);
+      const detail = await getSkillPackageDetail(ownerHandle, slug, {
+        viewerUserId: ownerAuth.ownerRow.id,
+        includePrivate: true,
+      });
+      if (!detail) return c.json({ error: 'Not Found' }, 404);
+      const origin = new URL(c.req.url).origin;
+      return c.json(toPackageDetail(origin, detail));
+    } catch (error) {
+      return packageErrorResponse(c, error);
+    }
+  },
+);
+
+apiRoute.delete('/packages/:owner/:slug/items/:itemId', async (c) => {
+  const ownerHandle = c.req.param('owner');
+  const slug = c.req.param('slug');
+  const itemId = c.req.param('itemId');
+  const authContext = await getAuthContext(c);
+  const ownerAuth = await authorizeOwner(authContext, ownerHandle);
+  if (!ownerAuth.ok) return c.json({ error: ownerAuth.message }, ownerAuth.status);
+
+  const pkg = await findSkillPackageByOwnerAndSlug(ownerHandle, slug, {
+    viewerUserId: ownerAuth.ownerRow.id,
+    includePrivate: true,
+  });
+  if (!pkg) return c.json({ error: 'Not Found' }, 404);
+  const ok = await deleteSkillPackageItem(pkg.id, itemId);
+  if (!ok) return c.json({ error: 'Not Found' }, 404);
+  return c.body(null, 204);
+});
 
 apiRoute.post('/skills', zValidator('json', createSkillSchema), async (c) => {
   const input = c.req.valid('json');

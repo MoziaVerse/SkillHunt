@@ -2,6 +2,7 @@ import { CoverImageUpload } from '@/components/cover-image-upload';
 import { EmojiPicker } from '@/components/emoji-picker';
 import { Input } from '@/components/ui/input';
 import { ApiError, apiClient } from '@/lib/api-client';
+import { DEFAULT_SKILL_ICON } from '@/lib/default-icons';
 import { cn } from '@/lib/utils';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -188,7 +189,9 @@ export function SkillForm({
   );
   const [selectedTags, setSelectedTags] = useState<string[]>(initialOfficialTags);
   const [customTagInput, setCustomTagInput] = useState(initialCustomTags.join(', '));
-  const [icon, setIcon] = useState<string | null>(initial?.icon ?? null);
+  const [icon, setIcon] = useState<string | null>(
+    initial?.icon ?? (mode === 'create' ? DEFAULT_SKILL_ICON : null),
+  );
   const [coverImage, setCoverImage] = useState<string | null>(initial?.coverImage ?? null);
   const [demoVideoUrl, setDemoVideoUrl] = useState<string | null>(initial?.demoVideoUrl ?? null);
   const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
