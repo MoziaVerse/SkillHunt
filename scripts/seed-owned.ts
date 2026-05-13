@@ -40,6 +40,9 @@ export interface OwnedEntry {
   description: string;
   visibility: 'public' | 'private';
   tags: string[];
+  icon?: string | null;
+  coverImage?: string | null;
+  demoVideoUrl?: string | null;
   files: Array<{ path: string; content: string }>;
 }
 
@@ -66,6 +69,9 @@ function parseFrontmatter(md: string): Record<string, unknown> {
 interface BuiltinSkillMeta {
   visibility: 'public' | 'private';
   tags: string[];
+  icon?: string | null;
+  coverImage?: string | null;
+  demoVideoUrl?: string | null;
 }
 
 const BUILTIN_META_FILE = 'skill.json';
@@ -128,6 +134,26 @@ export async function loadBuiltinOwnedEntries(
     if (!Array.isArray(meta.tags) || meta.tags.some((tag) => typeof tag !== 'string')) {
       throw new Error(`[seed-owned] invalid tags for slug '${slug}'`);
     }
+    if (meta.icon !== undefined && meta.icon !== null && typeof meta.icon !== 'string') {
+      throw new Error(`[seed-owned] invalid icon for slug '${slug}'`);
+    }
+    if (
+      meta.coverImage !== undefined &&
+      meta.coverImage !== null &&
+      typeof meta.coverImage !== 'string'
+    ) {
+      throw new Error(`[seed-owned] invalid coverImage for slug '${slug}'`);
+    }
+    if (
+      meta.demoVideoUrl !== undefined &&
+      meta.demoVideoUrl !== null &&
+      typeof meta.demoVideoUrl !== 'string'
+    ) {
+      throw new Error(`[seed-owned] invalid demoVideoUrl for slug '${slug}'`);
+    }
+    if (meta.icon && meta.coverImage) {
+      throw new Error(`[seed-owned] icon and coverImage are mutually exclusive for slug '${slug}'`);
+    }
 
     const files = await collectBuiltinFiles(skillDir);
     const skillMd = files.find((file) => file.path === 'SKILL.md')?.content;
@@ -155,6 +181,9 @@ export async function loadBuiltinOwnedEntries(
       description,
       visibility: meta.visibility,
       tags: [...meta.tags],
+      icon: meta.icon ?? null,
+      coverImage: meta.coverImage ?? null,
+      demoVideoUrl: meta.demoVideoUrl ?? null,
       files,
     });
   }
@@ -215,6 +244,9 @@ export async function seedOwned(
         visibility: entry.visibility,
         tags: entry.tags,
         frontmatter,
+        icon: entry.icon ?? null,
+        coverImage: entry.coverImage ?? null,
+        demoVideoUrl: entry.demoVideoUrl ?? null,
         ownerUserId: SEED_OWNER_ID,
       })
       .onConflictDoUpdate({
@@ -225,6 +257,9 @@ export async function seedOwned(
           visibility: entry.visibility,
           tags: entry.tags,
           frontmatter,
+          icon: entry.icon ?? null,
+          coverImage: entry.coverImage ?? null,
+          demoVideoUrl: entry.demoVideoUrl ?? null,
           updatedAt: new Date(),
         },
       })

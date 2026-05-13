@@ -1,4 +1,7 @@
 {
   "visibility": "public",
-  "tags": []
+  "tags": ["discovery", "skills", "recommendation", "marketplace"],
+  "icon": "\ud83d\udd0e",
+  "coverImage": null,
+  "demoVideoUrl": null
 }

@@ -1,4 +1,7 @@
 {
   "visibility": "public",
-  "tags": ["project", "onboarding", "codebase"]
+  "tags": ["project", "onboarding", "codebase", "analysis"],
+  "icon": "\ud83e\udded",
+  "coverImage": null,
+  "demoVideoUrl": null
 }

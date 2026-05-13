@@ -1,4 +1,7 @@
 {
   "visibility": "public",
-  "tags": []
+  "tags": ["browser", "automation", "testing", "web"],
+  "icon": "\ud83c\udf10",
+  "coverImage": null,
+  "demoVideoUrl": null
 }

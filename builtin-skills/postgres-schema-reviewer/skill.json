@@ -1,4 +1,7 @@
 {
   "visibility": "public",
-  "tags": ["database", "postgres", "review"]
+  "tags": ["database", "postgres", "drizzle", "review"],
+  "icon": "\ud83d\uddc4\ufe0f",
+  "coverImage": null,
+  "demoVideoUrl": null
 }

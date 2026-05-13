@@ -1,4 +1,7 @@
 {
   "visibility": "public",
-  "tags": []
+  "tags": ["petition", "intake", "government-service", "zhejiang"],
+  "icon": "\ud83e\uddfe",
+  "coverImage": null,
+  "demoVideoUrl": null
 }

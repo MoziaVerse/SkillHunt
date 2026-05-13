@@ -1,4 +1,7 @@
 {
   "visibility": "public",
-  "tags": ["prd", "product", "review"]
+  "tags": ["prd", "product", "review", "requirements"],
+  "icon": "\ud83d\udccb",
+  "coverImage": null,
+  "demoVideoUrl": null
 }

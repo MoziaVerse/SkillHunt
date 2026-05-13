@@ -1,4 +1,7 @@
 {
   "visibility": "public",
-  "tags": []
+  "tags": ["git", "commit", "workflow", "developer-tools"],
+  "icon": "\u2705",
+  "coverImage": null,
+  "demoVideoUrl": null
 }

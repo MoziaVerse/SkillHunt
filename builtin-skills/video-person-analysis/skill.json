@@ -1,4 +1,7 @@
 {
   "visibility": "public",
-  "tags": []
+  "tags": ["video", "analysis", "incident", "computer-vision"],
+  "icon": "\ud83c\udfa5",
+  "coverImage": null,
+  "demoVideoUrl": null
 }

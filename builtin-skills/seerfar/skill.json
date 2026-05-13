@@ -1,4 +1,7 @@
 {
   "visibility": "public",
-  "tags": []
+  "tags": ["ecommerce", "product-research", "ranking", "seerfar"],
+  "icon": "\ud83d\udcc8",
+  "coverImage": null,
+  "demoVideoUrl": null
 }

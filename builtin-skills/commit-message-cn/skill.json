@@ -1,4 +1,7 @@
 {
   "visibility": "public",
-  "tags": ["git", "writing"]
+  "tags": ["git", "commit", "writing", "chinese"],
+  "icon": "\u270d\ufe0f",
+  "coverImage": null,
+  "demoVideoUrl": null
 }

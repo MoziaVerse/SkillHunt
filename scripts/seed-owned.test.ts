@@ -16,7 +16,13 @@ const silent = (_: string) => {};
 async function createBuiltinFixture(
   dirs: Array<{
     slug: string;
-    meta: { visibility: 'public' | 'private'; tags: string[] };
+    meta: {
+      visibility: 'public' | 'private';
+      tags: string[];
+      icon?: string | null;
+      coverImage?: string | null;
+      demoVideoUrl?: string | null;
+    };
     files: Record<string, string>;
   }>,
 ) {
@@ -53,6 +59,9 @@ describe('seed-owned', () => {
     for (const r of rows) {
       expect(r.type).toBe('owned');
       expect(r.frontmatter).toBeTruthy();
+      expect(r.icon).toBeTruthy();
+      expect(r.coverImage).toBeNull();
+      expect(r.demoVideoUrl).toBeNull();
     }
 
     // Every owned skill has at least one 'SKILL.md' file
@@ -142,7 +151,7 @@ describe('seed-owned', () => {
     const root = await createBuiltinFixture([
       {
         slug: 'nested-skill',
-        meta: { visibility: 'public', tags: ['nested'] },
+        meta: { visibility: 'public', tags: ['nested'], icon: 'N' },
         files: {
           'SKILL.md': '---\nname: nested-skill\ndescription: nested desc\n---\n# Body\n',
           'references/checklist.md': '# Checklist\n',
@@ -154,6 +163,7 @@ describe('seed-owned', () => {
     try {
       const entries = await loadBuiltinOwnedEntries(pathToFileURL(`${root}/`));
       expect(entries).toHaveLength(1);
+      expect(entries[0]?.icon).toBe('N');
       expect(entries[0]?.files.map((file) => file.path).sort()).toEqual([
         'SKILL.md',
         'references/checklist.md',

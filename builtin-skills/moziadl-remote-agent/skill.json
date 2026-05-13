@@ -1,4 +1,7 @@
 {
   "visibility": "public",
-  "tags": []
+  "tags": ["remote-server", "ssh", "deployment", "moziadl"],
+  "icon": "\ud83d\udda5\ufe0f",
+  "coverImage": null,
+  "demoVideoUrl": null
 }

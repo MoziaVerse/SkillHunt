@@ -1,4 +1,7 @@
 {
   "visibility": "public",
-  "tags": ["writing", "rfc", "architecture"]
+  "tags": ["writing", "rfc", "architecture", "planning"],
+  "icon": "\ud83e\udde9",
+  "coverImage": null,
+  "demoVideoUrl": null
 }
