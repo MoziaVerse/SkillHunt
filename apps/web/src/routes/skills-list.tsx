@@ -278,7 +278,7 @@ export default function SkillsList() {
 
       {error && (
         <div className="px-6 min-h-[400px] py-12 text-center font-mono text-[13px] text-red-700">
-          API 错误：{error.message}。api 是否在 :3333 运行？
+          API 错误：{error.message}。请检查前端代理配置和后端服务是否已启动。
         </div>
       )}
 

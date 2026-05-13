@@ -23,12 +23,14 @@ const cfg = (key: keyof typeof FALLBACKS): string => {
   return FALLBACKS[key];
 };
 
+const localWebOrigin = process.env.WEB_ORIGIN ?? 'http://localhost:5180';
+
 // Vite dev origin proxies /api → :3333, so the request's Origin header is
-// `http://localhost:5180` while baseURL is `http://localhost:3333`. Allowlist
-// both, plus anything in TRUSTED_ORIGINS (comma-separated, for prod hosts).
+// the web app origin while baseURL points at the API. Allowlist both, plus
+// anything in TRUSTED_ORIGINS (comma-separated, for prod hosts).
 const trustedOrigins = [
   cfg('BETTER_AUTH_URL'),
-  'http://localhost:5180',
+  localWebOrigin,
   ...(process.env.TRUSTED_ORIGINS ?? '')
     .split(',')
     .map((s) => s.trim())
