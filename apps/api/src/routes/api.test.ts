@@ -6,7 +6,9 @@ import {
   notifications,
   skillComments,
   skillFiles,
+  skillPackageComments,
   skillPackageItems,
+  skillPackageUpvotes,
   skillPackages,
   skillReleases,
   skillSubscriptions,
@@ -15,6 +17,7 @@ import {
   skills,
   user,
   userBookmarks,
+  userPackageBookmarks,
 } from '../db';
 import type { AuthContext } from '../lib/auth-context';
 import { VIDEO_UPLOAD_MAX_BYTES, skillListItemSchema } from '../lib/dto';
@@ -85,6 +88,9 @@ beforeAll(async () => {
 
 async function resetAndSeed() {
   await db.delete(notifications);
+  await db.delete(userPackageBookmarks);
+  await db.delete(skillPackageUpvotes);
+  await db.delete(skillPackageComments);
   await db.delete(userBookmarks);
   await db.delete(skillUpvotes);
   await db.delete(skillComments);
@@ -179,6 +185,9 @@ async function resetAndSeed() {
 }
 
 async function cleanup() {
+  await db.delete(userPackageBookmarks);
+  await db.delete(skillPackageUpvotes);
+  await db.delete(skillPackageComments);
   await db.delete(skillSyncEvents);
   await db.delete(skillSubscriptions);
   await db.delete(skillReleases);
@@ -456,6 +465,112 @@ describe('business API', () => {
       expect(body.items.find((item) => item.slug === 'public-suite')?.skillCount).toBe(1);
     });
 
+    it('lists packages that include a skill with package visibility rules', async () => {
+      const skillId = await publicSkillId();
+      for (const pkg of [
+        { slug: 'listed-public-suite', visibility: 'public' },
+        { slug: 'listed-private-suite', visibility: 'private' },
+      ] as const) {
+        const created = await app.fetch(
+          reqAsUser(
+            '/api/packages',
+            OWNER_USER_ID,
+            jsonInit({
+              owner: OWNER_NAME,
+              slug: pkg.slug,
+              name: pkg.visibility === 'public' ? '公开收录包' : '私有收录包',
+              description: '用于测试 skill 的收录包列表',
+              visibility: pkg.visibility,
+              tags: [],
+              skillIds: [skillId],
+            }),
+          ),
+        );
+        expect(created.status).toBe(201);
+      }
+
+      const anon = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub/packages`));
+      expect(anon.status).toBe(200);
+      const anonBody = (await anon.json()) as { items: Array<{ slug: string }>; total: number };
+      expect(anonBody.items.map((item) => item.slug)).toContain('listed-public-suite');
+      expect(anonBody.items.map((item) => item.slug)).not.toContain('listed-private-suite');
+
+      const owner = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/packages`, OWNER_USER_ID),
+      );
+      expect(owner.status).toBe(200);
+      const ownerBody = (await owner.json()) as {
+        items: Array<{ slug: string; skillCount: number; installCommand: string }>;
+      };
+      expect(ownerBody.items.map((item) => item.slug)).toContain('listed-public-suite');
+      expect(ownerBody.items.map((item) => item.slug)).toContain('listed-private-suite');
+      expect(ownerBody.items.find((item) => item.slug === 'listed-public-suite')?.skillCount).toBe(
+        1,
+      );
+      expect(
+        ownerBody.items.find((item) => item.slug === 'listed-public-suite')?.installCommand,
+      ).toBe(`npx skills add http://localhost/p/${OWNER_NAME}/listed-public-suite --skill '*' -y`);
+    });
+
+    it('sorts packages by package community activity', async () => {
+      const skillId = await publicSkillId();
+      for (const slug of ['quiet-suite', 'hot-suite']) {
+        const created = await app.fetch(
+          reqAsUser(
+            '/api/packages',
+            OWNER_USER_ID,
+            jsonInit({
+              owner: OWNER_NAME,
+              slug,
+              name: slug === 'hot-suite' ? '热门工作包' : '普通工作包',
+              description: '用于测试包热门排序',
+              visibility: 'public',
+              tags: [],
+              skillIds: [skillId],
+            }),
+          ),
+        );
+        expect(created.status).toBe(201);
+      }
+
+      await app.fetch(
+        reqAsUser(`/api/packages/${OWNER_NAME}/hot-suite/upvote`, OTHER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+      await app.fetch(
+        reqAsUser(`/api/packages/${OWNER_NAME}/hot-suite/bookmark`, OTHER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+      await app.fetch(
+        reqAsUser(
+          `/api/packages/${OWNER_NAME}/hot-suite/comments`,
+          OTHER_USER_ID,
+          jsonInit({ content: '这个包值得推荐。' }),
+        ),
+      );
+
+      const res = await app.fetch(reqAsUser('/api/packages?sort=hottest', OTHER_USER_ID));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        items: Array<{
+          slug: string;
+          upvoteCount: number;
+          commentCount: number;
+          bookmarkCount: number;
+          viewerHasUpvoted: boolean;
+          viewerHasBookmarked: boolean;
+        }>;
+      };
+      expect(body.items[0]?.slug).toBe('hot-suite');
+      expect(body.items[0]?.upvoteCount).toBe(1);
+      expect(body.items[0]?.commentCount).toBe(1);
+      expect(body.items[0]?.bookmarkCount).toBe(1);
+      expect(body.items[0]?.viewerHasUpvoted).toBe(true);
+      expect(body.items[0]?.viewerHasBookmarked).toBe(true);
+    });
+
     it('hides private packages from anonymous users', async () => {
       await app.fetch(
         reqAsUser(
@@ -542,6 +657,88 @@ describe('business API', () => {
         }),
       );
       expect(deleted.status).toBe(204);
+    });
+
+    it('supports package upvotes, bookmarks and comments', async () => {
+      const skillId = await publicSkillId();
+      const created = await app.fetch(
+        reqAsUser(
+          '/api/packages',
+          OWNER_USER_ID,
+          jsonInit({
+            owner: OWNER_NAME,
+            slug: 'community-suite',
+            name: '可互动工作包',
+            description: '用于测试包互动',
+            visibility: 'public',
+            tags: [],
+            skillIds: [skillId],
+          }),
+        ),
+      );
+      expect(created.status).toBe(201);
+
+      const upvoted = await app.fetch(
+        reqAsUser(`/api/packages/${OWNER_NAME}/community-suite/upvote`, OTHER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+      expect(upvoted.status).toBe(200);
+      const upvotedBody = (await upvoted.json()) as {
+        upvoteCount: number;
+        viewerHasUpvoted: boolean;
+      };
+      expect(upvotedBody.upvoteCount).toBe(1);
+      expect(upvotedBody.viewerHasUpvoted).toBe(true);
+
+      const bookmarked = await app.fetch(
+        reqAsUser(`/api/packages/${OWNER_NAME}/community-suite/bookmark`, OTHER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+      expect(bookmarked.status).toBe(200);
+      const bookmarkedBody = (await bookmarked.json()) as {
+        bookmarkCount: number;
+        viewerHasBookmarked: boolean;
+      };
+      expect(bookmarkedBody.bookmarkCount).toBe(1);
+      expect(bookmarkedBody.viewerHasBookmarked).toBe(true);
+
+      const comment = await app.fetch(
+        reqAsUser(
+          `/api/packages/${OWNER_NAME}/community-suite/comments`,
+          OTHER_USER_ID,
+          jsonInit({ content: '这个包很适合直接安装。' }),
+        ),
+      );
+      expect(comment.status).toBe(201);
+      const commentBody = (await comment.json()) as { id: string; packageId: string };
+      expect(commentBody.id).toBeTruthy();
+      expect(commentBody.packageId).toBeTruthy();
+
+      const comments = await app.fetch(
+        reqAnon(`/api/packages/${OWNER_NAME}/community-suite/comments`),
+      );
+      expect(comments.status).toBe(200);
+      const commentsBody = (await comments.json()) as { total: number };
+      expect(commentsBody.total).toBe(1);
+
+      const detail = await app.fetch(
+        reqAsUser(`/api/packages/${OWNER_NAME}/community-suite`, OTHER_USER_ID),
+      );
+      expect(detail.status).toBe(200);
+      const detailBody = (await detail.json()) as {
+        upvoteCount: number;
+        commentCount: number;
+        bookmarkCount: number;
+        viewerHasUpvoted: boolean;
+        viewerHasBookmarked: boolean;
+      };
+      expect(detailBody.upvoteCount).toBe(1);
+      expect(detailBody.commentCount).toBe(1);
+      expect(detailBody.bookmarkCount).toBe(1);
+      expect(detailBody.viewerHasUpvoted).toBe(true);
+      expect(detailBody.viewerHasBookmarked).toBe(true);
     });
   });
 
@@ -1331,6 +1528,74 @@ describe('business API', () => {
 
     it('404 for unknown user', async () => {
       const res = await app.fetch(reqAnon('/api/users/no-such-user/skills'));
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe('GET /api/users/:owner/packages', () => {
+    async function createOwnerPackages() {
+      const skillRes = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`));
+      const skill = (await skillRes.json()) as { id: string };
+      for (const pkg of [
+        { slug: 'profile-public-suite', visibility: 'public' },
+        { slug: 'profile-private-suite', visibility: 'private' },
+      ] as const) {
+        const created = await app.fetch(
+          reqAsUser(
+            '/api/packages',
+            OWNER_USER_ID,
+            jsonInit({
+              owner: OWNER_NAME,
+              slug: pkg.slug,
+              name: pkg.visibility === 'public' ? '公开主页包' : '私有主页包',
+              description: '用于测试用户主页包列表',
+              visibility: pkg.visibility,
+              tags: [],
+              skillIds: [skill.id],
+            }),
+          ),
+        );
+        expect(created.status).toBe(201);
+      }
+    }
+
+    it('anonymous sees only public packages', async () => {
+      await createOwnerPackages();
+      const res = await app.fetch(reqAnon(`/api/users/${OWNER_NAME}/packages`));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        owner: { handle: string };
+        items: Array<{ slug: string }>;
+        total: number;
+      };
+      expect(body.owner.handle).toBe(OWNER_NAME);
+      expect(body.items.map((item) => item.slug)).toEqual(['profile-public-suite']);
+      expect(body.total).toBe(1);
+    });
+
+    it('owner sees own public and private packages', async () => {
+      await createOwnerPackages();
+      const res = await app.fetch(reqAsUser(`/api/users/${OWNER_NAME}/packages`, OWNER_USER_ID));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { items: Array<{ slug: string }> };
+      expect(body.items.map((item) => item.slug).sort()).toEqual([
+        'profile-private-suite',
+        'profile-public-suite',
+      ]);
+    });
+
+    it('supports /api/me/packages and honors private-read scope', async () => {
+      await createOwnerPackages();
+      const res = await app.fetch(
+        reqAsUserWithScopes('/api/me/packages', OWNER_USER_ID, ['skills:read']),
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { items: Array<{ slug: string }> };
+      expect(body.items.map((item) => item.slug)).toEqual(['profile-public-suite']);
+    });
+
+    it('404 for unknown user', async () => {
+      const res = await app.fetch(reqAnon('/api/users/no-such-user/packages'));
       expect(res.status).toBe(404);
     });
   });

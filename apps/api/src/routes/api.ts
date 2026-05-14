@@ -41,13 +41,22 @@ import {
   type SkillPackageDetail as SkillPackageDetailRow,
   SkillPackageError,
   type SkillPackageWithOwner,
+  addSkillPackageBookmark,
   addSkillPackageItem,
+  addSkillPackageUpvote,
   createSkillPackage,
+  createSkillPackageComment,
   deleteSkillPackage,
   deleteSkillPackageItem,
+  findSkillPackageById,
   findSkillPackageByOwnerAndSlug,
   getSkillPackageDetail,
+  listSkillPackageComments,
+  listSkillPackagesByOwner,
+  listSkillPackagesContainingSkill,
   listSkillPackagesForApi,
+  removeSkillPackageBookmark,
+  removeSkillPackageUpvote,
   updateSkillPackage,
   updateSkillPackageItem,
 } from '../services/skill-package-service';
@@ -234,6 +243,11 @@ const toPackageListItem = (origin: string, pkg: SkillPackageWithOwner) => ({
   coverImage: pkg.coverImage,
   owner: pkg.owner,
   skillCount: pkg.skillCount,
+  upvoteCount: pkg.upvoteCount,
+  commentCount: pkg.commentCount,
+  bookmarkCount: pkg.bookmarkCount,
+  viewerHasUpvoted: pkg.viewerHasUpvoted,
+  viewerHasBookmarked: pkg.viewerHasBookmarked,
   installCommand: packageInstallCommand(origin, pkg),
   createdAt: pkg.createdAt.toISOString(),
   updatedAt: pkg.updatedAt.toISOString(),
@@ -258,6 +272,18 @@ const packageErrorResponse = (c: import('hono').Context, error: unknown) => {
   }
   throw error;
 };
+
+const toPackageComment = (
+  comment: Awaited<ReturnType<typeof listSkillPackageComments>>[number],
+) => ({
+  id: comment.id,
+  packageId: comment.packageId,
+  parentId: comment.parentId,
+  content: comment.content,
+  createdAt: comment.createdAt.toISOString(),
+  updatedAt: comment.updatedAt.toISOString(),
+  author: comment.author,
+});
 
 // ─── User-context API: uploads ───────────────────────────────────────
 
@@ -356,6 +382,23 @@ apiRoute.get('/skills/:owner/:slug/demo-video', async (c) => {
 
   const playbackUrl = createDemoVideoPlaybackUrl(skill.demoVideoUrl) ?? skill.demoVideoUrl;
   return c.redirect(playbackUrl, 302);
+});
+
+apiRoute.get('/skills/:owner/:slug/packages', async (c) => {
+  const ownerHandle = c.req.param('owner');
+  const slug = c.req.param('slug');
+  const auth = await getAuthContext(c);
+  const skill = await findSkillByOwnerAndSlug(ownerHandle, slug, viewerUserId(auth));
+  if (!skill || !canReadSkill(skill, skillAccessActor(auth))) {
+    return c.json({ error: 'Not Found' }, 404);
+  }
+
+  const { items, total } = await listSkillPackagesContainingSkill(skill.id, {
+    viewerUserId: viewerUserId(auth),
+    includePrivate: canIncludePrivateSkills(auth),
+  });
+  const origin = new URL(c.req.url).origin;
+  return c.json({ items: items.map((item) => toPackageListItem(origin, item)), total });
 });
 
 // Legacy: /api/skills/:slug — auto-resolves to mozia/<slug> via slug uniqueness
@@ -590,6 +633,142 @@ apiRoute.delete('/packages/:owner/:slug/items/:itemId', async (c) => {
   const ok = await deleteSkillPackageItem(pkg.id, itemId);
   if (!ok) return c.json({ error: 'Not Found' }, 404);
   return c.body(null, 204);
+});
+
+apiRoute.get('/packages/:owner/:slug/comments', async (c) => {
+  const ownerHandle = c.req.param('owner');
+  const slug = c.req.param('slug');
+  const auth = await getAuthContext(c);
+  const pkg = await findSkillPackageByOwnerAndSlug(ownerHandle, slug, {
+    viewerUserId: viewerUserId(auth),
+    includePrivate: canIncludePrivateSkills(auth),
+  });
+  if (!pkg) return c.json({ error: 'Not Found' }, 404);
+
+  const comments = await listSkillPackageComments(pkg.id);
+  return c.json({ items: comments.map(toPackageComment), total: comments.length });
+});
+
+apiRoute.post(
+  '/packages/:owner/:slug/comments',
+  zValidator('json', createSkillCommentSchema),
+  async (c) => {
+    const ownerHandle = c.req.param('owner');
+    const slug = c.req.param('slug');
+    const auth = await getAuthContext(c);
+    const { user } = auth;
+    if (!user) return c.json({ error: 'Authentication required' }, 401);
+    if (!hasScope(auth, 'community:write')) {
+      return c.json({ error: 'Missing scope: community:write' }, 403);
+    }
+
+    const pkg = await findSkillPackageByOwnerAndSlug(ownerHandle, slug, {
+      viewerUserId: user.id,
+      includePrivate: canIncludePrivateSkills(auth),
+    });
+    if (!pkg) return c.json({ error: 'Not Found' }, 404);
+
+    const input = c.req.valid('json');
+    const comment = await createSkillPackageComment({
+      packageId: pkg.id,
+      userId: user.id,
+      content: input.content,
+      parentId: input.parentId ?? null,
+    });
+    return c.json(toPackageComment(comment), 201);
+  },
+);
+
+apiRoute.post('/packages/:owner/:slug/upvote', async (c) => {
+  const ownerHandle = c.req.param('owner');
+  const slug = c.req.param('slug');
+  const auth = await getAuthContext(c);
+  const { user } = auth;
+  if (!user) return c.json({ error: 'Authentication required' }, 401);
+  if (!hasScope(auth, 'community:write')) {
+    return c.json({ error: 'Missing scope: community:write' }, 403);
+  }
+
+  const pkg = await findSkillPackageByOwnerAndSlug(ownerHandle, slug, {
+    viewerUserId: user.id,
+    includePrivate: canIncludePrivateSkills(auth),
+  });
+  if (!pkg) return c.json({ error: 'Not Found' }, 404);
+
+  await addSkillPackageUpvote(pkg.id, user.id);
+  const refreshed = await findSkillPackageById(pkg.id, user.id);
+  if (!refreshed) return c.json({ error: 'Not Found' }, 404);
+  const origin = new URL(c.req.url).origin;
+  return c.json(toPackageListItem(origin, refreshed));
+});
+
+apiRoute.delete('/packages/:owner/:slug/upvote', async (c) => {
+  const ownerHandle = c.req.param('owner');
+  const slug = c.req.param('slug');
+  const auth = await getAuthContext(c);
+  const { user } = auth;
+  if (!user) return c.json({ error: 'Authentication required' }, 401);
+  if (!hasScope(auth, 'community:write')) {
+    return c.json({ error: 'Missing scope: community:write' }, 403);
+  }
+
+  const pkg = await findSkillPackageByOwnerAndSlug(ownerHandle, slug, {
+    viewerUserId: user.id,
+    includePrivate: canIncludePrivateSkills(auth),
+  });
+  if (!pkg) return c.json({ error: 'Not Found' }, 404);
+
+  await removeSkillPackageUpvote(pkg.id, user.id);
+  const refreshed = await findSkillPackageById(pkg.id, user.id);
+  if (!refreshed) return c.json({ error: 'Not Found' }, 404);
+  const origin = new URL(c.req.url).origin;
+  return c.json(toPackageListItem(origin, refreshed));
+});
+
+apiRoute.post('/packages/:owner/:slug/bookmark', async (c) => {
+  const ownerHandle = c.req.param('owner');
+  const slug = c.req.param('slug');
+  const auth = await getAuthContext(c);
+  const { user } = auth;
+  if (!user) return c.json({ error: 'Authentication required' }, 401);
+  if (!hasScope(auth, 'community:write')) {
+    return c.json({ error: 'Missing scope: community:write' }, 403);
+  }
+
+  const pkg = await findSkillPackageByOwnerAndSlug(ownerHandle, slug, {
+    viewerUserId: user.id,
+    includePrivate: canIncludePrivateSkills(auth),
+  });
+  if (!pkg) return c.json({ error: 'Not Found' }, 404);
+
+  await addSkillPackageBookmark(pkg.id, user.id);
+  const refreshed = await findSkillPackageById(pkg.id, user.id);
+  if (!refreshed) return c.json({ error: 'Not Found' }, 404);
+  const origin = new URL(c.req.url).origin;
+  return c.json(toPackageListItem(origin, refreshed));
+});
+
+apiRoute.delete('/packages/:owner/:slug/bookmark', async (c) => {
+  const ownerHandle = c.req.param('owner');
+  const slug = c.req.param('slug');
+  const auth = await getAuthContext(c);
+  const { user } = auth;
+  if (!user) return c.json({ error: 'Authentication required' }, 401);
+  if (!hasScope(auth, 'community:write')) {
+    return c.json({ error: 'Missing scope: community:write' }, 403);
+  }
+
+  const pkg = await findSkillPackageByOwnerAndSlug(ownerHandle, slug, {
+    viewerUserId: user.id,
+    includePrivate: canIncludePrivateSkills(auth),
+  });
+  if (!pkg) return c.json({ error: 'Not Found' }, 404);
+
+  await removeSkillPackageBookmark(pkg.id, user.id);
+  const refreshed = await findSkillPackageById(pkg.id, user.id);
+  if (!refreshed) return c.json({ error: 'Not Found' }, 404);
+  const origin = new URL(c.req.url).origin;
+  return c.json(toPackageListItem(origin, refreshed));
 });
 
 apiRoute.post('/skills', zValidator('json', createSkillSchema), async (c) => {
@@ -1029,11 +1208,38 @@ const handleListMyBookmarks = async (c: import('hono').Context) => {
   return c.json({ items, total: items.length });
 };
 
+const handleListMyPackages = async (c: import('hono').Context) => {
+  const auth = await getAuthContext(c);
+  const { user } = auth;
+  if (!user) return c.json({ error: 'Authentication required' }, 401);
+  if (!hasScope(auth, 'skills:read')) {
+    return c.json({ error: 'Missing scope: skills:read' }, 403);
+  }
+  const me = await findUserById(user.id);
+  if (!me) return c.json({ error: 'Not Found' }, 404);
+  const { items, total } = await listSkillPackagesByOwner(me.id, {
+    viewerUserId: user.id,
+    includePrivate: hasScope(auth, 'skills:read_private'),
+  });
+  const origin = new URL(c.req.url).origin;
+  return c.json({
+    owner: {
+      id: me.id,
+      name: me.name,
+      handle: me.handle,
+      image: me.image,
+    },
+    items: items.map((item) => toPackageListItem(origin, item)),
+    total,
+  });
+};
+
 apiRoute.get('/me', handleGetMe);
 apiRoute.patch('/me/profile', zValidator('json', updateProfileSchema), handleUpdateProfile);
 apiRoute.patch('/me/avatar', zValidator('json', updateAvatarSchema), handleUpdateAvatar);
 apiRoute.get('/me/skills', handleListMySkills);
 apiRoute.get('/me/bookmarks', handleListMyBookmarks);
+apiRoute.get('/me/packages', handleListMyPackages);
 
 // Backward-compatible aliases for current web client paths.
 apiRoute.get('/users/me', handleGetMe);
@@ -1041,6 +1247,7 @@ apiRoute.patch('/users/me/profile', zValidator('json', updateProfileSchema), han
 apiRoute.patch('/users/me/avatar', zValidator('json', updateAvatarSchema), handleUpdateAvatar);
 apiRoute.get('/users/me/skills', handleListMySkills);
 apiRoute.get('/users/me/bookmarks', handleListMyBookmarks);
+apiRoute.get('/users/me/packages', handleListMyPackages);
 
 apiRoute.get('/users/:owner/skills', async (c) => {
   const ownerHandle = c.req.param('owner');
@@ -1064,6 +1271,31 @@ apiRoute.get('/users/:owner/skills', async (c) => {
     },
     items,
     total: items.length,
+  });
+});
+
+apiRoute.get('/users/:owner/packages', async (c) => {
+  const ownerHandle = c.req.param('owner');
+  const ownerRow = await findUserByHandle(ownerHandle);
+  if (!ownerRow) return c.json({ error: 'Not Found' }, 404);
+  const auth = await getAuthContext(c);
+  const { user } = auth;
+  const { items, total } = await listSkillPackagesByOwner(ownerRow.id, {
+    viewerUserId: viewerUserId(auth),
+    includePrivate: Boolean(
+      user && user.id === ownerRow.id && hasScope(auth, 'skills:read_private'),
+    ),
+  });
+  const origin = new URL(c.req.url).origin;
+  return c.json({
+    owner: {
+      id: ownerRow.id,
+      name: ownerRow.name,
+      handle: ownerRow.handle,
+      image: ownerRow.image,
+    },
+    items: items.map((item) => toPackageListItem(origin, item)),
+    total,
   });
 });
 

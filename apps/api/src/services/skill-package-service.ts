@@ -1,12 +1,15 @@
-import { and, asc, eq, max, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, max, or, sql } from 'drizzle-orm';
 import {
   db,
   skillFiles,
+  skillPackageComments,
   skillPackageItems,
+  skillPackageUpvotes,
   skillPackages,
   skillReleases,
   skills,
   user,
+  userPackageBookmarks,
 } from '../db';
 import { skillProtocolName } from '../lib/protocol-name';
 import type { OwnerInfo, SkillWithOwner } from './skill-service';
@@ -42,6 +45,11 @@ export interface SkillPackageWithOwner {
   updatedAt: Date;
   owner: OwnerInfo;
   skillCount: number;
+  upvoteCount: number;
+  commentCount: number;
+  bookmarkCount: number;
+  viewerHasUpvoted: boolean;
+  viewerHasBookmarked: boolean;
 }
 
 export interface SkillPackageItemWithSkill {
@@ -61,12 +69,23 @@ export interface SkillPackageDetail extends SkillPackageWithOwner {
   skills: SkillPackageItemWithSkill[];
 }
 
+export interface SkillPackageCommentWithAuthor {
+  id: string;
+  packageId: string;
+  userId: string;
+  parentId: string | null;
+  content: string;
+  createdAt: Date;
+  updatedAt: Date;
+  author: OwnerInfo;
+}
+
 export interface ListSkillPackagesOptions {
   q?: string;
   tags: string[];
   viewerUserId: string | null;
   includePrivate?: boolean;
-  sort?: 'recent' | 'az';
+  sort?: 'recent' | 'hottest' | 'az';
   limit?: number;
   offset?: number;
 }
@@ -100,17 +119,56 @@ const skillSelectExtras = () => ({
   viewerHasBookmarked: sql<number>`0`,
 });
 
+const packageSelectExtras = (viewerUserId: string | null) => ({
+  upvoteCount: sql<number>`(
+    select count(*) from ${skillPackageUpvotes}
+    where ${skillPackageUpvotes.packageId} = ${skillPackages.id}
+  )`,
+  commentCount: sql<number>`(
+    select count(*) from ${skillPackageComments}
+    where ${skillPackageComments.packageId} = ${skillPackages.id}
+  )`,
+  bookmarkCount: sql<number>`(
+    select count(*) from ${userPackageBookmarks}
+    where ${userPackageBookmarks.packageId} = ${skillPackages.id}
+  )`,
+  viewerHasUpvoted: viewerUserId
+    ? sql<number>`exists(
+        select 1 from ${skillPackageUpvotes}
+        where ${skillPackageUpvotes.packageId} = ${skillPackages.id}
+          and ${skillPackageUpvotes.userId} = ${viewerUserId}
+      )`
+    : sql<number>`0`,
+  viewerHasBookmarked: viewerUserId
+    ? sql<number>`exists(
+        select 1 from ${userPackageBookmarks}
+        where ${userPackageBookmarks.packageId} = ${skillPackages.id}
+          and ${userPackageBookmarks.userId} = ${viewerUserId}
+      )`
+    : sql<number>`0`,
+});
+
 function mapPackageRow<
   T extends {
     package: typeof skillPackages.$inferSelect;
     owner: OwnerInfo;
     skillCount: number;
+    upvoteCount: number;
+    commentCount: number;
+    bookmarkCount: number;
+    viewerHasUpvoted: number | boolean;
+    viewerHasBookmarked: number | boolean;
   },
 >(row: T): SkillPackageWithOwner {
   return {
     ...row.package,
     owner: row.owner,
     skillCount: Number(row.skillCount ?? 0),
+    upvoteCount: Number(row.upvoteCount ?? 0),
+    commentCount: Number(row.commentCount ?? 0),
+    bookmarkCount: Number(row.bookmarkCount ?? 0),
+    viewerHasUpvoted: Boolean(row.viewerHasUpvoted),
+    viewerHasBookmarked: Boolean(row.viewerHasBookmarked),
   };
 }
 
@@ -285,7 +343,20 @@ export async function listSkillPackagesForApi(
 
   const where = conditions.length ? and(...conditions) : undefined;
   const orderBy =
-    opts.sort === 'az' ? sql`${skillPackages.name} ASC` : sql`${skillPackages.updatedAt} DESC`;
+    opts.sort === 'az'
+      ? sql`${skillPackages.name} ASC`
+      : opts.sort === 'hottest'
+        ? sql`(
+            select count(*) from ${skillPackageUpvotes}
+            where ${skillPackageUpvotes.packageId} = ${skillPackages.id}
+          ) * 3 + (
+            select count(*) from ${skillPackageComments}
+            where ${skillPackageComments.packageId} = ${skillPackages.id}
+          ) * 2 + (
+            select count(*) from ${userPackageBookmarks}
+            where ${userPackageBookmarks.packageId} = ${skillPackages.id}
+          ) DESC`
+        : sql`${skillPackages.updatedAt} DESC`;
   const limit = opts.limit ?? 20;
   const offset = opts.offset ?? 0;
 
@@ -301,13 +372,105 @@ export async function listSkillPackagesForApi(
       .innerJoin(user, eq(skillPackages.ownerUserId, user.id))
       .where(where),
     db
-      .select({ package: skillPackages, owner: ownerSelect, skillCount })
+      .select({
+        package: skillPackages,
+        owner: ownerSelect,
+        skillCount,
+        ...packageSelectExtras(opts.viewerUserId),
+      })
       .from(skillPackages)
       .innerJoin(user, eq(skillPackages.ownerUserId, user.id))
       .where(where)
       .orderBy(orderBy)
       .limit(limit)
       .offset(offset),
+  ]);
+
+  return { items: rows.map(mapPackageRow), total: Number(countRow[0]?.count ?? 0) };
+}
+
+export async function listSkillPackagesContainingSkill(
+  skillId: string,
+  opts: Pick<ListSkillPackagesOptions, 'viewerUserId' | 'includePrivate'> = {
+    viewerUserId: null,
+    includePrivate: false,
+  },
+): Promise<{ items: SkillPackageWithOwner[]; total: number }> {
+  const ownPrivate =
+    opts.viewerUserId && opts.includePrivate
+      ? and(
+          eq(skillPackages.visibility, 'private'),
+          eq(skillPackages.ownerUserId, opts.viewerUserId),
+        )
+      : undefined;
+  const visibilityCond = or(
+    eq(skillPackages.visibility, 'public'),
+    ...(ownPrivate ? [ownPrivate] : []),
+  );
+  const where = and(eq(skillPackageItems.skillId, skillId), visibilityCond);
+  const skillCount = sql<number>`(
+    select count(*) from ${skillPackageItems}
+    where ${skillPackageItems.packageId} = ${skillPackages.id}
+  )`;
+
+  const [countRow, rows] = await Promise.all([
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(skillPackageItems)
+      .innerJoin(skillPackages, eq(skillPackageItems.packageId, skillPackages.id))
+      .innerJoin(user, eq(skillPackages.ownerUserId, user.id))
+      .where(where),
+    db
+      .select({
+        package: skillPackages,
+        owner: ownerSelect,
+        skillCount,
+        ...packageSelectExtras(opts.viewerUserId ?? null),
+      })
+      .from(skillPackageItems)
+      .innerJoin(skillPackages, eq(skillPackageItems.packageId, skillPackages.id))
+      .innerJoin(user, eq(skillPackages.ownerUserId, user.id))
+      .where(where)
+      .orderBy(desc(skillPackages.updatedAt)),
+  ]);
+
+  return { items: rows.map(mapPackageRow), total: Number(countRow[0]?.count ?? 0) };
+}
+
+export async function listSkillPackagesByOwner(
+  ownerUserId: string,
+  opts: Pick<ListSkillPackagesOptions, 'viewerUserId' | 'includePrivate'> = {
+    viewerUserId: null,
+    includePrivate: false,
+  },
+): Promise<{ items: SkillPackageWithOwner[]; total: number }> {
+  const canSeeOwnPrivate = opts.viewerUserId === ownerUserId && Boolean(opts.includePrivate);
+  const visibilityCond = canSeeOwnPrivate ? undefined : eq(skillPackages.visibility, 'public');
+  const where = visibilityCond
+    ? and(eq(skillPackages.ownerUserId, ownerUserId), visibilityCond)
+    : eq(skillPackages.ownerUserId, ownerUserId);
+  const skillCount = sql<number>`(
+    select count(*) from ${skillPackageItems}
+    where ${skillPackageItems.packageId} = ${skillPackages.id}
+  )`;
+
+  const [countRow, rows] = await Promise.all([
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(skillPackages)
+      .innerJoin(user, eq(skillPackages.ownerUserId, user.id))
+      .where(where),
+    db
+      .select({
+        package: skillPackages,
+        owner: ownerSelect,
+        skillCount,
+        ...packageSelectExtras(opts.viewerUserId ?? null),
+      })
+      .from(skillPackages)
+      .innerJoin(user, eq(skillPackages.ownerUserId, user.id))
+      .where(where)
+      .orderBy(desc(skillPackages.updatedAt)),
   ]);
 
   return { items: rows.map(mapPackageRow), total: Number(countRow[0]?.count ?? 0) };
@@ -326,7 +489,12 @@ export async function findSkillPackageByOwnerAndSlug(
     where ${skillPackageItems.packageId} = ${skillPackages.id}
   )`;
   const rows = await db
-    .select({ package: skillPackages, owner: ownerSelect, skillCount })
+    .select({
+      package: skillPackages,
+      owner: ownerSelect,
+      skillCount,
+      ...packageSelectExtras(opts.viewerUserId ?? null),
+    })
     .from(skillPackages)
     .innerJoin(user, eq(skillPackages.ownerUserId, user.id))
     .where(and(eq(user.handle, ownerHandle), eq(skillPackages.slug, slug)))
@@ -345,13 +513,18 @@ export async function findSkillPackageByOwnerAndSlug(
   return mapPackageRow(row);
 }
 
-export async function findSkillPackageById(packageId: string) {
+export async function findSkillPackageById(packageId: string, viewerUserId: string | null = null) {
   const skillCount = sql<number>`(
     select count(*) from ${skillPackageItems}
     where ${skillPackageItems.packageId} = ${skillPackages.id}
   )`;
   const rows = await db
-    .select({ package: skillPackages, owner: ownerSelect, skillCount })
+    .select({
+      package: skillPackages,
+      owner: ownerSelect,
+      skillCount,
+      ...packageSelectExtras(viewerUserId),
+    })
     .from(skillPackages)
     .innerJoin(user, eq(skillPackages.ownerUserId, user.id))
     .where(eq(skillPackages.id, packageId))
@@ -410,6 +583,102 @@ export async function getSkillPackageDetail(
       ),
     }),
   };
+}
+
+export async function listSkillPackageComments(
+  packageId: string,
+): Promise<SkillPackageCommentWithAuthor[]> {
+  const rows = await db
+    .select({ comment: skillPackageComments, author: ownerSelect })
+    .from(skillPackageComments)
+    .innerJoin(user, eq(skillPackageComments.userId, user.id))
+    .where(eq(skillPackageComments.packageId, packageId))
+    .orderBy(desc(skillPackageComments.createdAt));
+
+  return rows.map((row) => ({ ...row.comment, author: row.author }));
+}
+
+export async function createSkillPackageComment(input: {
+  packageId: string;
+  userId: string;
+  content: string;
+  parentId?: string | null;
+}): Promise<SkillPackageCommentWithAuthor> {
+  return db.transaction(async (tx) => {
+    const [comment] = await tx
+      .insert(skillPackageComments)
+      .values({
+        packageId: input.packageId,
+        userId: input.userId,
+        content: input.content,
+        parentId: input.parentId ?? null,
+      })
+      .returning();
+    if (!comment) throw new Error('createSkillPackageComment: insert returned no row');
+
+    const [author] = await tx
+      .select(ownerSelect)
+      .from(user)
+      .where(eq(user.id, input.userId))
+      .limit(1);
+    if (!author) throw new Error('createSkillPackageComment: author disappeared mid-tx');
+
+    return { ...comment, author };
+  });
+}
+
+export async function addSkillPackageUpvote(packageId: string, userId: string): Promise<boolean> {
+  const existing = await db
+    .select({ id: skillPackageUpvotes.id })
+    .from(skillPackageUpvotes)
+    .where(
+      and(eq(skillPackageUpvotes.packageId, packageId), eq(skillPackageUpvotes.userId, userId)),
+    )
+    .limit(1);
+  if (existing[0]) return false;
+
+  await db.insert(skillPackageUpvotes).values({ packageId, userId });
+  return true;
+}
+
+export async function removeSkillPackageUpvote(
+  packageId: string,
+  userId: string,
+): Promise<boolean> {
+  const rows = await db
+    .delete(skillPackageUpvotes)
+    .where(
+      and(eq(skillPackageUpvotes.packageId, packageId), eq(skillPackageUpvotes.userId, userId)),
+    )
+    .returning({ id: skillPackageUpvotes.id });
+  return rows.length > 0;
+}
+
+export async function addSkillPackageBookmark(packageId: string, userId: string): Promise<boolean> {
+  const existing = await db
+    .select({ id: userPackageBookmarks.id })
+    .from(userPackageBookmarks)
+    .where(
+      and(eq(userPackageBookmarks.packageId, packageId), eq(userPackageBookmarks.userId, userId)),
+    )
+    .limit(1);
+  if (existing[0]) return false;
+
+  await db.insert(userPackageBookmarks).values({ packageId, userId });
+  return true;
+}
+
+export async function removeSkillPackageBookmark(
+  packageId: string,
+  userId: string,
+): Promise<boolean> {
+  const rows = await db
+    .delete(userPackageBookmarks)
+    .where(
+      and(eq(userPackageBookmarks.packageId, packageId), eq(userPackageBookmarks.userId, userId)),
+    )
+    .returning({ id: userPackageBookmarks.id });
+  return rows.length > 0;
 }
 
 export async function createSkillPackage(input: CreateSkillPackageData) {

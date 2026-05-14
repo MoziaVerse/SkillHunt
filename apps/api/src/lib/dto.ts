@@ -26,7 +26,7 @@ export const listPackagesQuerySchema = z.object({
     .union([z.string(), z.array(z.string())])
     .optional()
     .transform((v) => (v === undefined ? [] : Array.isArray(v) ? v : [v])),
-  sort: z.enum(['recent', 'az']).optional().default('recent'),
+  sort: z.enum(['recent', 'hottest', 'az']).optional().default('recent'),
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
   offset: z.coerce.number().int().min(0).optional().default(0),
 });
@@ -116,6 +116,11 @@ export const skillPackageListItemSchema = z.object({
   coverImage: z.string().nullable(),
   owner: ownerInfoSchema,
   skillCount: z.number().int().nonnegative(),
+  upvoteCount: z.number().int().nonnegative(),
+  commentCount: z.number().int().nonnegative(),
+  bookmarkCount: z.number().int().nonnegative(),
+  viewerHasUpvoted: z.boolean(),
+  viewerHasBookmarked: z.boolean(),
   installCommand: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -137,6 +142,17 @@ export const skillPackageDetailSchema = skillPackageListItemSchema.extend({
 
 export type SkillPackageListItem = z.infer<typeof skillPackageListItemSchema>;
 export type SkillPackageDetail = z.infer<typeof skillPackageDetailSchema>;
+
+export const communityCommentSchema = z.object({
+  id: z.string(),
+  parentId: z.string().nullable(),
+  content: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  author: ownerInfoSchema,
+});
+
+export type CommunityComment = z.infer<typeof communityCommentSchema>;
 
 export const skillCommentSchema = z.object({
   id: z.string(),

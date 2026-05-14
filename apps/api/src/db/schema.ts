@@ -339,6 +339,63 @@ export const userBookmarks = sqliteTable(
   ],
 );
 
+export const skillPackageUpvotes = sqliteTable(
+  'skill_package_upvotes',
+  {
+    id: text('id').primaryKey().$defaultFn(randomId),
+    packageId: text('package_id')
+      .notNull()
+      .references(() => skillPackages.id, { onDelete: 'cascade' }),
+    userId: text('user_id').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+  },
+  (t) => [
+    uniqueIndex('skill_package_upvotes_package_user_idx').on(t.packageId, t.userId),
+    index('skill_package_upvotes_package_idx').on(t.packageId),
+    index('skill_package_upvotes_user_idx').on(t.userId),
+    index('skill_package_upvotes_created_at_idx').on(t.createdAt),
+  ],
+);
+
+export const skillPackageComments = sqliteTable(
+  'skill_package_comments',
+  {
+    id: text('id').primaryKey().$defaultFn(randomId),
+    packageId: text('package_id')
+      .notNull()
+      .references(() => skillPackages.id, { onDelete: 'cascade' }),
+    userId: text('user_id').notNull(),
+    parentId: text('parent_id'),
+    content: text('content').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+  },
+  (t) => [
+    index('skill_package_comments_package_idx').on(t.packageId),
+    index('skill_package_comments_user_idx').on(t.userId),
+    index('skill_package_comments_parent_idx').on(t.parentId),
+    index('skill_package_comments_created_at_idx').on(t.createdAt),
+  ],
+);
+
+export const userPackageBookmarks = sqliteTable(
+  'user_package_bookmarks',
+  {
+    id: text('id').primaryKey().$defaultFn(randomId),
+    userId: text('user_id').notNull(),
+    packageId: text('package_id')
+      .notNull()
+      .references(() => skillPackages.id, { onDelete: 'cascade' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+  },
+  (t) => [
+    uniqueIndex('user_package_bookmarks_user_package_idx').on(t.userId, t.packageId),
+    index('user_package_bookmarks_user_idx').on(t.userId),
+    index('user_package_bookmarks_package_idx').on(t.packageId),
+    index('user_package_bookmarks_created_at_idx').on(t.createdAt),
+  ],
+);
+
 // Notifications table
 export const notifications = sqliteTable(
   'notifications',
@@ -378,6 +435,15 @@ export type NewSkillComment = typeof skillComments.$inferInsert;
 
 export type UserBookmark = typeof userBookmarks.$inferSelect;
 export type NewUserBookmark = typeof userBookmarks.$inferInsert;
+
+export type SkillPackageUpvote = typeof skillPackageUpvotes.$inferSelect;
+export type NewSkillPackageUpvote = typeof skillPackageUpvotes.$inferInsert;
+
+export type SkillPackageComment = typeof skillPackageComments.$inferSelect;
+export type NewSkillPackageComment = typeof skillPackageComments.$inferInsert;
+
+export type UserPackageBookmark = typeof userPackageBookmarks.$inferSelect;
+export type NewUserPackageBookmark = typeof userPackageBookmarks.$inferInsert;
 
 export type Notification = typeof notifications.$inferSelect;
 export type NewNotification = typeof notifications.$inferInsert;
