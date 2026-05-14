@@ -1,6 +1,7 @@
 import { CommentsSection, CommunityStats } from '@/components/community-panel';
 import { InstallCommand } from '@/components/install-command';
 import { Logo } from '@/components/logo';
+import { TwemojiIcon } from '@/components/twemoji-icon';
 import { type MeResponse, apiClient } from '@/lib/api-client';
 import { DEFAULT_SKILL_ICON, DEFAULT_SKILL_PACKAGE_ICON } from '@/lib/default-icons';
 import { formatRelative } from '@/lib/format';
@@ -109,7 +110,7 @@ function HeroSection({
         <div className="flex flex-wrap items-center gap-3">
           {!pkg.coverImage ? (
             <span className="select-none text-[36px] leading-none">
-              {pkg.icon ?? DEFAULT_SKILL_PACKAGE_ICON}
+              <TwemojiIcon emoji={pkg.icon ?? DEFAULT_SKILL_PACKAGE_ICON} />
             </span>
           ) : null}
           <h1 className="text-[34px] font-bold tracking-[-0.03em] text-[#0f172a]">{pkg.name}</h1>
@@ -238,7 +239,7 @@ function TabNav({
                 : 'border-transparent text-neutral-500 hover:text-neutral-700',
             )}
           >
-            <span>{tab.icon}</span>
+            <TwemojiIcon emoji={tab.icon} />
             {tab.label}
           </button>
         ))}
@@ -324,7 +325,7 @@ function PackageSkillCard({ item }: { item: SkillPackageSkill }) {
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-neutral-200 bg-neutral-50 text-[24px]">
-          {item.skill.icon ?? DEFAULT_SKILL_ICON}
+          <TwemojiIcon emoji={item.skill.icon ?? DEFAULT_SKILL_ICON} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">

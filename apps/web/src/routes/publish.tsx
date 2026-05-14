@@ -2,6 +2,7 @@ import { Logo } from '@/components/logo';
 import { SkillForm, type SkillFormValues } from '@/components/skill-form';
 import { SkillUploadPreview } from '@/components/skill-upload-preview';
 import { type SkillFromUpload, SkillUploader } from '@/components/skill-uploader';
+import { TwemojiIcon } from '@/components/twemoji-icon';
 import { type MeResponse, apiClient } from '@/lib/api-client';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
@@ -43,7 +44,7 @@ export default function PublishPage() {
 
         <div className="px-6 py-24 text-center max-w-md mx-auto">
           <div className="w-16 h-16 mx-auto mb-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-center text-[28px]">
-            🔒
+            <TwemojiIcon emoji="🔒" />
           </div>
           <div className="text-[12px] uppercase tracking-[0.16em] text-neutral-500 mb-3">
             需要登录
@@ -90,7 +91,7 @@ export default function PublishPage() {
 
         <div className="px-6 py-24 text-center max-w-md mx-auto">
           <div className="w-16 h-16 mx-auto mb-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-center text-[28px]">
-            ⚠️
+            <TwemojiIcon emoji="⚠️" />
           </div>
           <div className="text-[12px] uppercase tracking-[0.16em] text-neutral-500 mb-3">
             URL 标识需要重命名
@@ -167,7 +168,7 @@ export default function PublishPage() {
         <div className="mx-auto max-w-[900px]">
           <div className="flex items-center gap-5">
             <div className="w-[80px] h-[80px] shrink-0 bg-gradient-to-br from-emerald-50 to-emerald-100 border border-emerald-200 rounded-xl flex items-center justify-center text-[36px] select-none">
-              🚀
+              <TwemojiIcon emoji="🚀" />
             </div>
             <div>
               <h1 className="text-[28px] font-bold text-[#0f172a] tracking-[-0.02em]">

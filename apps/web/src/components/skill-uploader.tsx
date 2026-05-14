@@ -1,3 +1,4 @@
+import { TwemojiIcon } from '@/components/twemoji-icon';
 import { cn } from '@/lib/utils';
 import { useRef, useState } from 'react';
 
@@ -225,7 +226,7 @@ export function SkillUploader({ onLoaded, compact = false }: SkillUploaderProps)
             : 'border-neutral-300 hover:border-neutral-400',
         )}
       >
-        <div className="text-[48px] mb-3 select-none">📁</div>
+        <TwemojiIcon emoji="📁" className="mb-3 text-[48px] select-none" />
         <div className="text-[14px] font-medium text-[#0f172a] mb-1">
           {busy ? '读取中…' : '拖放 SKILL.md 或 Skill 文件夹到此处'}
         </div>

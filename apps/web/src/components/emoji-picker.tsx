@@ -1,3 +1,4 @@
+import { TwemojiIcon } from '@/components/twemoji-icon';
 import { cn } from '@/lib/utils';
 
 const EMOJI_GROUPS = [
@@ -52,7 +53,7 @@ export function EmojiPicker({ value, onChange, disabled = false }: EmojiPickerPr
                   : 'border-transparent hover:border-neutral-300 hover:bg-neutral-50',
               )}
             >
-              {emoji}
+              <TwemojiIcon emoji={emoji} />
             </button>
           );
         })}

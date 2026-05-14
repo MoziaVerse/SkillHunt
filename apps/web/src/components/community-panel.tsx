@@ -1,3 +1,4 @@
+import { TwemojiIcon } from '@/components/twemoji-icon';
 import type { MeResponse } from '@/lib/api-client';
 import { formatRelative } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -48,7 +49,7 @@ export function CommunityStats({
             : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300 hover:text-neutral-900',
         )}
       >
-        <span>{target.viewerHasBookmarked ? '🔖' : '📑'}</span>
+        <TwemojiIcon emoji={target.viewerHasBookmarked ? '🔖' : '📑'} />
         <span>{target.bookmarkCount} 人收藏</span>
       </button>
       <button
@@ -56,7 +57,7 @@ export function CommunityStats({
         onClick={onCommentClick}
         className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 transition hover:border-neutral-300 hover:text-neutral-900"
       >
-        <span>💬</span>
+        <TwemojiIcon emoji="💬" />
         <span>{target.commentCount} 条评论</span>
       </button>
     </div>

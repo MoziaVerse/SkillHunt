@@ -1,3 +1,4 @@
+import { TwemojiIcon } from '@/components/twemoji-icon';
 import { Link } from 'react-router';
 
 const DOCS = [
@@ -57,7 +58,8 @@ export default function DocsIndex() {
     <>
       <header className="pb-8 mb-8 border-b border-neutral-200">
         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-full text-[12px] text-emerald-700 mb-4">
-          📚 文档
+          <TwemojiIcon emoji="📚" />
+          文档
         </div>
         <h1 className="text-[36px] font-bold leading-[1.08] tracking-[-0.03em] text-[#0f172a]">
           SkillHunt 文档
@@ -75,7 +77,7 @@ export default function DocsIndex() {
             className="group flex items-start gap-4 p-5 border border-neutral-200 rounded-xl hover:border-neutral-300 hover:shadow-sm transition"
           >
             <div className="w-12 h-12 shrink-0 bg-neutral-50 border border-neutral-200 rounded-lg flex items-center justify-center text-[24px] select-none group-hover:border-neutral-300 transition">
-              {d.icon}
+              <TwemojiIcon emoji={d.icon} />
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-[15px] font-semibold text-[#0f172a] group-hover:text-emerald-600 transition">

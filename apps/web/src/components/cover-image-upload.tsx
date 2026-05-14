@@ -1,3 +1,4 @@
+import { TwemojiIcon } from '@/components/twemoji-icon';
 import { cn } from '@/lib/utils';
 import { useRef, useState } from 'react';
 
@@ -85,7 +86,7 @@ export function CoverImageUpload({ value, onChange, disabled = false }: CoverIma
               : 'border-neutral-300 hover:border-neutral-400',
           )}
         >
-          <div className="text-[28px] mb-1">🖼️</div>
+          <TwemojiIcon emoji="🖼️" className="mb-1 text-[28px]" />
           <div className="text-[13px] text-neutral-600">点击或拖放上传封面图</div>
           <div className="text-[11px] text-neutral-400 mt-1">
             建议 1200×630，JPG/PNG/WebP，不超过 2MB

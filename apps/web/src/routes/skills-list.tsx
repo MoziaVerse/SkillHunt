@@ -1,3 +1,4 @@
+import { TwemojiIcon } from '@/components/twemoji-icon';
 import { apiClient } from '@/lib/api-client';
 import {
   DEFAULT_REFERENCED_SKILL_ICON,
@@ -6,7 +7,7 @@ import {
 } from '@/lib/default-icons';
 import { cn } from '@/lib/utils';
 import type { SkillListItem, SkillPackageListItem } from '@/types/api';
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
 type ContentFilter = 'all' | 'skills' | 'packages';
@@ -52,6 +53,23 @@ function latestSectionTitle(content: ContentFilter) {
 function spotlightOnlyText(content: ContentFilter) {
   if (content === 'all') return '推荐区已经展示了当前最值得关注的内容。';
   return `推荐区已经展示了当前全部 ${contentLabel(content)}。`;
+}
+
+function EmojiMetric({
+  emoji,
+  children,
+  className,
+}: {
+  emoji: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <span className={cn('inline-flex items-center gap-1', className)}>
+      <TwemojiIcon emoji={emoji} />
+      <span>{children}</span>
+    </span>
+  );
 }
 
 function itemTitle(item: DiscoveryItem) {
@@ -102,7 +120,7 @@ function Hero({
       </div>
       <div className="relative">
         <div className="mb-6 inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[13px] text-emerald-700">
-          <span>✨</span>
+          <TwemojiIcon emoji="✨" />
           <span>SkillHunt · 每日发现新的 AI Agent Skills</span>
         </div>
         <h1 className="mb-3 text-[44px] font-bold leading-[1.08] tracking-[-0.03em] text-[#0f172a]">
@@ -173,7 +191,7 @@ function FilterBar({
               onClick={() => setContent(key)}
               className={cn('category-btn', content === key ? 'active' : '')}
             >
-              <span>{icon}</span>
+              {icon === '◆' ? <span>{icon}</span> : <TwemojiIcon emoji={icon} />}
               <span>{label}</span>
             </button>
           ))}
@@ -222,7 +240,12 @@ function SkillCover({ skill }: { skill: SkillListItem }) {
 
   return (
     <div className="flex h-full w-full select-none items-center justify-center bg-gradient-to-br from-neutral-50 to-neutral-100 text-[48px]">
-      {skill.icon ?? (skill.type === 'owned' ? DEFAULT_SKILL_ICON : DEFAULT_REFERENCED_SKILL_ICON)}
+      <TwemojiIcon
+        emoji={
+          skill.icon ??
+          (skill.type === 'owned' ? DEFAULT_SKILL_ICON : DEFAULT_REFERENCED_SKILL_ICON)
+        }
+      />
     </div>
   );
 }
@@ -236,7 +259,7 @@ function PackageCover({ pkg }: { pkg: SkillPackageListItem }) {
 
   return (
     <div className="flex h-full w-full select-none items-center justify-center bg-gradient-to-br from-neutral-50 to-neutral-100 text-[48px]">
-      {pkg.icon ?? DEFAULT_SKILL_PACKAGE_ICON}
+      <TwemojiIcon emoji={pkg.icon ?? DEFAULT_SKILL_PACKAGE_ICON} />
     </div>
   );
 }
@@ -274,8 +297,12 @@ function SkillCard({ skill }: { skill: SkillListItem }) {
           </span>
           <div className="flex items-center gap-3">
             <span className="text-[11px] text-neutral-500">▲ {skill.upvoteCount}</span>
-            <span className="text-[11px] text-neutral-500">💬 {skill.commentCount}</span>
-            <span className="text-[11px] text-neutral-500">🔖 {skill.bookmarkCount}</span>
+            <EmojiMetric emoji="💬" className="text-[11px] text-neutral-500">
+              {skill.commentCount}
+            </EmojiMetric>
+            <EmojiMetric emoji="🔖" className="text-[11px] text-neutral-500">
+              {skill.bookmarkCount}
+            </EmojiMetric>
             {skill.type === 'owned' && skill.visibility === 'private' && (
               <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">
                 私有
@@ -330,10 +357,16 @@ function PackageCard({ pkg }: { pkg: SkillPackageListItem }) {
             作者 <span className="font-medium text-neutral-700">@{pkg.owner.handle}</span>
           </span>
           <div className="flex items-center gap-3">
-            <span className="text-[11px] text-neutral-500">🧩 {pkg.skillCount}</span>
+            <EmojiMetric emoji="🧩" className="text-[11px] text-neutral-500">
+              {pkg.skillCount}
+            </EmojiMetric>
             <span className="text-[11px] text-neutral-500">▲ {pkg.upvoteCount}</span>
-            <span className="text-[11px] text-neutral-500">💬 {pkg.commentCount}</span>
-            <span className="text-[11px] text-neutral-500">🔖 {pkg.bookmarkCount}</span>
+            <EmojiMetric emoji="💬" className="text-[11px] text-neutral-500">
+              {pkg.commentCount}
+            </EmojiMetric>
+            <EmojiMetric emoji="🔖" className="text-[11px] text-neutral-500">
+              {pkg.bookmarkCount}
+            </EmojiMetric>
             {pkg.visibility === 'private' ? (
               <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">
                 私有
@@ -367,15 +400,15 @@ function SpotlightRow({ items }: { items: DiscoveryItem[] }) {
           const description = isPackage ? item.package.description : item.skill.description;
           const metrics = isPackage
             ? [
-                `🧩 ${item.package.skillCount}`,
-                `▲ ${item.package.upvoteCount}`,
-                `💬 ${item.package.commentCount}`,
-                `🔖 ${item.package.bookmarkCount}`,
+                { emoji: '🧩', label: item.package.skillCount },
+                { label: `▲ ${item.package.upvoteCount}` },
+                { emoji: '💬', label: item.package.commentCount },
+                { emoji: '🔖', label: item.package.bookmarkCount },
               ]
             : [
-                `▲ ${item.skill.upvoteCount}`,
-                `💬 ${item.skill.commentCount}`,
-                `🔖 ${item.skill.bookmarkCount}`,
+                { label: `▲ ${item.skill.upvoteCount}` },
+                { emoji: '💬', label: item.skill.commentCount },
+                { emoji: '🔖', label: item.skill.bookmarkCount },
               ];
 
           return (
@@ -394,11 +427,13 @@ function SpotlightRow({ items }: { items: DiscoveryItem[] }) {
                 <span className="text-[11px] text-neutral-400">@{owner.handle}</span>
               </div>
               <div className="flex items-center gap-2 text-[18px] font-semibold leading-tight text-neutral-900">
-                <span>
-                  {isPackage
-                    ? (item.package.icon ?? DEFAULT_SKILL_PACKAGE_ICON)
-                    : (item.skill.icon ?? DEFAULT_SKILL_ICON)}
-                </span>
+                <TwemojiIcon
+                  emoji={
+                    isPackage
+                      ? (item.package.icon ?? DEFAULT_SKILL_PACKAGE_ICON)
+                      : (item.skill.icon ?? DEFAULT_SKILL_ICON)
+                  }
+                />
                 <span className="min-w-0 truncate">{itemTitle(item)}</span>
               </div>
               <p className="mt-2 line-clamp-3 text-[13px] leading-relaxed text-neutral-600">
@@ -416,7 +451,13 @@ function SpotlightRow({ items }: { items: DiscoveryItem[] }) {
               </div>
               <div className="mt-4 flex items-center gap-4 text-[12px] text-neutral-500">
                 {metrics.map((metric) => (
-                  <span key={metric}>{metric}</span>
+                  <span
+                    key={`${metric.emoji ?? 'text'}-${metric.label}`}
+                    className="inline-flex items-center gap-1"
+                  >
+                    {metric.emoji ? <TwemojiIcon emoji={metric.emoji} /> : null}
+                    <span>{metric.label}</span>
+                  </span>
                 ))}
               </div>
             </Link>

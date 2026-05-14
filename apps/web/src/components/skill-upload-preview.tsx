@@ -1,4 +1,5 @@
 import { MarkdownView } from '@/components/markdown-view';
+import { TwemojiIcon } from '@/components/twemoji-icon';
 import { cn } from '@/lib/utils';
 import { useMemo, useRef, useState } from 'react';
 
@@ -170,7 +171,7 @@ export function SkillUploadPreview({ skillMdContent, extras }: SkillUploadPrevie
               <span className="w-4 text-center text-[11px] text-neutral-400">
                 {expanded ? '▾' : '▸'}
               </span>
-              <span className="text-[14px]">📁</span>
+              <TwemojiIcon emoji="📁" className="text-[14px]" />
               <span className="truncate font-medium">{node.name}</span>
             </button>
             {expanded ? <ul className="pb-1">{renderTree(node.children, depth + 1)}</ul> : null}
@@ -191,7 +192,10 @@ export function SkillUploadPreview({ skillMdContent, extras }: SkillUploadPrevie
             style={{ paddingLeft: `${38 + depth * 18}px` }}
           >
             <div className="flex items-center gap-2">
-              <span className="text-[14px]">{node.path.endsWith('.md') ? '📝' : '📄'}</span>
+              <TwemojiIcon
+                emoji={node.path.endsWith('.md') ? '📝' : '📄'}
+                className="text-[14px]"
+              />
               <div className="min-w-0 flex-1">
                 <div className="truncate">{node.name}</div>
               </div>

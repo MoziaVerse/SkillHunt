@@ -1,5 +1,6 @@
 import { Avatar } from '@/components/avatar';
 import { Logo } from '@/components/logo';
+import { TwemojiIcon } from '@/components/twemoji-icon';
 import { ApiError, type OwnerSkillsResponse, apiClient } from '@/lib/api-client';
 import {
   DEFAULT_REFERENCED_SKILL_ICON,
@@ -99,8 +100,12 @@ function UserSkillCard({ skill }: { skill: SkillListItem }) {
   return (
     <Link to={`/skills/${skill.owner.handle}/${skill.slug}`} className="skill-card flex flex-col">
       <div className="flex aspect-square items-center justify-center bg-gradient-to-br from-neutral-50 to-neutral-100 text-[48px] select-none">
-        {skill.icon ??
-          (skill.type === 'owned' ? DEFAULT_SKILL_ICON : DEFAULT_REFERENCED_SKILL_ICON)}
+        <TwemojiIcon
+          emoji={
+            skill.icon ??
+            (skill.type === 'owned' ? DEFAULT_SKILL_ICON : DEFAULT_REFERENCED_SKILL_ICON)
+          }
+        />
       </div>
 
       <div className="flex flex-1 flex-col p-4">
@@ -162,7 +167,7 @@ function UserPackageCard({ pkg }: { pkg: SkillPackageListItem }) {
             className="h-full w-full object-cover"
           />
         ) : (
-          <span>{pkg.icon ?? DEFAULT_SKILL_PACKAGE_ICON}</span>
+          <TwemojiIcon emoji={pkg.icon ?? DEFAULT_SKILL_PACKAGE_ICON} />
         )}
       </div>
 
@@ -195,10 +200,19 @@ function UserPackageCard({ pkg }: { pkg: SkillPackageListItem }) {
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-500">
-            <span>🧩 {pkg.skillCount}</span>
+            <span className="inline-flex items-center gap-1">
+              <TwemojiIcon emoji="🧩" />
+              {pkg.skillCount}
+            </span>
             <span>▲ {pkg.upvoteCount}</span>
-            <span>💬 {pkg.commentCount}</span>
-            <span>🔖 {pkg.bookmarkCount}</span>
+            <span className="inline-flex items-center gap-1">
+              <TwemojiIcon emoji="💬" />
+              {pkg.commentCount}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <TwemojiIcon emoji="🔖" />
+              {pkg.bookmarkCount}
+            </span>
             {pkg.visibility === 'private' ? (
               <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">
                 私有

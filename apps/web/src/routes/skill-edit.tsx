@@ -2,6 +2,7 @@ import { Logo } from '@/components/logo';
 import { SkillForm, type SkillFormValues } from '@/components/skill-form';
 import { SkillUploadPreview } from '@/components/skill-upload-preview';
 import { type SkillFromUpload, SkillUploader } from '@/components/skill-uploader';
+import { TwemojiIcon } from '@/components/twemoji-icon';
 import { apiClient } from '@/lib/api-client';
 import type { SkillDetail } from '@/types/api';
 import { useEffect, useState } from 'react';
@@ -85,7 +86,7 @@ export default function SkillEditPage() {
         <EditBreadcrumb owner={owner} slug={slug} />
         <div className="mx-auto max-w-md px-6 py-24 text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-xl border border-amber-200 bg-amber-50 text-[28px]">
-            🔒
+            <TwemojiIcon emoji="🔒" />
           </div>
           <div className="mb-3 text-[12px] tracking-[0.16em] text-neutral-500">不能编辑</div>
           <p className="text-[14px] text-neutral-700">只有自有 Skill 才能编辑。</p>
@@ -142,7 +143,7 @@ export default function SkillEditPage() {
         <div className="mx-auto max-w-[900px]">
           <div className="flex items-center gap-5">
             <div className="flex h-[80px] w-[80px] shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100 text-[36px] select-none">
-              ✏️
+              <TwemojiIcon emoji="✏️" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="mb-2 flex items-center justify-between gap-4">

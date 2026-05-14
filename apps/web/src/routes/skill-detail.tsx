@@ -2,6 +2,7 @@ import { CommentsSection, CommunityStats } from '@/components/community-panel';
 import { InstallCommand } from '@/components/install-command';
 import { Logo } from '@/components/logo';
 import { MarkdownView } from '@/components/markdown-view';
+import { TwemojiIcon } from '@/components/twemoji-icon';
 import { type MeResponse, apiClient } from '@/lib/api-client';
 import { DEFAULT_SKILL_PACKAGE_ICON } from '@/lib/default-icons';
 import { formatRelative } from '@/lib/format';
@@ -367,7 +368,7 @@ function TabNav({
                 : 'border-transparent text-neutral-500 hover:text-neutral-700',
             )}
           >
-            <span>{tab.icon}</span>
+            <TwemojiIcon emoji={tab.icon} />
             {tab.label}
           </button>
         ))}
@@ -706,7 +707,7 @@ function FilePreviewPane({
               <span className="w-4 text-center text-[11px] text-neutral-400">
                 {expanded ? '▾' : '▸'}
               </span>
-              <span className="text-[14px]">📁</span>
+              <TwemojiIcon emoji="📁" className="text-[14px]" />
               <span className="truncate font-medium">{node.name}</span>
             </button>
             {expanded ? <ul className="pb-1">{renderTree(node.children, depth + 1)}</ul> : null}
@@ -727,7 +728,10 @@ function FilePreviewPane({
             style={{ paddingLeft: `${38 + depth * 18}px` }}
           >
             <div className="flex items-center gap-2">
-              <span className="text-[14px]">{node.path.endsWith('.md') ? '📝' : '📄'}</span>
+              <TwemojiIcon
+                emoji={node.path.endsWith('.md') ? '📝' : '📄'}
+                className="text-[14px]"
+              />
               <div className="min-w-0 flex-1">
                 <div className="truncate">{node.name}</div>
                 {!isTextPreviewable(node.path) && (
@@ -1091,7 +1095,7 @@ function HeroSection({
 
           <div className="flex items-center gap-3 flex-wrap">
             {!skill.coverImage && skill.icon && (
-              <span className="text-[36px] leading-none select-none">{skill.icon}</span>
+              <TwemojiIcon emoji={skill.icon} className="text-[36px]" />
             )}
             <h1 className="text-[34px] font-bold tracking-[-0.03em] text-[#0f172a]">
               {skill.name}
@@ -1206,7 +1210,7 @@ function PackageInclusionCard({ pkg }: { pkg: SkillPackageListItem }) {
             />
           ) : (
             <span className="flex h-12 w-12 items-center justify-center rounded-xl border border-neutral-200 bg-neutral-50 text-[24px]">
-              {pkg.icon ?? DEFAULT_SKILL_PACKAGE_ICON}
+              <TwemojiIcon emoji={pkg.icon ?? DEFAULT_SKILL_PACKAGE_ICON} />
             </span>
           )}
           <div className="min-w-0">
@@ -1240,10 +1244,19 @@ function PackageInclusionCard({ pkg }: { pkg: SkillPackageListItem }) {
 
       <div className="mt-4 border-t border-neutral-100 pt-3">
         <div className="flex flex-wrap items-center gap-2 text-[12px] text-neutral-500">
-          <span>🧩 {pkg.skillCount}</span>
+          <span className="inline-flex items-center gap-1">
+            <TwemojiIcon emoji="🧩" />
+            {pkg.skillCount}
+          </span>
           <span>▲ {pkg.upvoteCount}</span>
-          <span>💬 {pkg.commentCount}</span>
-          <span>🔖 {pkg.bookmarkCount}</span>
+          <span className="inline-flex items-center gap-1">
+            <TwemojiIcon emoji="💬" />
+            {pkg.commentCount}
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <TwemojiIcon emoji="🔖" />
+            {pkg.bookmarkCount}
+          </span>
         </div>
       </div>
     </Link>
@@ -1307,7 +1320,7 @@ function SkillPackageInclusions({ skill }: { skill: SkillDetail }) {
         </div>
       ) : packages.length === 0 ? (
         <div className="rounded-2xl bg-neutral-50 px-5 py-10 text-center">
-          <div className="text-[32px]">{DEFAULT_SKILL_PACKAGE_ICON}</div>
+          <TwemojiIcon emoji={DEFAULT_SKILL_PACKAGE_ICON} className="text-[32px]" />
           <h3 className="mt-3 text-[15px] font-semibold text-neutral-900">还没有包收录它</h3>
           <p className="mt-2 text-[13px] text-neutral-500">
             当有人把这个 Skill 加入 Skills 包后，会在这里展示出来。

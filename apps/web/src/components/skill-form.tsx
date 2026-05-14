@@ -1,5 +1,6 @@
 import { CoverImageUpload } from '@/components/cover-image-upload';
 import { EmojiPicker } from '@/components/emoji-picker';
+import { TwemojiIcon } from '@/components/twemoji-icon';
 import { Input } from '@/components/ui/input';
 import { ApiError, apiClient } from '@/lib/api-client';
 import { DEFAULT_SKILL_ICON } from '@/lib/default-icons';
@@ -600,7 +601,7 @@ export function SkillForm({
               <div className="flex items-center justify-between mb-3">
                 <span className="inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-emerald-700">
                   {!coverImage && icon ? (
-                    <span className="text-[18px] leading-none">{icon}</span>
+                    <TwemojiIcon emoji={icon} className="text-[18px]" />
                   ) : (
                     <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-semibold">
                       {(name || 'N').charAt(0).toUpperCase()}

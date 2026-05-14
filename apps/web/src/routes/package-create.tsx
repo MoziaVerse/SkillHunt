@@ -1,5 +1,6 @@
 import { EmojiPicker } from '@/components/emoji-picker';
 import { Logo } from '@/components/logo';
+import { TwemojiIcon } from '@/components/twemoji-icon';
 import { type CreateSkillPackageInput, apiClient } from '@/lib/api-client';
 import type { MeResponse } from '@/lib/api-client';
 import { DEFAULT_SKILL_ICON, DEFAULT_SKILL_PACKAGE_ICON } from '@/lib/default-icons';
@@ -139,7 +140,7 @@ function SkillOptionCard({
         className="absolute top-4 right-4 accent-emerald-600"
       />
       <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-neutral-200 bg-neutral-50 text-[24px]">
-        {skill.icon || DEFAULT_SKILL_ICON}
+        <TwemojiIcon emoji={skill.icon || DEFAULT_SKILL_ICON} />
       </div>
       <div className="mt-4 min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5 pr-5">
@@ -177,7 +178,10 @@ function SkillOptionCard({
             作者 <span className="font-medium text-neutral-700">@{skill.owner.handle}</span>
           </span>
           <span>▲ {skill.upvoteCount}</span>
-          <span>🔖 {skill.bookmarkCount}</span>
+          <span className="inline-flex items-center gap-1">
+            <TwemojiIcon emoji="🔖" />
+            {skill.bookmarkCount}
+          </span>
           {skill.tags.slice(0, 3).map((tag) => (
             <span key={tag} className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px]">
               #{tag}
@@ -487,7 +491,7 @@ export default function PackageCreate() {
         <PageBreadcrumb />
         <div className="mx-auto max-w-md px-6 py-24 text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-xl border border-amber-200 bg-amber-50 text-[28px]">
-            🔒
+            <TwemojiIcon emoji="🔒" />
           </div>
           <div className="mb-3 text-[12px] uppercase tracking-[0.16em] text-neutral-500">
             需要登录
@@ -514,7 +518,7 @@ export default function PackageCreate() {
         <div className="mx-auto max-w-[900px]">
           <div className="flex items-center gap-5">
             <div className="flex h-[80px] w-[80px] shrink-0 select-none items-center justify-center rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100 text-[36px]">
-              {DEFAULT_SKILL_PACKAGE_ICON}
+              <TwemojiIcon emoji={DEFAULT_SKILL_PACKAGE_ICON} />
             </div>
             <div>
               <h1 className="text-[28px] font-bold tracking-[-0.02em] text-[#0f172a]">
@@ -578,7 +582,7 @@ export default function PackageCreate() {
               <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
                 <div className="mb-4 flex items-center gap-3">
                   <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-neutral-200 bg-white text-[26px]">
-                    {form.icon || DEFAULT_SKILL_PACKAGE_ICON}
+                    <TwemojiIcon emoji={form.icon || DEFAULT_SKILL_PACKAGE_ICON} />
                   </div>
                   <div>
                     <div className="text-[13px] font-medium text-neutral-800">

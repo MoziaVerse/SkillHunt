@@ -1,4 +1,5 @@
 import { Avatar } from '@/components/avatar';
+import { TwemojiIcon } from '@/components/twemoji-icon';
 import { type Notification, apiClient } from '@/lib/api-client';
 import { publishUnreadNotificationCount } from '@/lib/notifications';
 import { cn } from '@/lib/utils';
@@ -171,7 +172,10 @@ export default function NotificationsPage() {
               onClick={() => handleMarkRead(n.id)}
             >
               {/* Icon */}
-              <span className="text-lg mt-0.5 flex-shrink-0">{typeIcons[n.type] ?? '📌'}</span>
+              <TwemojiIcon
+                emoji={typeIcons[n.type] ?? '📌'}
+                className="mt-0.5 flex-shrink-0 text-lg"
+              />
 
               {/* Avatar */}
               <Avatar
