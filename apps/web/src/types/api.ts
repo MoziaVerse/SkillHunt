@@ -63,6 +63,11 @@ export interface SkillPackageListItem {
   coverImage: string | null;
   owner: OwnerInfo;
   skillCount: number;
+  upvoteCount: number;
+  commentCount: number;
+  bookmarkCount: number;
+  viewerHasUpvoted: boolean;
+  viewerHasBookmarked: boolean;
   installCommand: string;
   createdAt: string;
   updatedAt: string;
@@ -82,14 +87,21 @@ export interface SkillPackageDetail extends SkillPackageListItem {
   skills: SkillPackageSkill[];
 }
 
-export interface SkillComment {
+export interface CommunityComment {
   id: string;
-  skillId: string;
   parentId: string | null;
   content: string;
   createdAt: string;
   updatedAt: string;
   author: OwnerInfo;
+}
+
+export interface SkillComment extends CommunityComment {
+  skillId: string;
+}
+
+export interface SkillPackageComment extends CommunityComment {
+  packageId: string;
 }
 
 export interface SkillRelease {

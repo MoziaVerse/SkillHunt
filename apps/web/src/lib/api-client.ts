@@ -7,7 +7,9 @@ import type {
   OwnerInfo,
   SkillComment,
   SkillDetail,
+  SkillPackageComment,
   SkillPackageDetail,
+  SkillPackageListItem,
   SkillRelease,
   SkillSubscription,
   UpstreamStatus,
@@ -61,7 +63,7 @@ export interface ListSkillsParams {
 export interface ListPackagesParams {
   q?: string;
   tag?: string[];
-  sort?: 'recent' | 'az';
+  sort?: 'recent' | 'hottest' | 'az';
   limit?: number;
   offset?: number;
 }
@@ -102,8 +104,19 @@ export interface OwnerSkillsResponse {
   total: number;
 }
 
+export interface OwnerPackagesResponse {
+  owner: OwnerInfo;
+  items: SkillPackageListItem[];
+  total: number;
+}
+
 export interface SkillCommentsResponse {
   items: SkillComment[];
+  total: number;
+}
+
+export interface PackageCommentsResponse {
+  items: SkillPackageComment[];
   total: number;
 }
 
@@ -187,6 +200,13 @@ export const apiClient = {
     );
   },
 
+  listSkillPackagesContainingSkill(owner: string, slug: string): Promise<ListPackagesResponse> {
+    return request<ListPackagesResponse>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/packages`,
+      { credentials: 'include' },
+    );
+  },
+
   async getSkillFile(owner: string, slug: string, path: string): Promise<string> {
     const res = await fetch(
       `${BASE}/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/files/${encodePath(path)}`,
@@ -232,6 +252,13 @@ export const apiClient = {
 
   createPackage(input: CreateSkillPackageInput): Promise<SkillPackageDetail> {
     return request<SkillPackageDetail>('/packages', json(input, 'POST'));
+  },
+
+  listPackageComments(owner: string, slug: string): Promise<PackageCommentsResponse> {
+    return request<PackageCommentsResponse>(
+      `/packages/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/comments`,
+      { credentials: 'include' },
+    );
   },
 
   listSkillComments(owner: string, slug: string): Promise<SkillCommentsResponse> {
@@ -315,6 +342,34 @@ export const apiClient = {
     );
   },
 
+  upvotePackage(owner: string, slug: string): Promise<SkillPackageListItem> {
+    return request<SkillPackageListItem>(
+      `/packages/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/upvote`,
+      { method: 'POST', credentials: 'include' },
+    );
+  },
+
+  removePackageUpvote(owner: string, slug: string): Promise<SkillPackageListItem> {
+    return request<SkillPackageListItem>(
+      `/packages/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/upvote`,
+      { method: 'DELETE', credentials: 'include' },
+    );
+  },
+
+  bookmarkPackage(owner: string, slug: string): Promise<SkillPackageListItem> {
+    return request<SkillPackageListItem>(
+      `/packages/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/bookmark`,
+      { method: 'POST', credentials: 'include' },
+    );
+  },
+
+  removePackageBookmark(owner: string, slug: string): Promise<SkillPackageListItem> {
+    return request<SkillPackageListItem>(
+      `/packages/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/bookmark`,
+      { method: 'DELETE', credentials: 'include' },
+    );
+  },
+
   getMyBookmarks(): Promise<ListSkillsResponse> {
     return request<ListSkillsResponse>('/me/bookmarks', { credentials: 'include' });
   },
@@ -326,6 +381,17 @@ export const apiClient = {
   ): Promise<SkillComment> {
     return request<SkillComment>(
       `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/comments`,
+      json(input, 'POST'),
+    );
+  },
+
+  createPackageComment(
+    owner: string,
+    slug: string,
+    input: { content: string; parentId?: string | null },
+  ): Promise<SkillPackageComment> {
+    return request<SkillPackageComment>(
+      `/packages/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/comments`,
       json(input, 'POST'),
     );
   },
@@ -412,6 +478,12 @@ export const apiClient = {
 
   getOwnerSkills(ownerName: string): Promise<OwnerSkillsResponse> {
     return request<OwnerSkillsResponse>(`/users/${encodeURIComponent(ownerName)}/skills`, {
+      credentials: 'include',
+    });
+  },
+
+  getOwnerPackages(ownerName: string): Promise<OwnerPackagesResponse> {
+    return request<OwnerPackagesResponse>(`/users/${encodeURIComponent(ownerName)}/packages`, {
       credentials: 'include',
     });
   },

@@ -246,6 +246,12 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
   transform: translateY(-2px);
 }
+.skill-card.skill-card-selected,
+.skill-card.skill-card-selected:hover {
+  background: rgba(236, 253, 245, 0.5);
+  border-color: #34d399;
+  box-shadow: 0 0 0 2px #a7f3d0, 0 4px 12px rgba(16, 185, 129, 0.12);
+}
 
 /* Category filter buttons */
 .category-btn {

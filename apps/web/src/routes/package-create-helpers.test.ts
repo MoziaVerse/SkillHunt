@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'bun:test';
 import type { OwnedSkillListItem } from '../types/api';
 import {
+  MAX_PACKAGE_TAGS,
+  MAX_PACKAGE_TAG_LENGTH,
+  addPackageTag,
+  hasPackageTag,
   matchesPackageSkillQuery,
   mergeOwnedSkillCandidates,
-  parsePackageTags,
+  normalizePackageTag,
   slugifyPackageName,
   sortPackageSkillCandidates,
+  togglePackageTag,
 } from './package-create-helpers';
 
 function skill(id: string, overrides: Partial<OwnedSkillListItem> = {}): OwnedSkillListItem {
@@ -42,8 +47,29 @@ describe('package create helpers', () => {
     expect(slugifyPackageName('视频案件分析包')).toBe('shi-pin-an-jian-fen-xi-bao');
   });
 
-  it('parses Chinese and English comma-separated tags', () => {
-    expect(parsePackageTags('案件分析, 视频，报告')).toEqual(['案件分析', '视频', '报告']);
+  it('preserves English words and existing separators when slugifying', () => {
+    expect(slugifyPackageName('video-case-suite')).toBe('video-case-suite');
+    expect(slugifyPackageName('AI工具包')).toBe('ai-gong-ju-bao');
+    expect(slugifyPackageName('C++ 工具包')).toBe('c-gong-ju-bao');
+  });
+
+  it('toggles package tags through button-style selection', () => {
+    expect(togglePackageTag([], '案件分析')).toEqual(['案件分析']);
+    expect(togglePackageTag(['案件分析'], '案件分析')).toEqual([]);
+    expect(
+      togglePackageTag(
+        Array.from({ length: MAX_PACKAGE_TAGS }, (_, i) => `tag-${i}`),
+        '额外标签',
+      ),
+    ).toHaveLength(MAX_PACKAGE_TAGS);
+  });
+
+  it('adds custom tags with normalization and duplicate protection', () => {
+    expect(normalizePackageTag('  #AI   Agent  ')).toBe('AI Agent');
+    expect(normalizePackageTag('很长'.repeat(40))).toHaveLength(MAX_PACKAGE_TAG_LENGTH);
+    expect(addPackageTag(['视频'], '  #AI   Agent  ')).toEqual(['视频', 'AI Agent']);
+    expect(addPackageTag(['AI Agent'], 'ai agent')).toEqual(['AI Agent']);
+    expect(hasPackageTag(['AI Agent'], '#ai agent')).toBe(true);
   });
 
   it('deduplicates candidate skills by id and keeps latest data', () => {
@@ -66,7 +92,7 @@ describe('package create helpers', () => {
     expect(matchesPackageSkillQuery(item, 'missing')).toBe(false);
   });
 
-  it('prioritizes selected, bookmarked and own skills before ordinary candidates', () => {
+  it('prioritizes bookmarked and own skills without moving selected candidates', () => {
     const ordinary = skill('ordinary', { updatedAt: '2026-05-01T00:00:00.000Z' });
     const own = skill('own', {
       owner: { id: 'u1', name: '我', handle: 'me', image: null },
@@ -85,6 +111,6 @@ describe('package create helpers', () => {
       ownerHandles: new Set(['me']),
     });
 
-    expect(sorted.map((item) => item.id)).toEqual(['selected', 'bookmarked', 'own', 'ordinary']);
+    expect(sorted.map((item) => item.id)).toEqual(['bookmarked', 'own', 'ordinary', 'selected']);
   });
 });

@@ -211,8 +211,7 @@ function SessionWidget() {
 function TopNav() {
   const { pathname } = useLocation();
   const onDocs = pathname.startsWith('/docs');
-  const onPackages = pathname.startsWith('/packages');
-  const onDiscover = !onDocs && !onPackages;
+  const onDiscover = !onDocs;
 
   return (
     <header className="bg-[#0a0a0a] sticky top-0 z-20">
@@ -229,15 +228,6 @@ function TopNav() {
             )}
           >
             发现
-          </Link>
-          <Link
-            to="/packages"
-            className={cn(
-              'px-3 py-1.5 transition rounded-sm',
-              onPackages ? 'text-white' : 'text-neutral-400 hover:text-white',
-            )}
-          >
-            Skill 包
           </Link>
           <Link
             to="/docs"
@@ -275,9 +265,6 @@ function Footer() {
             </Link>
             <Link to="/publish" className="text-neutral-600 hover:text-neutral-900 transition">
               发布 Skill
-            </Link>
-            <Link to="/packages" className="text-neutral-600 hover:text-neutral-900 transition">
-              Skill 包
             </Link>
             <a
               href="https://mzsjai.com"

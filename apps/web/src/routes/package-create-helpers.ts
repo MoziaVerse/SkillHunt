@@ -1,6 +1,28 @@
 import { pinyin } from 'pinyin-pro';
 import type { OwnedSkillListItem } from '../types/api';
 
+export const MAX_PACKAGE_TAGS = 10;
+export const MAX_PACKAGE_TAG_LENGTH = 40;
+
+export const PACKAGE_TAG_OPTIONS = [
+  '编程开发',
+  '内容写作',
+  '数据分析',
+  '自动化',
+  '搜索检索',
+  '工作流',
+  '办公效率',
+  '研究分析',
+  '文档处理',
+  '报告生成',
+  '电商',
+  '客服支持',
+  '案件分析',
+  '视频',
+  '多技能组合',
+  '团队协作',
+] as const;
+
 export interface PackageSkillPriorityContext {
   selectedSkillIds: ReadonlySet<string>;
   bookmarkedSkillIds: ReadonlySet<string>;
@@ -8,8 +30,17 @@ export interface PackageSkillPriorityContext {
   ownerHandles: ReadonlySet<string>;
 }
 
+const HAN_TEXT_RE = /[\u3400-\u4dbf\u4e00-\u9fff]+/g;
+const LEADING_HASH_RE = /^#+/;
+const WHITESPACE_RE = /\s+/g;
+
 export function slugifyPackageName(input: string) {
-  const text = pinyin(input.trim(), { toneType: 'none', type: 'string' });
+  const text = input
+    .trim()
+    .replace(
+      HAN_TEXT_RE,
+      (segment) => ` ${pinyin(segment, { toneType: 'none', type: 'string' })} `,
+    );
   return text
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -17,12 +48,35 @@ export function slugifyPackageName(input: string) {
     .slice(0, 64);
 }
 
-export function parsePackageTags(input: string) {
+export function normalizePackageTag(input: string) {
   return input
-    .split(/[，,]/)
-    .map((tag) => tag.trim())
-    .filter(Boolean)
-    .slice(0, 10);
+    .trim()
+    .replace(LEADING_HASH_RE, '')
+    .replace(WHITESPACE_RE, ' ')
+    .trim()
+    .slice(0, MAX_PACKAGE_TAG_LENGTH);
+}
+
+export function hasPackageTag(tags: string[], tag: string) {
+  const normalized = normalizePackageTag(tag).toLowerCase();
+  return tags.some((item) => normalizePackageTag(item).toLowerCase() === normalized);
+}
+
+export function addPackageTag(tags: string[], tag: string, maxTags = MAX_PACKAGE_TAGS) {
+  const normalized = normalizePackageTag(tag);
+  if (!normalized || hasPackageTag(tags, normalized) || tags.length >= maxTags) return tags;
+  return [...tags, normalized];
+}
+
+export function togglePackageTag(tags: string[], tag: string, maxTags = MAX_PACKAGE_TAGS) {
+  const normalized = normalizePackageTag(tag);
+  if (!normalized) return tags;
+  if (hasPackageTag(tags, normalized)) {
+    return tags.filter(
+      (item) => normalizePackageTag(item).toLowerCase() !== normalized.toLowerCase(),
+    );
+  }
+  return addPackageTag(tags, normalized, maxTags);
 }
 
 export function mergeOwnedSkillCandidates(...groups: OwnedSkillListItem[][]) {
@@ -74,7 +128,6 @@ export function isPriorityPackageSkill(
 
 function packageSkillScore(skill: OwnedSkillListItem, context: PackageSkillPriorityContext) {
   let score = 0;
-  if (context.selectedSkillIds.has(skill.id)) score += 1000;
   if (isBookmarkedPackageSkill(skill, context)) score += 120;
   if (isOwnPackageSkill(skill, context)) score += 100;
   score += Math.min(skill.bookmarkCount, 40);

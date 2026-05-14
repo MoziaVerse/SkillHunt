@@ -8,14 +8,19 @@ import type { OwnedSkillListItem, SkillListItem } from '@/types/api';
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import {
+  MAX_PACKAGE_TAGS,
+  PACKAGE_TAG_OPTIONS,
+  addPackageTag,
+  hasPackageTag,
   isBookmarkedPackageSkill,
   isOwnPackageSkill,
   isPriorityPackageSkill,
   matchesPackageSkillQuery,
   mergeOwnedSkillCandidates,
-  parsePackageTags,
+  normalizePackageTag,
   slugifyPackageName,
   sortPackageSkillCandidates,
+  togglePackageTag,
 } from './package-create-helpers';
 
 type Visibility = CreateSkillPackageInput['visibility'];
@@ -124,7 +129,7 @@ function SkillOptionCard({
     <label
       className={cn(
         'skill-card relative flex min-h-[220px] cursor-pointer flex-col p-4',
-        selected && 'bg-emerald-50/50 ring-2 ring-emerald-200',
+        selected && 'skill-card-selected',
       )}
     >
       <input
@@ -193,6 +198,9 @@ export default function PackageCreate() {
   const [skillQuery, setSkillQuery] = useState('');
   const [fetchingSkills, setFetchingSkills] = useState(false);
   const [skillSearchError, setSkillSearchError] = useState<string | null>(null);
+  const [slugEdited, setSlugEdited] = useState(false);
+  const [customTagInput, setCustomTagInput] = useState('');
+  const [customTagError, setCustomTagError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -323,11 +331,11 @@ export default function PackageCreate() {
     );
   }, [form.visibility, priorityContext, skillQuery, skills]);
 
-  const prioritySkills = selectableSkills.filter(
-    (skill) => !selectedSkillIds.has(skill.id) && isPriorityPackageSkill(skill, priorityContext),
+  const prioritySkills = selectableSkills.filter((skill) =>
+    isPriorityPackageSkill(skill, priorityContext),
   );
   const otherSkills = selectableSkills.filter(
-    (skill) => !selectedSkillIds.has(skill.id) && !isPriorityPackageSkill(skill, priorityContext),
+    (skill) => !isPriorityPackageSkill(skill, priorityContext),
   );
 
   const update = <K extends keyof CreateSkillPackageInput>(
@@ -335,6 +343,54 @@ export default function PackageCreate() {
     value: CreateSkillPackageInput[K],
   ) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleNameChange = (name: string) => {
+    setForm((prev) => ({
+      ...prev,
+      name,
+      slug: slugEdited ? prev.slug : slugifyPackageName(name),
+    }));
+  };
+
+  const handleSlugChange = (slug: string) => {
+    setSlugEdited(true);
+    update('slug', slugifyPackageName(slug));
+  };
+
+  const regenerateSlug = () => {
+    setSlugEdited(false);
+    update('slug', slugifyPackageName(form.name));
+  };
+
+  const handleTagToggle = (tag: string) => {
+    setCustomTagError(null);
+    setForm((prev) => ({
+      ...prev,
+      tags: togglePackageTag(prev.tags, tag),
+    }));
+  };
+
+  const handleCustomTagAdd = () => {
+    const tag = normalizePackageTag(customTagInput);
+    if (!tag) {
+      setCustomTagError('请先输入标签名称');
+      return;
+    }
+    if (hasPackageTag(form.tags, tag)) {
+      setCustomTagError('这个标签已经添加过了');
+      return;
+    }
+    if (form.tags.length >= MAX_PACKAGE_TAGS) {
+      setCustomTagError(`最多只能选择 ${MAX_PACKAGE_TAGS} 个标签`);
+      return;
+    }
+    setForm((prev) => ({
+      ...prev,
+      tags: addPackageTag(prev.tags, tag),
+    }));
+    setCustomTagInput('');
+    setCustomTagError(null);
   };
 
   const toggleSkill = (skillId: string) => {
@@ -509,11 +565,7 @@ export default function PackageCreate() {
               <FieldLabel hint="会显示在列表页和详情页">包名称</FieldLabel>
               <input
                 value={form.name}
-                onChange={(event) => {
-                  const name = event.target.value;
-                  update('name', name);
-                  if (!form.slug) update('slug', slugifyPackageName(name));
-                }}
+                onChange={(event) => handleNameChange(event.target.value)}
                 required
                 maxLength={120}
                 className="w-full rounded-lg border border-neutral-200 px-4 py-3 text-[14px] outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
@@ -545,19 +597,32 @@ export default function PackageCreate() {
             </div>
 
             <div>
-              <FieldLabel hint="中文会自动转为拼音">URL slug</FieldLabel>
+              <FieldLabel hint="默认跟随包名称；手动编辑后会停止自动同步">URL slug</FieldLabel>
               <input
                 value={form.slug}
-                onChange={(event) => update('slug', slugifyPackageName(event.target.value))}
+                onChange={(event) => handleSlugChange(event.target.value)}
                 required
                 className="w-full rounded-lg border border-neutral-200 px-4 py-3 font-mono text-[14px] outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
                 placeholder="video-case-suite"
               />
-              {form.slug ? (
-                <div className="mt-1 font-mono text-[12px] text-neutral-400">
-                  /p/{form.owner}/<span className="text-neutral-700">{form.slug}</span>
-                </div>
-              ) : null}
+              <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+                {form.slug ? (
+                  <div className="font-mono text-[12px] text-neutral-400">
+                    /p/{form.owner}/<span className="text-neutral-700">{form.slug}</span>
+                  </div>
+                ) : (
+                  <div className="text-[12px] text-neutral-400">输入包名称后会自动生成 URL。</div>
+                )}
+                {slugEdited ? (
+                  <button
+                    type="button"
+                    onClick={regenerateSlug}
+                    className="text-[12px] text-emerald-700 transition hover:text-emerald-900"
+                  >
+                    重新根据包名称生成
+                  </button>
+                ) : null}
+              </div>
             </div>
 
             <div>
@@ -574,13 +639,62 @@ export default function PackageCreate() {
             </div>
 
             <div>
-              <FieldLabel hint="使用中文逗号或英文逗号分隔">标签</FieldLabel>
-              <input
-                value={form.tags.join('，')}
-                onChange={(event) => update('tags', parsePackageTags(event.target.value))}
-                className="w-full rounded-lg border border-neutral-200 px-4 py-3 text-[14px] outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                placeholder="案件分析，视频，报告"
-              />
+              <FieldLabel hint={`点击按钮添加，最多 ${MAX_PACKAGE_TAGS} 个`}>标签</FieldLabel>
+              <div className="flex flex-wrap gap-2">
+                {PACKAGE_TAG_OPTIONS.map((tag) => {
+                  const active = form.tags.includes(tag);
+                  const disabled = !active && form.tags.length >= MAX_PACKAGE_TAGS;
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => handleTagToggle(tag)}
+                      className={cn(
+                        'rounded-full border px-3 py-1.5 text-[13px] transition disabled:cursor-not-allowed disabled:opacity-45',
+                        active
+                          ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                          : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400',
+                      )}
+                    >
+                      {tag}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                <input
+                  value={customTagInput}
+                  onChange={(event) => {
+                    setCustomTagInput(event.target.value);
+                    setCustomTagError(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      handleCustomTagAdd();
+                    }
+                  }}
+                  maxLength={40}
+                  className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-4 py-2.5 text-[14px] outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  placeholder="添加自定义标签，例如：本地知识库"
+                />
+                <button
+                  type="button"
+                  onClick={handleCustomTagAdd}
+                  className="rounded-lg border border-neutral-300 bg-white px-4 py-2.5 text-[13px] font-medium text-neutral-700 transition hover:border-neutral-500 hover:text-neutral-950"
+                >
+                  添加标签
+                </button>
+              </div>
+              {customTagError ? (
+                <div className="mt-2 text-[12px] text-red-600">{customTagError}</div>
+              ) : null}
+              <div className="mt-2 text-[12px] text-neutral-400">
+                {form.tags.length > 0
+                  ? `已选择 ${form.tags.length} 个标签：${form.tags.join('、')}`
+                  : '选择几个标签，让用户更容易在发现页找到这个 Skills 包。'}
+              </div>
             </div>
           </section>
 
@@ -660,7 +774,7 @@ export default function PackageCreate() {
             <div className="space-y-7">
               <SkillGroup
                 title="已选择"
-                description="这些 Skill 会按当前顺序写入包内安装来源。"
+                description="这里汇总将被打包安装的 Skill，下方原列表会继续保留它们，方便对照上下文。"
                 skills={selectedSkills}
               >
                 {renderSkillCard}

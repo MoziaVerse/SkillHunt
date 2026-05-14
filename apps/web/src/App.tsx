@@ -12,7 +12,6 @@ import Layout from './routes/layout';
 import NotificationsPage from './routes/notifications';
 import PackageCreate from './routes/package-create';
 import PackageDetail from './routes/package-detail';
-import PackagesList from './routes/packages-list';
 import PublishPage from './routes/publish';
 import PublishChoicePage from './routes/publish-choice';
 import SkillDetail from './routes/skill-detail';
@@ -35,7 +34,7 @@ const router = createBrowserRouter([
       { path: 'skills/:owner/:slug', element: <SkillDetail /> },
       { path: 'skills/:owner/:slug/edit', element: <SkillEditPage /> },
       { path: 'skills/:slug', element: <LegacySkillRedirect /> },
-      { path: 'packages', element: <PackagesList /> },
+      { path: 'packages', element: <Navigate to="/?content=packages" replace /> },
       { path: 'packages/new', element: <Navigate to="/publish/package" replace /> },
       { path: 'packages/:owner/:slug', element: <PackageDetail /> },
       { path: 'publish', element: <PublishChoicePage /> },
