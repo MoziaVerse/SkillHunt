@@ -1,19 +1,20 @@
+import { CommentsSection, CommunityStats } from '@/components/community-panel';
 import { InstallCommand } from '@/components/install-command';
 import { Logo } from '@/components/logo';
 import { MarkdownView } from '@/components/markdown-view';
 import { type MeResponse, apiClient } from '@/lib/api-client';
-import { DEFAULT_REFERENCED_SKILL_ICON, DEFAULT_SKILL_ICON } from '@/lib/default-icons';
+import { DEFAULT_SKILL_PACKAGE_ICON } from '@/lib/default-icons';
 import { formatRelative } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import type { SkillComment, SkillDetail, UpstreamStatus } from '@/types/api';
+import type { SkillDetail, SkillPackageListItem, UpstreamStatus } from '@/types/api';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 
-type DetailTab = 'overview' | 'files' | 'releases' | 'install' | 'discussion';
+type DetailTab = 'overview' | 'files' | 'packages' | 'releases' | 'install' | 'discussion';
 
 type SkillStatsPatch = Pick<
   SkillDetail,
-  'upvoteCount' | 'commentCount' | 'bookmarkCount' | 'viewerHasUpvoted'
+  'upvoteCount' | 'commentCount' | 'bookmarkCount' | 'viewerHasUpvoted' | 'viewerHasBookmarked'
 >;
 
 function isTextPreviewable(path: string) {
@@ -258,57 +259,6 @@ function MetaRow({
   );
 }
 
-function CommunityStats({
-  skill,
-  onUpvoteClick,
-  onBookmarkClick,
-  onCommentClick,
-}: {
-  skill: SkillDetail;
-  onUpvoteClick: () => void;
-  onBookmarkClick: () => void;
-  onCommentClick: () => void;
-}) {
-  return (
-    <div className="mt-5 flex items-center gap-3 flex-wrap text-[13px] text-neutral-600">
-      <button
-        type="button"
-        onClick={onUpvoteClick}
-        className={cn(
-          'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 transition',
-          skill.viewerHasUpvoted
-            ? 'border-emerald-500 bg-emerald-50 text-emerald-700 hover:border-emerald-600 hover:text-emerald-800'
-            : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300 hover:text-neutral-900',
-        )}
-      >
-        <span>▲</span>
-        <span>{skill.upvoteCount} 人点赞</span>
-      </button>
-      <button
-        type="button"
-        onClick={onBookmarkClick}
-        className={cn(
-          'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 transition',
-          skill.viewerHasBookmarked
-            ? 'border-emerald-500 bg-emerald-50 text-emerald-700 hover:border-emerald-600 hover:text-emerald-800'
-            : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300 hover:text-neutral-900',
-        )}
-      >
-        <span>{skill.viewerHasBookmarked ? '🔖' : '📑'}</span>
-        <span>{skill.bookmarkCount} 人收藏</span>
-      </button>
-      <button
-        type="button"
-        onClick={onCommentClick}
-        className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 transition hover:border-neutral-300 hover:text-neutral-900"
-      >
-        <span>💬</span>
-        <span>{skill.commentCount} 条评论</span>
-      </button>
-    </div>
-  );
-}
-
 function ForkButton({
   me,
   onFork,
@@ -397,6 +347,7 @@ function TabNav({
     { key: 'overview', label: '概览', icon: '📖' },
     { key: 'files', label: '文件', icon: '📁' },
     { key: 'install', label: '安装', icon: '⬇️' },
+    { key: 'packages', label: '收录包', icon: '📦' },
     { key: 'discussion', label: '评论', icon: '💬' },
     { key: 'releases', label: '版本发布', icon: '🕒' },
   ];
@@ -937,275 +888,6 @@ function StatusSidebar({
   );
 }
 
-function CommentsSection({
-  skill,
-  me,
-  onCommentCreated,
-}: {
-  skill: SkillDetail;
-  me: MeResponse | null;
-  onCommentCreated: () => void;
-}) {
-  const [comments, setComments] = useState<SkillComment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [draft, setDraft] = useState('');
-  const [replyingTo, setReplyingTo] = useState<string | null>(null);
-  const [replyDraft, setReplyDraft] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    apiClient
-      .listSkillComments(skill.owner.handle, skill.slug)
-      .then((res) => {
-        if (!cancelled) setComments(res.items);
-      })
-      .catch(() => {
-        if (!cancelled) setComments([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [skill.owner.handle, skill.slug]);
-
-  // 构建评论树
-  const commentTree = useMemo(() => {
-    const rootComments: SkillComment[] = [];
-    const childrenMap = new Map<string, SkillComment[]>();
-
-    for (const comment of comments) {
-      if (comment.parentId) {
-        const children = childrenMap.get(comment.parentId) || [];
-        children.push(comment);
-        childrenMap.set(comment.parentId, children);
-      } else {
-        rootComments.push(comment);
-      }
-    }
-
-    return { rootComments, childrenMap };
-  }, [comments]);
-
-  const submitTopLevel = async () => {
-    if (!draft.trim()) return;
-    setSubmitting(true);
-    try {
-      const created = await apiClient.createSkillComment(skill.owner.handle, skill.slug, {
-        content: draft.trim(),
-      });
-      setComments((prev) => [created, ...prev]);
-      setDraft('');
-      onCommentCreated();
-    } catch (err) {
-      window.alert(err instanceof Error ? err.message : '发表评论失败');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const submitReply = async (parentId: string) => {
-    if (!replyDraft.trim()) return;
-    setSubmitting(true);
-    try {
-      const created = await apiClient.createSkillComment(skill.owner.handle, skill.slug, {
-        content: replyDraft.trim(),
-        parentId,
-      });
-      setComments((prev) => [...prev, created]);
-      setReplyDraft('');
-      setReplyingTo(null);
-      onCommentCreated();
-    } catch (err) {
-      window.alert(err instanceof Error ? err.message : '发表回复失败');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <section
-      id="comments-section"
-      className="rounded-3xl bg-white p-6 shadow-sm shadow-neutral-100/80 border border-neutral-200"
-    >
-      <div className="flex items-center justify-between gap-3 mb-5">
-        <div>
-          <h2 className="text-[20px] font-semibold text-[#0f172a]">评论</h2>
-          <p className="text-[14px] text-neutral-500 mt-1">
-            围绕这次发布留下反馈、建议和使用体验。
-          </p>
-        </div>
-        <div className="text-[12px] text-neutral-500">{skill.commentCount} 条评论</div>
-      </div>
-
-      <div className="rounded-2xl bg-neutral-50 p-4">
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={me ? '写下你对这个 Skill 的看法…' : '登录后可以参与评论'}
-          disabled={!me || submitting}
-          className="min-h-[110px] w-full resize-y rounded-xl bg-white px-4 py-3 text-[14px] text-neutral-800 outline-none ring-1 ring-inset ring-neutral-100 focus:ring-2 focus:ring-emerald-200 disabled:bg-neutral-100"
-        />
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <span className="text-[12px] text-neutral-500">
-            {me ? '你的评论会公开展示在这个 Skill 页面中。' : '请先登录再发表评论。'}
-          </span>
-          <button
-            type="button"
-            disabled={!me || submitting || !draft.trim()}
-            onClick={submitTopLevel}
-            className="rounded-lg bg-neutral-900 px-4 py-2 text-[13px] font-medium text-white disabled:opacity-50"
-          >
-            {submitting ? '发布中…' : '发表评论'}
-          </button>
-        </div>
-      </div>
-
-      <div className="mt-6">
-        {loading ? (
-          <div className="py-6 text-[13px] text-neutral-500 text-center">评论加载中…</div>
-        ) : comments.length === 0 ? (
-          <div className="py-6 text-[13px] text-neutral-500 text-center">
-            还没有评论，来发表第一条看法吧。
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {commentTree.rootComments.map((comment) => (
-              <CommentThread
-                key={comment.id}
-                comment={comment}
-                childComments={commentTree.childrenMap.get(comment.id) || []}
-                childrenMap={commentTree.childrenMap}
-                me={me}
-                replyingTo={replyingTo}
-                replyDraft={replyDraft}
-                onReplyDraftChange={setReplyDraft}
-                onReply={submitReply}
-                onSetReplyingTo={setReplyingTo}
-                submitting={submitting}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function CommentThread({
-  comment,
-  childComments,
-  childrenMap,
-  me,
-  replyingTo,
-  replyDraft,
-  onReplyDraftChange,
-  onReply,
-  onSetReplyingTo,
-  submitting,
-  depth = 0,
-}: {
-  comment: SkillComment;
-  childComments: SkillComment[];
-  childrenMap: Map<string, SkillComment[]>;
-  me: MeResponse | null;
-  replyingTo: string | null;
-  replyDraft: string;
-  onReplyDraftChange: (v: string) => void;
-  onReply: (parentId: string) => Promise<void>;
-  onSetReplyingTo: (id: string | null) => void;
-  submitting: boolean;
-  depth?: number;
-}) {
-  const isReplying = replyingTo === comment.id;
-  const childIndentClass = cn(
-    'mt-4 pl-3 border-l-2 border-neutral-200 space-y-4',
-    depth < 2 && 'ml-4',
-  );
-
-  return (
-    <div className="rounded-2xl bg-neutral-50 px-5 py-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <span className="text-[13px] font-medium text-neutral-900">{comment.author.name}</span>
-          <span className="ml-1.5 text-[12px] text-neutral-500">@{comment.author.handle}</span>
-        </div>
-        <time className="text-[12px] text-neutral-500 shrink-0">
-          {formatRelative(comment.createdAt)}
-        </time>
-      </div>
-      <p className="mt-2 whitespace-pre-wrap text-[14px] leading-7 text-neutral-700">
-        {comment.content}
-      </p>
-      {me && (
-        <button
-          type="button"
-          onClick={() => onSetReplyingTo(isReplying ? null : comment.id)}
-          className="mt-2 text-[12px] text-neutral-500 hover:text-neutral-700 transition"
-        >
-          回复
-        </button>
-      )}
-      {isReplying && (
-        <div className="mt-3 ml-4 pl-3 border-l-2 border-emerald-200">
-          <div className="rounded-xl bg-white p-3">
-            <textarea
-              value={replyDraft}
-              onChange={(e) => onReplyDraftChange(e.target.value)}
-              placeholder={`回复 @${comment.author.name}…`}
-              disabled={submitting}
-              className="min-h-[70px] w-full resize-y rounded-lg bg-neutral-50 px-3 py-2 text-[13px] text-neutral-800 outline-none ring-1 ring-inset ring-neutral-100 focus:ring-2 focus:ring-emerald-200 disabled:bg-neutral-100"
-            />
-            <div className="mt-2 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  onSetReplyingTo(null);
-                  onReplyDraftChange('');
-                }}
-                className="px-3 py-1.5 text-[12px] text-neutral-600 hover:text-neutral-800 transition"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                disabled={submitting || !replyDraft.trim()}
-                onClick={() => onReply(comment.id)}
-                className="rounded-lg bg-neutral-900 px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-50"
-              >
-                {submitting ? '发布中…' : '发表回复'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {childComments.length > 0 && (
-        <div className={childIndentClass}>
-          {childComments.map((child) => (
-            <CommentThread
-              key={child.id}
-              comment={child}
-              childComments={childrenMap.get(child.id) || []}
-              childrenMap={childrenMap}
-              me={me}
-              replyingTo={replyingTo}
-              replyDraft={replyDraft}
-              onReplyDraftChange={onReplyDraftChange}
-              onReply={onReply}
-              onSetReplyingTo={onSetReplyingTo}
-              submitting={submitting}
-              depth={depth + 1}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function ForkAndSyncSection({
   skill,
   me,
@@ -1408,11 +1090,8 @@ function HeroSection({
           )}
 
           <div className="flex items-center gap-3 flex-wrap">
-            {!skill.coverImage && (
-              <span className="text-[36px] leading-none select-none">
-                {skill.icon ??
-                  (skill.type === 'owned' ? DEFAULT_SKILL_ICON : DEFAULT_REFERENCED_SKILL_ICON)}
-              </span>
+            {!skill.coverImage && skill.icon && (
+              <span className="text-[36px] leading-none select-none">{skill.icon}</span>
             )}
             <h1 className="text-[34px] font-bold tracking-[-0.03em] text-[#0f172a]">
               {skill.name}
@@ -1458,7 +1137,7 @@ function HeroSection({
           </div>
 
           <CommunityStats
-            skill={skill}
+            target={skill}
             onUpvoteClick={() => {
               if (!me) {
                 window.alert('登录后才能点赞。');
@@ -1474,6 +1153,7 @@ function HeroSection({
                     commentCount: next.commentCount,
                     bookmarkCount: next.bookmarkCount,
                     viewerHasUpvoted: next.viewerHasUpvoted,
+                    viewerHasBookmarked: next.viewerHasBookmarked,
                   });
                 } catch (err) {
                   window.alert(err instanceof Error ? err.message : '点赞失败');
@@ -1495,6 +1175,7 @@ function HeroSection({
                     commentCount: next.commentCount,
                     bookmarkCount: next.bookmarkCount,
                     viewerHasUpvoted: next.viewerHasUpvoted,
+                    viewerHasBookmarked: next.viewerHasBookmarked,
                   });
                 } catch (err) {
                   window.alert(err instanceof Error ? err.message : '收藏操作失败');
@@ -1506,6 +1187,140 @@ function HeroSection({
         </div>
       </div>
     </div>
+  );
+}
+
+function PackageInclusionCard({ pkg }: { pkg: SkillPackageListItem }) {
+  return (
+    <Link
+      to={`/packages/${pkg.owner.handle}/${pkg.slug}`}
+      className="group flex min-h-[210px] flex-col rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm shadow-neutral-100/80 transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md hover:shadow-emerald-100/60"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          {pkg.coverImage ? (
+            <img
+              src={pkg.coverImage}
+              alt={`${pkg.name} 封面`}
+              className="h-12 w-12 rounded-xl object-cover"
+            />
+          ) : (
+            <span className="flex h-12 w-12 items-center justify-center rounded-xl border border-neutral-200 bg-neutral-50 text-[24px]">
+              {pkg.icon ?? DEFAULT_SKILL_PACKAGE_ICON}
+            </span>
+          )}
+          <div className="min-w-0">
+            <div className="line-clamp-1 text-[15px] font-semibold text-[#0f172a] group-hover:text-emerald-700">
+              {pkg.name}
+            </div>
+            <div className="mt-0.5 text-[12px] text-neutral-500">@{pkg.owner.handle}</div>
+          </div>
+        </div>
+        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+          Skills 包
+        </span>
+      </div>
+
+      <p className="mt-4 line-clamp-3 flex-1 text-[13px] leading-6 text-[#64748b]">
+        {pkg.description}
+      </p>
+
+      {pkg.tags.length > 0 ? (
+        <div className="mt-4 flex flex-wrap gap-1.5">
+          {pkg.tags.slice(0, 4).map((tag) => (
+            <span
+              key={tag}
+              className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600"
+            >
+              #{tag}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="mt-4 border-t border-neutral-100 pt-3">
+        <div className="flex flex-wrap items-center gap-2 text-[12px] text-neutral-500">
+          <span>🧩 {pkg.skillCount}</span>
+          <span>▲ {pkg.upvoteCount}</span>
+          <span>💬 {pkg.commentCount}</span>
+          <span>🔖 {pkg.bookmarkCount}</span>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function SkillPackageInclusions({ skill }: { skill: SkillDetail }) {
+  const [packages, setPackages] = useState<SkillPackageListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    apiClient
+      .listSkillPackagesContainingSkill(skill.owner.handle, skill.slug)
+      .then((res) => {
+        if (!cancelled) setPackages(res.items);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : '加载收录包失败');
+          setPackages([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [skill.owner.handle, skill.slug]);
+
+  return (
+    <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm shadow-neutral-100/80">
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <div className="text-[12px] font-semibold tracking-[0.16em] text-neutral-500">
+            收录关系
+          </div>
+          <h2 className="mt-2 text-[22px] font-semibold tracking-[-0.03em] text-[#0f172a]">
+            被这些 Skills 包收录
+          </h2>
+          <p className="mt-2 text-[14px] leading-7 text-neutral-600">
+            这里展示当前可见范围内，包含这个 Skill 的公开包和你自己的私有包。
+          </p>
+        </div>
+        <span className="rounded-full border border-neutral-200 px-3 py-1 text-[12px] text-neutral-500">
+          {loading ? '加载中' : `${packages.length} 个包`}
+        </span>
+      </div>
+
+      {loading ? (
+        <div className="rounded-2xl bg-neutral-50 py-10 text-center text-[13px] text-neutral-500">
+          正在查找收录这个 Skill 的包…
+        </div>
+      ) : error ? (
+        <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+          {error}
+        </div>
+      ) : packages.length === 0 ? (
+        <div className="rounded-2xl bg-neutral-50 px-5 py-10 text-center">
+          <div className="text-[32px]">{DEFAULT_SKILL_PACKAGE_ICON}</div>
+          <h3 className="mt-3 text-[15px] font-semibold text-neutral-900">还没有包收录它</h3>
+          <p className="mt-2 text-[13px] text-neutral-500">
+            当有人把这个 Skill 加入 Skills 包后，会在这里展示出来。
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {packages.map((pkg) => (
+            <PackageInclusionCard key={pkg.id} pkg={pkg} />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1545,6 +1360,17 @@ function DetailContent({
     return <ReleaseTimeline skill={skill} />;
   }
 
+  if (activeTab === 'packages') {
+    return (
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0 space-y-10">
+          <SkillPackageInclusions skill={skill} />
+        </div>
+        <StatusSidebar skill={skill} onOpenFiles={() => onChangeTab('files')} />
+      </div>
+    );
+  }
+
   if (activeTab === 'install') {
     return (
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -1571,14 +1397,20 @@ function DetailContent({
       <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-10 min-w-0">
           <CommentsSection
-            skill={skill}
+            targetName="Skill"
+            commentCount={skill.commentCount}
             me={me}
+            loadComments={() => apiClient.listSkillComments(skill.owner.handle, skill.slug)}
+            createComment={(input) =>
+              apiClient.createSkillComment(skill.owner.handle, skill.slug, input)
+            }
             onCommentCreated={() =>
               onSkillUpdate({
                 upvoteCount: skill.upvoteCount,
                 commentCount: skill.commentCount + 1,
                 bookmarkCount: skill.bookmarkCount,
                 viewerHasUpvoted: skill.viewerHasUpvoted,
+                viewerHasBookmarked: skill.viewerHasBookmarked,
               })
             }
           />
