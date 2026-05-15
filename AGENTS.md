@@ -120,6 +120,30 @@
 - 对已有功能做调整时，优先沿用现有结构，避免无必要大拆大改
 - 不要为了短期展示效果引入与长期路线冲突的数据结构
 
+### SSO 与第一方应用授权
+
+- 统一登录由 Casdoor 负责，SkillHunt 只消费 Casdoor 已签发的用户身份。
+- SkillHunt 的业务用户身份必须通过 `external_identities` 绑定，身份唯一键为：
+  `provider + issuer + subject`。当前 provider 使用 `casdoor`。
+- 对 Casdoor 应用级 issuer，应通过 `SKILLHUNT_SSO_IDENTITY_ISSUER` 归一到 Casdoor 基础
+  issuer，避免 `mospace`、SkillHunt Web、未来 CLI 等入口把同一个 `sub` 拆成多个用户。
+- Web OAuth、API bearer、未来 CLI bearer 都必须走同一个 `resolveSsoUser()` 入口，不要在
+  路由或业务服务里直接用 `user.ssoSub` 临时拼接身份逻辑。
+- `user.ssoSub` 仅作为 better-auth/session 兼容字段保留；新增身份判断、跨系统绑定、
+  旧 `sub` 查询和自动建号都必须使用 `external_identities`。
+- 项目未正式上线前，SSO 相关表结构调整应合并进初始建库结构并通过重建数据库生效；
+  不要为旧 SSO 数据保留增量迁移或运行时 backfill 逻辑。
+- Casdoor 负责证明“这个人是谁”；SkillHunt 负责决定“这个客户端能代表这个人做什么”。
+- 在 Casdoor 当前不支持 Token Exchange 的情况下，SkillHunt API 采用正式的 first-party
+  trusted client 模型：对来自 `mospace` 等内部应用的 Casdoor access token，严格校验
+  `iss`、`exp`、`aud/azp/client_id` 后，再按本地可信客户端配置映射 API scopes。
+- 可信客户端配置使用 `SKILLHUNT_TRUSTED_FIRST_PARTY_CLIENT_IDS` 或
+  `SKILLHUNT_TRUSTED_FIRST_PARTY_CLIENTS`。默认只给
+  `profile:read`、`skills:read`、`skills:read_private`、`skills:files:read`，不要默认给
+  `skills:write`。
+- 如果未来 Casdoor 支持 Token Exchange，可以新增面向 `skillhunt-api` audience 的 token
+  路径，但不能推翻 `external_identities` 和 `resolveSsoUser()` 这条统一身份入口。
+
 ### 命名原则
 
 - 对外品牌名统一使用 `SkillHunt`
@@ -159,14 +183,15 @@ bash scripts/smoke.sh
 
 - 开发库 migration 要可执行
 - 测试库 migration 要可执行
-- 本地 dev 数据库若为空，需要重新跑 seed
+- 本地 dev 数据库若为空或被删除重建，统一运行 `pnpm db:setup`，不要手动拆成多条
+  seed 命令
 
 常用命令：
 
 ```bash
-pnpm db:migrate
+pnpm db:setup
 pnpm db:migrate:test
-pnpm seed:all
+pnpm db:setup:bridge
 ```
 
 ### 前端改动要求
