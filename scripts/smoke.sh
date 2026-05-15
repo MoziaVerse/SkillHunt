@@ -68,15 +68,14 @@ jq_check "/api/skills?type=owned = 5"                     "$API/api/skills?type=
 jq_check "/api/skills?type=referenced = 4"           "$API/api/skills?type=referenced"              ".items | length == 4"
 jq_check "/api/skills?q=design returns ≥ 1"          "$API/api/skills?q=design"                     ".items | length >= 1"
 jq_check "/api/tags → tags is array"                 "$API/api/tags"                                ".tags | type == \"array\""
-# Phase 2-02: canonical URL is /api/skills/:owner/:slug; legacy /:slug → 302 to canonical.
+# Canonical skill URL is /api/skills/:owner/:slug.
 jq_check "/api/skills/mozia/project-mental-map → owned" "$API/api/skills/mozia/project-mental-map" ".type == \"owned\""
 jq_check "  → owner.name = mozia"                       "$API/api/skills/mozia/project-mental-map" ".owner.name == \"mozia\""
 jq_check "  → skillMdContent non-empty"                 "$API/api/skills/mozia/project-mental-map" ".skillMdContent | length > 0"
 jq_check "  → installCommand has generic local form"    "$API/api/skills/mozia/project-mental-map" ".installCommand == \"npx skills add http://localhost:3333 --skill mozia/project-mental-map\""
 jq_check "/api/skills/mozia/frontend-design → referenced" "$API/api/skills/mozia/frontend-design"  ".type == \"referenced\""
 jq_check "  → sourceInstallCommand present"             "$API/api/skills/mozia/frontend-design"    ".sourceInstallCommand | length > 0"
-check   "legacy /api/skills/:slug returns 302"          bash -c "[ \$(curl -sS -o /dev/null -w '%{http_code}' $API/api/skills/project-mental-map) = '302' ]"
-check   "/api/skills/no-such → 404"                  bash -c "[ \$(curl -sS -o /dev/null -w '%{http_code}' $API/api/skills/no-such) = '404' ]"
+check   "/api/skills/mozia/no-such → 404"               bash -c "[ \$(curl -sS -o /dev/null -w '%{http_code}' $API/api/skills/mozia/no-such) = '404' ]"
 
 cyan "═══ 3. Well-Known Protocol ═══"
 jq_check "index.json accessible"                     "$API/.well-known/agent-skills/index.json"  ". != null"

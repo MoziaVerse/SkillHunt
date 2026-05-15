@@ -5,10 +5,10 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
-import { db, skillFiles, skills, user } from '../apps/api/src/db';
+import { db, publishables, skillFiles, skills, user } from '../apps/api/src/db';
 
-// All seed-driven owned skills are attributed to the `mozia` virtual user
-// (created by migration 0003). Phase 2 pass 2 will allow per-entry overrides.
+// All seed-driven owned skills are attributed to the `mozia` virtual user.
+// Per-entry owners can be added later when builtin skills need separate makers.
 const SEED_OWNER_ID = 'mozia-virtual';
 const SEED_OWNER_HANDLE = 'mozia';
 
@@ -209,14 +209,21 @@ export async function seedOwned(
     }
 
     const existing = await db
-      .select()
-      .from(skills)
-      .where(and(eq(skills.slug, entry.slug), eq(skills.ownerUserId, SEED_OWNER_ID)))
+      .select({ skill: skills })
+      .from(publishables)
+      .innerJoin(skills, eq(publishables.id, skills.id))
+      .where(
+        and(
+          eq(publishables.kind, 'skill'),
+          eq(publishables.slug, entry.slug),
+          eq(publishables.ownerUserId, SEED_OWNER_ID),
+        ),
+      )
       .limit(1);
 
-    if (existing[0] && existing[0].type !== 'owned') {
+    if (existing[0] && existing[0].skill.type !== 'owned') {
       throw new Error(
-        `[seed-owned] slug '${entry.slug}' already exists as ${existing[0].type}. Refusing to overwrite.`,
+        `[seed-owned] slug '${entry.slug}' already exists as ${existing[0].skill.type}. Refusing to overwrite.`,
       );
     }
 
@@ -234,33 +241,48 @@ export async function seedOwned(
       throw new Error(`[seed-owned] missing name/description for slug '${entry.slug}'`);
     }
 
-    const [row] = await db
-      .insert(skills)
+    const [publishable] = await db
+      .insert(publishables)
       .values({
+        kind: 'skill',
+        ownerUserId: SEED_OWNER_ID,
         slug: entry.slug,
         name,
         description,
-        type: 'owned',
         visibility: entry.visibility,
         tags: entry.tags,
-        frontmatter,
         icon: entry.icon ?? null,
         coverImage: entry.coverImage ?? null,
-        demoVideoUrl: entry.demoVideoUrl ?? null,
-        ownerUserId: SEED_OWNER_ID,
       })
       .onConflictDoUpdate({
-        target: [skills.ownerUserId, skills.slug],
+        target: [publishables.ownerUserId, publishables.kind, publishables.slug],
         set: {
           name,
           description,
           visibility: entry.visibility,
           tags: entry.tags,
-          frontmatter,
           icon: entry.icon ?? null,
           coverImage: entry.coverImage ?? null,
-          demoVideoUrl: entry.demoVideoUrl ?? null,
           updatedAt: new Date(),
+        },
+      })
+      .returning();
+    if (!publishable) throw new Error(`[seed-owned] publishable upsert failed for '${entry.slug}'`);
+
+    const [row] = await db
+      .insert(skills)
+      .values({
+        id: publishable.id,
+        type: 'owned',
+        frontmatter,
+        demoVideoUrl: entry.demoVideoUrl ?? null,
+      })
+      .onConflictDoUpdate({
+        target: skills.id,
+        set: {
+          type: 'owned',
+          frontmatter,
+          demoVideoUrl: entry.demoVideoUrl ?? null,
         },
       })
       .returning();

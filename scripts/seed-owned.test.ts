@@ -4,11 +4,12 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { eq } from 'drizzle-orm';
-import { db, skillFiles, skills } from '../apps/api/src/db';
+import { db, publishables, skillFiles, skills } from '../apps/api/src/db';
 import { loadBuiltinOwnedEntries, seedOwned } from './seed-owned';
 
 async function truncate() {
   await db.delete(skills);
+  await db.delete(publishables);
 }
 
 const silent = (_: string) => {};
@@ -54,19 +55,22 @@ describe('seed-owned', () => {
     expect(result.upserted).toBe(entries.length);
     expect(result.fileCount).toBeGreaterThanOrEqual(entries.length); // at least one SKILL.md each
 
-    const rows = await db.select().from(skills);
+    const rows = await db
+      .select({ skill: skills, publishable: publishables })
+      .from(skills)
+      .innerJoin(publishables, eq(skills.id, publishables.id));
     expect(rows).toHaveLength(entries.length);
     for (const r of rows) {
-      expect(r.type).toBe('owned');
-      expect(r.frontmatter).toBeTruthy();
-      expect(r.icon).toBeTruthy();
-      expect(r.coverImage).toBeNull();
-      expect(r.demoVideoUrl).toBeNull();
+      expect(r.skill.type).toBe('owned');
+      expect(r.skill.frontmatter).toBeTruthy();
+      expect(r.publishable.icon).toBeTruthy();
+      expect(r.publishable.coverImage).toBeNull();
+      expect(r.skill.demoVideoUrl).toBeNull();
     }
 
     // Every owned skill has at least one 'SKILL.md' file
     for (const r of rows) {
-      const files = await db.select().from(skillFiles).where(eq(skillFiles.skillId, r.id));
+      const files = await db.select().from(skillFiles).where(eq(skillFiles.skillId, r.skill.id));
       expect(files.some((f) => f.path === 'SKILL.md')).toBe(true);
     }
   });
@@ -74,12 +78,16 @@ describe('seed-owned', () => {
   it('idempotent: second run keeps row count stable, bumps updatedAt', async () => {
     const entries = await loadBuiltinOwnedEntries();
     await seedOwned(entries, silent);
-    const first = await db.select({ slug: skills.slug, updatedAt: skills.updatedAt }).from(skills);
+    const first = await db
+      .select({ slug: publishables.slug, updatedAt: publishables.updatedAt })
+      .from(publishables);
 
     await new Promise((r) => setTimeout(r, 30)); // let clock advance
     await seedOwned(entries, silent);
 
-    const second = await db.select({ slug: skills.slug, updatedAt: skills.updatedAt }).from(skills);
+    const second = await db
+      .select({ slug: publishables.slug, updatedAt: publishables.updatedAt })
+      .from(publishables);
     expect(second).toHaveLength(first.length);
     for (const row of second) {
       const prev = first.find((f) => f.slug === row.slug);
@@ -90,18 +98,26 @@ describe('seed-owned', () => {
 
   it('rejects overwriting a referenced slug', async () => {
     // Pre-seed 'commit-message-cn' as referenced to collide with the builtin preset.
+    const [publishable] = await db
+      .insert(publishables)
+      .values({
+        kind: 'skill',
+        ownerUserId: 'mozia-virtual',
+        slug: 'commit-message-cn',
+        name: 'commit-message-cn',
+        description: 'squatted by referenced',
+        visibility: 'public',
+        tags: [],
+      })
+      .returning();
+    if (!publishable) throw new Error('preseed publishable failed');
     await db.insert(skills).values({
-      slug: 'commit-message-cn',
-      name: 'commit-message-cn',
-      description: 'squatted by referenced',
+      id: publishable.id,
       type: 'referenced',
-      visibility: 'public',
-      tags: [],
       sourceRepo: 'a/b',
       sourceSkillName: 'x',
       sourceInstallCommand: 'npx skills add a/b --skill x',
       sourceUrl: null,
-      ownerUserId: 'mozia-virtual',
     });
 
     const entries = await loadBuiltinOwnedEntries();

@@ -16,6 +16,8 @@
     "seed:referenced": "pnpm --filter @mozia/skillhub-scripts run seed:referenced",
     "seed:all": "pnpm seed:referenced && pnpm seed:owned",
     "seed:all:bridge": "pnpm --filter @mozia/skillhub-scripts run seed:referenced:bridge && pnpm --filter @mozia/skillhub-scripts run seed:owned:bridge",
+    "db:setup": "pnpm db:migrate && pnpm seed:all",
+    "db:setup:bridge": "pnpm db:migrate:bridge && pnpm seed:all:bridge",
     "db:migrate": "pnpm --filter @mozia/skillhub-api run db:migrate",
     "db:migrate:test": "pnpm --filter @mozia/skillhub-api run db:migrate:test",
     "db:migrate:bridge": "pnpm --filter @mozia/skillhub-api run db:migrate:bridge"

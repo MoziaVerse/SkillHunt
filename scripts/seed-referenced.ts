@@ -3,7 +3,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { and, eq } from 'drizzle-orm';
-import { db, skills, user } from '../apps/api/src/db';
+import { db, publishables, skills, user } from '../apps/api/src/db';
 
 const SEED_OWNER_ID = 'mozia-virtual';
 const SEED_OWNER_HANDLE = 'mozia';
@@ -58,43 +58,66 @@ export async function seedReferenced(
 
   for (const entry of entries) {
     const existing = await db
-      .select()
-      .from(skills)
-      .where(and(eq(skills.slug, entry.slug), eq(skills.ownerUserId, SEED_OWNER_ID)))
+      .select({ skill: skills })
+      .from(publishables)
+      .innerJoin(skills, eq(publishables.id, skills.id))
+      .where(
+        and(
+          eq(publishables.kind, 'skill'),
+          eq(publishables.slug, entry.slug),
+          eq(publishables.ownerUserId, SEED_OWNER_ID),
+        ),
+      )
       .limit(1);
 
-    if (existing[0] && existing[0].type !== 'referenced') {
-      log(`[seed-referenced] skip '${entry.slug}': already exists as ${existing[0].type}`);
+    if (existing[0] && existing[0].skill.type !== 'referenced') {
+      log(`[seed-referenced] skip '${entry.slug}': already exists as ${existing[0].skill.type}`);
       skipped++;
       continue;
     }
 
-    await db
-      .insert(skills)
+    const [publishable] = await db
+      .insert(publishables)
       .values({
+        kind: 'skill',
+        ownerUserId: SEED_OWNER_ID,
         slug: entry.slug,
         name: entry.name,
         description: entry.description,
-        type: 'referenced',
         visibility: 'public',
         tags: entry.tags,
+      })
+      .onConflictDoUpdate({
+        target: [publishables.ownerUserId, publishables.kind, publishables.slug],
+        set: {
+          name: entry.name,
+          description: entry.description,
+          visibility: 'public',
+          tags: entry.tags,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    if (!publishable) throw new Error(`[seed-referenced] upsert failed for '${entry.slug}'`);
+
+    await db
+      .insert(skills)
+      .values({
+        id: publishable.id,
+        type: 'referenced',
         sourceRepo: entry.sourceRepo,
         sourceSkillName: entry.sourceSkillName,
         sourceInstallCommand: entry.sourceInstallCommand,
         sourceUrl: entry.sourceUrl,
-        ownerUserId: SEED_OWNER_ID,
       })
       .onConflictDoUpdate({
-        target: [skills.ownerUserId, skills.slug],
+        target: skills.id,
         set: {
-          name: entry.name,
-          description: entry.description,
-          tags: entry.tags,
+          type: 'referenced',
           sourceRepo: entry.sourceRepo,
           sourceSkillName: entry.sourceSkillName,
           sourceInstallCommand: entry.sourceInstallCommand,
           sourceUrl: entry.sourceUrl,
-          updatedAt: new Date(),
         },
       });
 

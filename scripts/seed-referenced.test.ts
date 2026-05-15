@@ -1,10 +1,11 @@
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
-import { db, skills } from '../apps/api/src/db';
+import { db, publishables, skills } from '../apps/api/src/db';
 import { loadReferencedEntries, seedReferenced } from './seed-referenced';
 
 async function truncate() {
   await db.delete(skills);
+  await db.delete(publishables);
 }
 
 const silent = (_: string) => {};
@@ -39,22 +40,35 @@ describe('seed-referenced', () => {
 
   it('refuses to overwrite an owned slug', async () => {
     // Pre-seed 'frontend-design' as owned — it collides with the JSON preset.
+    const [publishable] = await db
+      .insert(publishables)
+      .values({
+        kind: 'skill',
+        ownerUserId: 'mozia-virtual',
+        slug: 'frontend-design',
+        name: 'frontend-design',
+        description: 'squatted by owned',
+        visibility: 'public',
+        tags: [],
+      })
+      .returning();
+    if (!publishable) throw new Error('preseed publishable failed');
     await db.insert(skills).values({
-      slug: 'frontend-design',
-      name: 'frontend-design',
-      description: 'squatted by owned',
+      id: publishable.id,
       type: 'owned',
-      visibility: 'public',
-      tags: [],
       frontmatter: { n: 'x' },
-      ownerUserId: 'mozia-virtual',
     });
 
     const entries = await loadReferencedEntries();
     const result = await seedReferenced(entries, silent);
     expect(result.skipped).toBe(1);
 
-    const row = await db.select().from(skills).where(eq(skills.slug, 'frontend-design')).limit(1);
-    expect(row[0]?.type).toBe('owned');
+    const row = await db
+      .select({ skill: skills })
+      .from(skills)
+      .innerJoin(publishables, eq(skills.id, publishables.id))
+      .where(eq(publishables.slug, 'frontend-design'))
+      .limit(1);
+    expect(row[0]?.skill.type).toBe('owned');
   });
 });
