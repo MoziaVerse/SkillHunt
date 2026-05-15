@@ -572,11 +572,8 @@ export default function ApiReference() {
       <p>更新当前用户头像地址。站内 Web 使用该接口；第三方应用默认不建议申请写资料权限。</p>
 
       <p>
-        旧路径 <code className={inlineCodeClass}>/users/me</code>、{' '}
-        <code className={inlineCodeClass}>/users/me/skills</code> 和{' '}
-        <code className={inlineCodeClass}>/users/me/bookmarks</code> 仍然兼容，个人 Skills 包也支持{' '}
-        <code className={inlineCodeClass}>/users/me/packages</code>。新应用请优先使用{' '}
-        <code className={inlineCodeClass}>/me</code> 相关路径。
+        当前用户相关接口统一使用 <code className={inlineCodeClass}>/me</code> 路径；公开用户资料使用{' '}
+        <code className={inlineCodeClass}>/users/:owner</code> 路径。
       </p>
 
       <h2 id="public-users">公开用户</h2>

@@ -190,15 +190,23 @@ export default function NotificationsPage() {
                 <p className="text-sm text-neutral-800 leading-relaxed">
                   <span className="font-semibold">{n.actor?.name ?? '未知用户'}</span>{' '}
                   {typeLabels[n.type] ?? n.type}
-                  {n.skill && (
+                  {n.publishable && (
                     <>
                       {' '}
                       <Link
-                        to={`/skills/${n.skill.owner.handle}/${encodeURIComponent(n.skill.slug)}`}
+                        to={
+                          n.publishable?.kind === 'package'
+                            ? `/packages/${n.publishable.owner.handle}/${encodeURIComponent(
+                                n.publishable.slug,
+                              )}`
+                            : `/skills/${n.publishable.owner.handle}/${encodeURIComponent(
+                                n.publishable.slug,
+                              )}`
+                        }
                         className="text-blue-600 hover:underline font-medium"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {n.skill.name}
+                        {n.publishable.name}
                       </Link>
                     </>
                   )}

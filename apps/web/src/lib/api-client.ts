@@ -1,15 +1,18 @@
 import type {
   BaseSkill,
   ListPackagesResponse,
+  ListPublishablesResponse,
   ListSkillsResponse,
   ListTagsResponse,
   Notification,
   OwnerInfo,
+  OwnerPublishablesResponse,
   SkillComment,
   SkillDetail,
   SkillPackageComment,
   SkillPackageDetail,
   SkillPackageListItem,
+  SkillPackageRelease,
   SkillRelease,
   SkillSubscription,
   UpstreamStatus,
@@ -61,6 +64,15 @@ export interface ListSkillsParams {
 }
 
 export interface ListPackagesParams {
+  q?: string;
+  tag?: string[];
+  sort?: 'recent' | 'hottest' | 'az';
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListPublishablesParams {
+  kind?: 'all' | 'skill' | 'package';
   q?: string;
   tag?: string[];
   sort?: 'recent' | 'hottest' | 'az';
@@ -153,6 +165,8 @@ export interface CreateSkillInput {
   icon?: string | null;
   coverImage?: string | null;
   demoVideoUrl?: string | null;
+  releaseTitle?: string;
+  releaseChangelog?: string;
 }
 
 export interface UpdateSkillInput {
@@ -164,6 +178,8 @@ export interface UpdateSkillInput {
   icon?: string | null;
   coverImage?: string | null;
   demoVideoUrl?: string | null;
+  releaseTitle?: string;
+  releaseChangelog?: string;
 }
 
 export interface CreateSkillPackageInput {
@@ -176,6 +192,8 @@ export interface CreateSkillPackageInput {
   icon?: string | null;
   coverImage?: string | null;
   skillIds: string[];
+  releaseTitle?: string;
+  releaseChangelog?: string;
 }
 
 export const apiClient = {
@@ -243,6 +261,20 @@ export const apiClient = {
     });
   },
 
+  listPublishables(params: ListPublishablesParams = {}): Promise<ListPublishablesResponse> {
+    const usp = new URLSearchParams();
+    if (params.kind) usp.set('kind', params.kind);
+    if (params.q) usp.set('q', params.q);
+    if (params.tag) for (const t of params.tag) usp.append('tag', t);
+    if (params.sort) usp.set('sort', params.sort);
+    if (params.limit) usp.set('limit', String(params.limit));
+    if (params.offset) usp.set('offset', String(params.offset));
+    const qs = usp.toString();
+    return request<ListPublishablesResponse>(`/publishables${qs ? `?${qs}` : ''}`, {
+      credentials: 'include',
+    });
+  },
+
   getPackage(owner: string, slug: string): Promise<SkillPackageDetail> {
     return request<SkillPackageDetail>(
       `/packages/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}`,
@@ -252,6 +284,16 @@ export const apiClient = {
 
   createPackage(input: CreateSkillPackageInput): Promise<SkillPackageDetail> {
     return request<SkillPackageDetail>('/packages', json(input, 'POST'));
+  },
+
+  listPackageReleases(
+    owner: string,
+    slug: string,
+  ): Promise<{ items: SkillPackageRelease[]; total: number }> {
+    return request<{ items: SkillPackageRelease[]; total: number }>(
+      `/packages/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/releases`,
+      { credentials: 'include' },
+    );
   },
 
   listPackageComments(owner: string, slug: string): Promise<PackageCommentsResponse> {
@@ -486,6 +528,15 @@ export const apiClient = {
     return request<OwnerPackagesResponse>(`/users/${encodeURIComponent(ownerName)}/packages`, {
       credentials: 'include',
     });
+  },
+
+  getOwnerPublishables(ownerName: string): Promise<OwnerPublishablesResponse> {
+    return request<OwnerPublishablesResponse>(
+      `/users/${encodeURIComponent(ownerName)}/publishables`,
+      {
+        credentials: 'include',
+      },
+    );
   },
 
   // ─── Capability URL ──────────────────────────────────────────────────

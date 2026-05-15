@@ -129,8 +129,8 @@ export default function SkillEditPage() {
       window.alert(`已保存，但部分附加文件处理失败：\n${failures.join('\n')}`);
     }
     await apiClient.createSkillRelease(owner, slug, {
-      title: '保存更新',
-      changelog: 'Skill 内容已更新。',
+      title: values.releaseTitle,
+      changelog: values.releaseChangelog,
     });
     navigate(`/skills/${owner}/${slug}`);
   };

@@ -6,11 +6,11 @@ import { type MeResponse, apiClient } from '@/lib/api-client';
 import { DEFAULT_SKILL_ICON, DEFAULT_SKILL_PACKAGE_ICON } from '@/lib/default-icons';
 import { formatRelative } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import type { SkillPackageDetail, SkillPackageSkill } from '@/types/api';
+import type { SkillPackageDetail, SkillPackageRelease, SkillPackageSkill } from '@/types/api';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 
-type PackageDetailTab = 'overview' | 'skills' | 'install' | 'discussion';
+type PackageDetailTab = 'overview' | 'skills' | 'versions' | 'install' | 'discussion';
 type PackageStatsPatch = Pick<
   SkillPackageDetail,
   'upvoteCount' | 'commentCount' | 'bookmarkCount' | 'viewerHasUpvoted' | 'viewerHasBookmarked'
@@ -220,6 +220,7 @@ function TabNav({
   const tabs: Array<{ key: PackageDetailTab; label: string; icon: string }> = [
     { key: 'overview', label: '概览', icon: '📖' },
     { key: 'skills', label: '包内 Skill', icon: '🧩' },
+    { key: 'versions', label: '版本', icon: '🏷️' },
     { key: 'install', label: '安装', icon: '⬇️' },
     { key: 'discussion', label: '讨论', icon: '💬' },
   ];
@@ -442,6 +443,163 @@ function SkillsTab({ pkg }: { pkg: SkillPackageDetail }) {
   );
 }
 
+function VersionsTab({ pkg }: { pkg: SkillPackageDetail }) {
+  const [releases, setReleases] = useState<SkillPackageRelease[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    apiClient
+      .listPackageReleases(pkg.owner.handle, pkg.slug)
+      .then((res) => {
+        if (cancelled) return;
+        setReleases(res.items);
+        setSelectedId((current) =>
+          current && res.items.some((release) => release.id === current)
+            ? current
+            : (res.items[0]?.id ?? null),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setReleases([]);
+          setSelectedId(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pkg.owner.handle, pkg.slug]);
+
+  const selected = releases.find((release) => release.id === selectedId) ?? releases[0] ?? null;
+
+  return (
+    <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm shadow-neutral-100/80">
+      <div className="mb-6">
+        <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
+          版本发布
+        </div>
+        <h2 className="text-[24px] font-semibold tracking-[-0.03em] text-neutral-950">
+          每个版本都是一次可复现的整包快照
+        </h2>
+        <p className="mt-2 text-[14px] leading-6 text-neutral-500">
+          版本记录会固定包内 Skill 及其文件列表，方便用户安装指定版本。
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-8 text-center text-neutral-500">
+          正在加载版本…
+        </div>
+      ) : releases.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-8 text-center text-neutral-500">
+          这个 Skills 包还没有发布版本。
+        </div>
+      ) : (
+        <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+          <div className="space-y-2">
+            {releases.map((release) => {
+              const active = release.id === selected?.id;
+              return (
+                <button
+                  key={release.id}
+                  type="button"
+                  onClick={() => setSelectedId(release.id)}
+                  className={cn(
+                    'w-full rounded-2xl border p-4 text-left transition',
+                    active
+                      ? 'border-emerald-300 bg-emerald-50 text-emerald-950'
+                      : 'border-neutral-200 bg-white hover:border-neutral-300',
+                  )}
+                >
+                  <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-neutral-500">
+                    v{release.version}
+                  </div>
+                  <div className="mt-1 truncate text-[14px] font-semibold">{release.title}</div>
+                  <div className="mt-2 text-[12px] text-neutral-500">
+                    {formatRelative(release.createdAt)}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {selected ? (
+            <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-neutral-400">
+                    v{selected.version}
+                  </div>
+                  <h3 className="mt-1 text-[20px] font-semibold text-neutral-950">
+                    {selected.title}
+                  </h3>
+                  <p className="mt-1 text-[13px] text-neutral-500">
+                    发布者 @{selected.createdBy?.handle ?? pkg.owner.handle} ·{' '}
+                    {formatRelative(selected.createdAt)}
+                  </p>
+                </div>
+                <span className="rounded-full bg-neutral-100 px-3 py-1 text-[12px] text-neutral-600">
+                  {selected.skills.length} 个 Skill · {selected.files.length} 个文件
+                </span>
+              </div>
+
+              <div className="mt-5 rounded-2xl bg-neutral-50 p-4">
+                <div className="mb-2 text-[12px] font-semibold text-neutral-500">发布说明</div>
+                <p className="whitespace-pre-wrap text-[14px] leading-7 text-neutral-700">
+                  {selected.changelog}
+                </p>
+              </div>
+
+              <div className="mt-5">
+                <div className="mb-2 text-[12px] font-semibold text-neutral-500">指定版本安装</div>
+                <InstallCommand command={selected.installCommand} title="版本安装命令" />
+              </div>
+
+              <div className="mt-5">
+                <div className="mb-3 text-[12px] font-semibold text-neutral-500">版本文件</div>
+                <div className="grid gap-3">
+                  {selected.skills.map((skill) => (
+                    <div
+                      key={`${selected.id}-${skill.protocolName}`}
+                      className="rounded-xl border border-neutral-200 bg-white p-4"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-neutral-900">{skill.skillName}</span>
+                        <span className="rounded-full bg-neutral-100 px-2 py-0.5 font-mono text-[11px] text-neutral-500">
+                          {skill.protocolName}
+                        </span>
+                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
+                          Skill v{skill.skillVersion}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {skill.files.map((file) => (
+                          <span
+                            key={`${skill.protocolName}-${file}`}
+                            className="rounded-lg bg-neutral-50 px-2 py-1 font-mono text-[11px] text-neutral-600"
+                          >
+                            {file}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function InstallTab({
   pkg,
   onOpenSkills,
@@ -533,6 +691,7 @@ function DetailContent({
   onPackageUpdate: (patch: PackageStatsPatch) => void;
 }) {
   if (activeTab === 'skills') return <SkillsTab pkg={pkg} />;
+  if (activeTab === 'versions') return <VersionsTab pkg={pkg} />;
   if (activeTab === 'install')
     return <InstallTab pkg={pkg} onOpenSkills={() => onChangeTab('skills')} />;
   if (activeTab === 'discussion') {

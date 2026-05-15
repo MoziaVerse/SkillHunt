@@ -35,6 +35,8 @@ export interface SkillFormValues {
   icon: string | null;
   coverImage: string | null;
   demoVideoUrl: string | null;
+  releaseTitle: string;
+  releaseChangelog: string;
 }
 
 export interface OwnerOption {
@@ -195,6 +197,10 @@ export function SkillForm({
   );
   const [coverImage, setCoverImage] = useState<string | null>(initial?.coverImage ?? null);
   const [demoVideoUrl, setDemoVideoUrl] = useState<string | null>(initial?.demoVideoUrl ?? null);
+  const [releaseTitle, setReleaseTitle] = useState(
+    initial?.releaseTitle ?? (mode === 'create' ? '首次发布' : '保存更新'),
+  );
+  const [releaseChangelog, setReleaseChangelog] = useState(initial?.releaseChangelog ?? '');
   const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
   const [videoUploading, setVideoUploading] = useState(false);
   const [videoUploadLabel, setVideoUploadLabel] = useState<string | null>(null);
@@ -268,6 +274,8 @@ export function SkillForm({
     if (slugProblem) return setError('slug 格式无效');
     if (tooShort) return setError('SKILL.md 至少需要 20 个字符');
     if (!tagline.trim()) return setError('请填写一句话介绍');
+    if (mode !== 'create' && !releaseTitle.trim()) return setError('请填写版本标题');
+    if (mode !== 'create' && !releaseChangelog.trim()) return setError('请填写本次版本说明');
     if (videoUploading) return setError('视频还在上传中，请稍等片刻');
 
     setSubmitting(true);
@@ -283,6 +291,8 @@ export function SkillForm({
         icon,
         coverImage,
         demoVideoUrl,
+        releaseTitle: mode === 'create' ? '首次发布' : releaseTitle.trim(),
+        releaseChangelog: mode === 'create' ? '' : releaseChangelog.trim(),
       });
     } catch (err) {
       const msg =
@@ -578,6 +588,43 @@ export function SkillForm({
           </div>
         </div>
       </div>
+
+      {mode !== 'create' && (
+        <div className="rounded-2xl border border-neutral-200 bg-white p-5 space-y-4">
+          <div>
+            <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-emerald-700 mb-1">
+              版本发布
+            </div>
+            <h2 className="text-[22px] font-semibold text-[#0f172a]">说明这次更新</h2>
+            <p className="mt-2 text-[14px] text-neutral-500">
+              每次发布都会生成一个版本记录。请写清楚这个版本新增、修复或调整了什么，方便使用者选择合适版本。
+            </p>
+          </div>
+
+          <div>
+            <FieldLabel hint="会显示在版本列表中">版本标题</FieldLabel>
+            <Input
+              value={releaseTitle}
+              onChange={(e) => setReleaseTitle(e.target.value.slice(0, 120))}
+              placeholder="优化安装说明"
+            />
+          </div>
+
+          <div>
+            <FieldLabel hint="必填，告诉使用者这个版本有什么变化">版本说明</FieldLabel>
+            <textarea
+              value={releaseChangelog}
+              onChange={(e) => setReleaseChangelog(e.target.value.slice(0, 5000))}
+              rows={5}
+              placeholder="例如：补充了更多适用场景，修复了安装步骤描述不清的问题。"
+              className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-[14px] leading-6 text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-emerald-500"
+            />
+            <div className="mt-1 text-[12px] text-neutral-400">
+              {releaseChangelog.trim().length}/5000 字。版本说明会展示在 Skill 详情页的版本 Tab。
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="border border-red-300 bg-red-50 px-3 py-2 font-mono text-[12px] text-red-700 rounded-xl">

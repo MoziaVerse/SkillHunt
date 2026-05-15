@@ -1,3 +1,5 @@
+import type { PublishableKind, SharedPublishableRelease } from '@mozia/skillhub-shared';
+
 export interface OwnerInfo {
   id: string;
   /** Display name — anything (Chinese, spaces, mixed case) */
@@ -87,6 +89,10 @@ export interface SkillPackageDetail extends SkillPackageListItem {
   skills: SkillPackageSkill[];
 }
 
+export type PublishableListItem =
+  | { kind: 'skill'; item: SkillListItem; updatedAt: string; score: number }
+  | { kind: 'package'; item: SkillPackageListItem; updatedAt: string; score: number };
+
 export interface CommunityComment {
   id: string;
   parentId: string | null;
@@ -115,6 +121,28 @@ export interface SkillRelease {
   createdByUserId?: string;
   createdAt: string;
 }
+
+export interface SkillPackageRelease extends SharedPublishableRelease {
+  kind: 'package';
+  packageId: string;
+  publishableId: string;
+  installCommand: string;
+  skills: Array<{
+    skillId: string;
+    ownerHandle: string;
+    skillSlug: string;
+    skillName: string;
+    skillDescription: string;
+    protocolName: string;
+    position: number;
+    note: string | null;
+    skillReleaseId: string;
+    skillVersion: number;
+    files: string[];
+  }>;
+}
+
+export type PublishableReleaseKind = PublishableKind;
 
 export interface SkillSubscription {
   id?: string;
@@ -147,7 +175,13 @@ export interface Notification {
   read: boolean;
   createdAt: string;
   actor: OwnerInfo | null;
-  skill: { id: string; slug: string; name: string; owner: OwnerInfo } | null;
+  publishable: {
+    id: string;
+    kind: 'skill' | 'package';
+    slug: string;
+    name: string;
+    owner: OwnerInfo;
+  } | null;
 }
 
 export type UpstreamStatus =
@@ -186,6 +220,17 @@ export interface ListSkillsResponse {
 
 export interface ListPackagesResponse {
   items: SkillPackageListItem[];
+  total: number;
+}
+
+export interface ListPublishablesResponse {
+  items: PublishableListItem[];
+  total: number;
+}
+
+export interface OwnerPublishablesResponse {
+  owner: OwnerInfo;
+  items: PublishableListItem[];
   total: number;
 }
 

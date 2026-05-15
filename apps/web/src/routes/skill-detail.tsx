@@ -7,9 +7,15 @@ import { type MeResponse, apiClient } from '@/lib/api-client';
 import { DEFAULT_SKILL_PACKAGE_ICON } from '@/lib/default-icons';
 import { formatRelative } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import type { SkillDetail, SkillPackageListItem, UpstreamStatus } from '@/types/api';
+import type { SkillDetail, SkillPackageListItem, SkillRelease, UpstreamStatus } from '@/types/api';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
+import {
+  firstReleaseId,
+  releaseChangelogText,
+  releaseVersionLabel,
+  sortReleaseFiles,
+} from './skill-release-helpers';
 
 type DetailTab = 'overview' | 'files' | 'packages' | 'releases' | 'install' | 'discussion';
 
@@ -201,32 +207,6 @@ function collectFolderPaths(nodes: FileTreeNode[]): string[] {
   return nodes.flatMap((node) =>
     node.kind === 'folder' ? [node.path, ...collectFolderPaths(node.children)] : [],
   );
-}
-
-function buildReleaseTimeline(skill: SkillDetail) {
-  const created = new Date(skill.createdAt);
-  const updated = new Date(skill.updatedAt);
-  const nearlySame = Math.abs(updated.getTime() - created.getTime()) < 5 * 60 * 1000;
-
-  const items = [
-    {
-      key: 'created',
-      title: '首次发布',
-      date: skill.createdAt,
-      body: '已发布到 SkillHunt，开始支持安装与讨论。',
-    },
-  ];
-
-  if (!nearlySame) {
-    items.push({
-      key: 'updated',
-      title: '最近更新',
-      date: skill.updatedAt,
-      body: 'Skill 内容已更新，建议重新查看文件与安装说明。',
-    });
-  }
-
-  return items;
 }
 
 function Breadcrumb({ skill }: { skill: SkillDetail }) {
@@ -565,59 +545,170 @@ function AboutSection({ skill }: { skill: SkillDetail }) {
   );
 }
 
-function ReleaseTimeline({
-  skill,
-  compact = false,
-  onViewAll,
-}: {
-  skill: SkillDetail;
-  compact?: boolean;
-  onViewAll?: () => void;
-}) {
-  const items = buildReleaseTimeline(skill);
+function ReleaseTimeline({ skill }: { skill: SkillDetail }) {
+  const [releases, setReleases] = useState<SkillRelease[]>([]);
+  const [selectedReleaseId, setSelectedReleaseId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    apiClient
+      .listSkillReleases(skill.owner.handle, skill.slug)
+      .then((res) => {
+        if (cancelled) return;
+        setReleases(res.items);
+        setSelectedReleaseId((current) =>
+          current && res.items.some((release) => release.id === current)
+            ? current
+            : firstReleaseId(res.items),
+        );
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : '版本记录加载失败');
+          setReleases([]);
+          setSelectedReleaseId(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [skill.owner.handle, skill.slug]);
+
+  const selectedRelease =
+    releases.find((release) => release.id === selectedReleaseId) ?? releases[0] ?? null;
 
   return (
     <section className="rounded-3xl bg-white p-6 shadow-sm shadow-neutral-100/80 border border-neutral-200">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-[20px] font-semibold text-[#0f172a]">
-            {compact ? '版本发布预览' : '版本发布'}
-          </h2>
+          <h2 className="text-[20px] font-semibold text-[#0f172a]">版本发布</h2>
           <p className="mt-1 text-[14px] text-neutral-500">
-            先用轻量时间线展示这个 Skill 在 SkillHunt 上的发布轨迹。
+            展示真实 release 记录、版本说明和文件列表，方便使用者选择想查看的版本。
           </p>
         </div>
-        {compact && onViewAll ? (
-          <button
-            type="button"
-            onClick={onViewAll}
-            className="text-[13px] font-medium text-emerald-700 hover:text-emerald-900"
-          >
-            查看完整发布记录
-          </button>
-        ) : null}
+        <span className="rounded-full border border-neutral-200 px-3 py-1 text-[12px] text-neutral-500">
+          {loading ? '加载中' : `${releases.length} 个版本`}
+        </span>
       </div>
 
-      <div className="mt-5 space-y-4">
-        {items.map((item, index) => (
-          <div key={item.key} className="flex gap-4">
-            <div className="flex flex-col items-center">
-              <span className="mt-1 h-3 w-3 rounded-full bg-emerald-500" />
-              {index < items.length - 1 && (
-                <span className="mt-2 h-full min-h-[56px] w-px bg-neutral-200" />
-              )}
-            </div>
-            <div className="flex-1 rounded-2xl bg-neutral-50 px-5 py-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-[16px] font-semibold text-neutral-900">{item.title}</div>
-                <time className="text-[12px] text-neutral-500">{formatRelative(item.date)}</time>
-              </div>
-              <div className="mt-2 text-[13px] text-neutral-500">发布者 @{skill.owner.handle}</div>
-              <p className="mt-3 text-[14px] leading-7 text-neutral-700">{item.body}</p>
-            </div>
+      {loading ? (
+        <div className="mt-5 rounded-2xl bg-neutral-50 py-12 text-center text-[13px] text-neutral-500">
+          正在加载版本记录…
+        </div>
+      ) : error ? (
+        <div className="mt-5 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+          {error}
+        </div>
+      ) : releases.length === 0 ? (
+        <div className="mt-5 rounded-2xl bg-neutral-50 px-5 py-12 text-center">
+          <div className="text-[15px] font-semibold text-neutral-900">还没有版本记录</div>
+          <p className="mt-2 text-[13px] text-neutral-500">
+            发布或保存 Skill 后，会在这里生成可查看的版本记录。
+          </p>
+        </div>
+      ) : (
+        <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
+          <div className="space-y-3">
+            {releases.map((release) => {
+              const selected = release.id === selectedRelease?.id;
+              return (
+                <button
+                  key={release.id}
+                  type="button"
+                  onClick={() => setSelectedReleaseId(release.id)}
+                  className={cn(
+                    'w-full rounded-2xl border px-4 py-4 text-left transition',
+                    selected
+                      ? 'border-emerald-400 bg-emerald-50/70 shadow-sm shadow-emerald-100'
+                      : 'border-neutral-200 bg-white hover:border-neutral-300 hover:bg-neutral-50',
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                        {releaseVersionLabel(release.version)}
+                      </div>
+                      <div className="mt-1 line-clamp-1 text-[15px] font-semibold text-neutral-900">
+                        {release.title}
+                      </div>
+                    </div>
+                    <span
+                      className={cn(
+                        'shrink-0 rounded-full px-2 py-0.5 text-[11px]',
+                        selected
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-neutral-100 text-neutral-500',
+                      )}
+                    >
+                      {selected ? '正在查看' : '查看版本'}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-neutral-500">
+                    <span>{formatRelative(release.createdAt)}</span>
+                    <span>{release.files.length} 个文件</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
-        ))}
-      </div>
+
+          {selectedRelease ? (
+            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                    {releaseVersionLabel(selectedRelease.version)}
+                  </div>
+                  <h3 className="mt-1 text-[20px] font-semibold tracking-[-0.02em] text-neutral-900">
+                    {selectedRelease.title}
+                  </h3>
+                  <div className="mt-2 text-[13px] text-neutral-500">
+                    发布者 @{selectedRelease.createdBy?.handle ?? skill.owner.handle} ·{' '}
+                    {formatRelative(selectedRelease.createdAt)}
+                  </div>
+                </div>
+                <span className="rounded-full border border-neutral-200 bg-white px-3 py-1 text-[12px] text-neutral-500">
+                  {selectedRelease.files.length} 个文件
+                </span>
+              </div>
+
+              <div className="mt-5">
+                <div className="text-[12px] font-semibold tracking-[0.14em] text-neutral-500">
+                  版本说明
+                </div>
+                <p className="mt-2 whitespace-pre-wrap rounded-xl bg-white px-4 py-3 text-[14px] leading-7 text-neutral-700">
+                  {releaseChangelogText(selectedRelease.changelog)}
+                </p>
+              </div>
+
+              <div className="mt-5">
+                <div className="text-[12px] font-semibold tracking-[0.14em] text-neutral-500">
+                  文件列表
+                </div>
+                <ul className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {sortReleaseFiles(selectedRelease.files).map((file) => (
+                    <li
+                      key={file}
+                      className="truncate rounded-lg border border-neutral-200 bg-white px-3 py-2 font-mono text-[12px] text-neutral-600"
+                      title={file}
+                    >
+                      {file}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
     </section>
   );
 }

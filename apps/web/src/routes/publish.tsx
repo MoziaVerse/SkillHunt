@@ -124,9 +124,10 @@ export default function PublishPage() {
   };
 
   const handleSubmit = async (values: SkillFormValues) => {
+    const { releaseTitle, releaseChangelog, ...skillValues } = values;
     const created = await apiClient.createSkill({
-      ...values,
-      description: values.tagline,
+      ...skillValues,
+      description: skillValues.tagline,
     });
     const failures: string[] = [];
     for (const f of extras) {
@@ -140,8 +141,7 @@ export default function PublishPage() {
       window.alert(`Skill 已创建，但部分附加文件处理失败：\n${failures.join('\n')}`);
     }
     await apiClient.createSkillRelease(values.owner, values.slug, {
-      title: '首次发布',
-      changelog: '发布到 SkillHunt。',
+      title: releaseTitle,
     });
     navigate(`/skills/${created.owner.handle}/${created.slug}`);
   };
