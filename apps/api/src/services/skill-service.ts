@@ -2,17 +2,31 @@ import { and, desc, eq, max, or, sql } from 'drizzle-orm';
 import {
   db,
   notifications,
-  skillComments,
+  publishableBookmarks,
+  publishableComments,
+  publishableReleases,
+  publishableUpvotes,
+  publishables,
   skillFiles,
-  skillReleases,
-  skillSubscriptions,
   skillSyncEvents,
-  skillUpvotes,
   skills,
   user,
-  userBookmarks,
 } from '../db';
 import { skillProtocolName } from '../lib/protocol-name';
+import {
+  addPublishableBookmark,
+  addPublishableUpvote,
+  createPublishableComment,
+  createPublishableRelease,
+  getLatestPublishableRelease,
+  getPublishableReleaseById,
+  getPublishableSubscription,
+  listPublishableComments,
+  listPublishableReleases,
+  removePublishableBookmark,
+  removePublishableUpvote,
+  setPublishableSubscription,
+} from './publishable-service';
 
 // ─── Well-known ───────────────────────────────────────────────────────
 
@@ -21,14 +35,15 @@ export async function listPublicOwnedSkills() {
   return db
     .select({
       id: skills.id,
-      slug: skills.slug,
-      name: skills.name,
-      description: skills.description,
+      slug: publishables.slug,
+      name: publishables.name,
+      description: publishables.description,
       ownerHandle: user.handle,
     })
     .from(skills)
-    .innerJoin(user, eq(skills.ownerUserId, user.id))
-    .where(and(eq(skills.type, 'owned'), eq(skills.visibility, 'public')));
+    .innerJoin(publishables, eq(skills.id, publishables.id))
+    .innerJoin(user, eq(publishables.ownerUserId, user.id))
+    .where(and(eq(skills.type, 'owned'), eq(publishables.visibility, 'public')));
 }
 
 export async function listSkillFilePaths(skillId: string): Promise<string[]> {
@@ -43,22 +58,30 @@ export async function findPublicOwnedSkillBySlug(slug: string) {
   const rows = await db
     .select()
     .from(skills)
-    .where(and(eq(skills.slug, slug), eq(skills.type, 'owned'), eq(skills.visibility, 'public')))
+    .innerJoin(publishables, eq(skills.id, publishables.id))
+    .where(
+      and(
+        eq(publishables.slug, slug),
+        eq(skills.type, 'owned'),
+        eq(publishables.visibility, 'public'),
+      ),
+    )
     .limit(1);
-  return rows[0] ?? null;
+  return rows[0]?.skills ?? null;
 }
 
 export async function findPublicOwnedSkillByOwnerAndSlug(ownerHandle: string, slug: string) {
   const rows = await db
     .select({ skill: skills })
     .from(skills)
-    .innerJoin(user, eq(skills.ownerUserId, user.id))
+    .innerJoin(publishables, eq(skills.id, publishables.id))
+    .innerJoin(user, eq(publishables.ownerUserId, user.id))
     .where(
       and(
         eq(user.handle, ownerHandle),
-        eq(skills.slug, slug),
+        eq(publishables.slug, slug),
         eq(skills.type, 'owned'),
-        eq(skills.visibility, 'public'),
+        eq(publishables.visibility, 'public'),
       ),
     )
     .limit(1);
@@ -67,13 +90,15 @@ export async function findPublicOwnedSkillByOwnerAndSlug(ownerHandle: string, sl
 
 export async function findPublicOwnedSkillByProtocolName(protocolName: string) {
   const rows = await db
-    .select({ skill: skills, ownerHandle: user.handle })
+    .select({ skill: skills, publishable: publishables, ownerHandle: user.handle })
     .from(skills)
-    .innerJoin(user, eq(skills.ownerUserId, user.id))
-    .where(and(eq(skills.type, 'owned'), eq(skills.visibility, 'public')));
+    .innerJoin(publishables, eq(skills.id, publishables.id))
+    .innerJoin(user, eq(publishables.ownerUserId, user.id))
+    .where(and(eq(skills.type, 'owned'), eq(publishables.visibility, 'public')));
 
   return (
-    rows.find((r) => skillProtocolName(r.ownerHandle, r.skill.slug) === protocolName)?.skill ?? null
+    rows.find((r) => skillProtocolName(r.ownerHandle, r.publishable.slug) === protocolName)
+      ?.skill ?? null
   );
 }
 
@@ -177,29 +202,29 @@ export interface SkillCommentWithAuthor {
 
 const skillSelectExtras = (viewerUserId: string | null) => ({
   upvoteCount: sql<number>`(
-    select count(*) from ${skillUpvotes}
-    where ${skillUpvotes.skillId} = ${skills.id}
+    select count(*) from ${publishableUpvotes}
+    where ${publishableUpvotes.publishableId} = ${publishables.id}
   )`,
   commentCount: sql<number>`(
-    select count(*) from ${skillComments}
-    where ${skillComments.skillId} = ${skills.id}
+    select count(*) from ${publishableComments}
+    where ${publishableComments.publishableId} = ${publishables.id}
   )`,
   bookmarkCount: sql<number>`(
-    select count(*) from ${userBookmarks}
-    where ${userBookmarks.skillId} = ${skills.id}
+    select count(*) from ${publishableBookmarks}
+    where ${publishableBookmarks.publishableId} = ${publishables.id}
   )`,
   viewerHasUpvoted: viewerUserId
     ? sql<number>`exists(
-        select 1 from ${skillUpvotes}
-        where ${skillUpvotes.skillId} = ${skills.id}
-          and ${skillUpvotes.userId} = ${viewerUserId}
+        select 1 from ${publishableUpvotes}
+        where ${publishableUpvotes.publishableId} = ${publishables.id}
+          and ${publishableUpvotes.userId} = ${viewerUserId}
       )`
     : sql<number>`0`,
   viewerHasBookmarked: viewerUserId
     ? sql<number>`exists(
-        select 1 from ${userBookmarks}
-        where ${userBookmarks.skillId} = ${skills.id}
-          and ${userBookmarks.userId} = ${viewerUserId}
+        select 1 from ${publishableBookmarks}
+        where ${publishableBookmarks.publishableId} = ${publishables.id}
+          and ${publishableBookmarks.userId} = ${viewerUserId}
       )`
     : sql<number>`0`,
 });
@@ -207,6 +232,7 @@ const skillSelectExtras = (viewerUserId: string | null) => ({
 function mapSkillRow<
   T extends {
     skill: typeof skills.$inferSelect;
+    publishable: typeof publishables.$inferSelect;
     owner: OwnerInfo;
     upvoteCount: number;
     commentCount: number;
@@ -216,6 +242,7 @@ function mapSkillRow<
   },
 >(row: T): SkillWithOwner {
   return {
+    ...row.publishable,
     ...row.skill,
     owner: row.owner,
     upvoteCount: Number(row.upvoteCount ?? 0),
@@ -267,10 +294,10 @@ export async function listSkillsForApi(
   // viewer additionally sees their own private skills.
   const ownPrivate =
     opts.viewerUserId && opts.includePrivate
-      ? and(eq(skills.visibility, 'private'), eq(skills.ownerUserId, opts.viewerUserId))
+      ? and(eq(publishables.visibility, 'private'), eq(publishables.ownerUserId, opts.viewerUserId))
       : undefined;
   const visibilityCond = or(
-    eq(skills.visibility, 'public'),
+    eq(publishables.visibility, 'public'),
     eq(skills.type, 'referenced'),
     ...(ownPrivate ? [ownPrivate] : []),
   );
@@ -279,8 +306,8 @@ export async function listSkillsForApi(
   if (opts.q) {
     const pattern = `%${opts.q}%`;
     const cond = or(
-      sql`lower(${skills.name}) like lower(${pattern})`,
-      sql`lower(${skills.description}) like lower(${pattern})`,
+      sql`lower(${publishables.name}) like lower(${pattern})`,
+      sql`lower(${publishables.description}) like lower(${pattern})`,
       sql`lower(${user.name}) like lower(${pattern})`,
       sql`lower(${user.handle}) like lower(${pattern})`,
     );
@@ -290,7 +317,7 @@ export async function listSkillsForApi(
   // Tag filtering in SQL (instead of post-filtering in JS)
   if (opts.tags.length > 0) {
     conditions.push(
-      sql`exists (select 1 from json_each(${skills.tags}) where json_each.value in (${sql.join(
+      sql`exists (select 1 from json_each(${publishables.tags}) where json_each.value in (${sql.join(
         opts.tags.map((t) => sql`${t}`),
         sql`, `,
       )}))`,
@@ -303,11 +330,11 @@ export async function listSkillsForApi(
   const sort = opts.sort ?? 'recent';
   let orderBy: ReturnType<typeof sql>;
   if (sort === 'az') {
-    orderBy = sql`${skills.name} ASC`;
+    orderBy = sql`${publishables.name} ASC`;
   } else if (sort === 'hottest') {
-    orderBy = sql`(select count(*) from ${skillUpvotes} where ${skillUpvotes.skillId} = ${skills.id}) * 3 + (select count(*) from ${skillComments} where ${skillComments.skillId} = ${skills.id}) DESC`;
+    orderBy = sql`(select count(*) from ${publishableUpvotes} where ${publishableUpvotes.publishableId} = ${publishables.id}) * 3 + (select count(*) from ${publishableComments} where ${publishableComments.publishableId} = ${publishables.id}) DESC`;
   } else {
-    orderBy = sql`${skills.updatedAt} DESC`;
+    orderBy = sql`${publishables.updatedAt} DESC`;
   }
 
   const limit = opts.limit ?? 20;
@@ -318,12 +345,19 @@ export async function listSkillsForApi(
     db
       .select({ count: sql<number>`count(*)` })
       .from(skills)
-      .innerJoin(user, eq(skills.ownerUserId, user.id))
+      .innerJoin(publishables, eq(skills.id, publishables.id))
+      .innerJoin(user, eq(publishables.ownerUserId, user.id))
       .where(where),
     db
-      .select({ skill: skills, owner: ownerSelect, ...skillSelectExtras(opts.viewerUserId) })
+      .select({
+        skill: skills,
+        publishable: publishables,
+        owner: ownerSelect,
+        ...skillSelectExtras(opts.viewerUserId),
+      })
       .from(skills)
-      .innerJoin(user, eq(skills.ownerUserId, user.id))
+      .innerJoin(publishables, eq(skills.id, publishables.id))
+      .innerJoin(user, eq(publishables.ownerUserId, user.id))
       .where(where)
       .orderBy(orderBy)
       .limit(limit)
@@ -334,28 +368,20 @@ export async function listSkillsForApi(
   return { items: rows.map(mapSkillRow), total };
 }
 
-export async function findSkillBySlug(
-  slug: string,
-  viewerUserId: string | null = null,
-): Promise<SkillWithOwner | null> {
-  const rows = await db
-    .select({ skill: skills, owner: ownerSelect, ...skillSelectExtras(viewerUserId) })
-    .from(skills)
-    .innerJoin(user, eq(skills.ownerUserId, user.id))
-    .where(eq(skills.slug, slug))
-    .limit(1);
-  const r = rows[0];
-  return r ? mapSkillRow(r) : null;
-}
-
 export async function findSkillById(
   skillId: string,
   viewerUserId: string | null = null,
 ): Promise<SkillWithOwner | null> {
   const rows = await db
-    .select({ skill: skills, owner: ownerSelect, ...skillSelectExtras(viewerUserId) })
+    .select({
+      skill: skills,
+      publishable: publishables,
+      owner: ownerSelect,
+      ...skillSelectExtras(viewerUserId),
+    })
     .from(skills)
-    .innerJoin(user, eq(skills.ownerUserId, user.id))
+    .innerJoin(publishables, eq(skills.id, publishables.id))
+    .innerJoin(user, eq(publishables.ownerUserId, user.id))
     .where(eq(skills.id, skillId))
     .limit(1);
   const r = rows[0];
@@ -368,10 +394,16 @@ export async function findSkillByOwnerAndSlug(
   viewerUserId: string | null = null,
 ): Promise<SkillWithOwner | null> {
   const rows = await db
-    .select({ skill: skills, owner: ownerSelect, ...skillSelectExtras(viewerUserId) })
+    .select({
+      skill: skills,
+      publishable: publishables,
+      owner: ownerSelect,
+      ...skillSelectExtras(viewerUserId),
+    })
     .from(skills)
-    .innerJoin(user, eq(skills.ownerUserId, user.id))
-    .where(and(eq(user.handle, ownerHandle), eq(skills.slug, slug)))
+    .innerJoin(publishables, eq(skills.id, publishables.id))
+    .innerJoin(user, eq(publishables.ownerUserId, user.id))
+    .where(and(eq(user.handle, ownerHandle), eq(publishables.slug, slug)))
     .limit(1);
   const r = rows[0];
   return r ? mapSkillRow(r) : null;
@@ -404,32 +436,53 @@ export interface SkillReleaseWithAuthor {
 }
 
 export async function listSkillReleases(skillId: string): Promise<SkillReleaseWithAuthor[]> {
-  const rows = await db
-    .select({ release: skillReleases, author: ownerSelect })
-    .from(skillReleases)
-    .innerJoin(user, eq(skillReleases.createdByUserId, user.id))
-    .where(eq(skillReleases.skillId, skillId))
-    .orderBy(desc(skillReleases.version));
-  return rows.map((row) => ({ ...row.release, author: row.author }));
+  const rows = await listPublishableReleases(skillId);
+  return rows.flatMap((row) => {
+    if (row.snapshot.kind !== 'skill') return [];
+    return [
+      {
+        id: row.id,
+        skillId: row.publishableId,
+        version: row.version,
+        title: row.title,
+        changelog: row.changelog,
+        snapshotFiles: row.snapshot.files,
+        createdByUserId: row.createdByUserId,
+        createdAt: row.createdAt,
+        author: row.author,
+      },
+    ];
+  });
 }
 
 export async function getSkillReleaseById(releaseId: string) {
-  const rows = await db
-    .select()
-    .from(skillReleases)
-    .where(eq(skillReleases.id, releaseId))
-    .limit(1);
-  return rows[0] ?? null;
+  const release = await getPublishableReleaseById(releaseId);
+  if (!release || release.snapshot.kind !== 'skill') return null;
+  return {
+    id: release.id,
+    skillId: release.publishableId,
+    version: release.version,
+    title: release.title,
+    changelog: release.changelog,
+    snapshotFiles: release.snapshot.files,
+    createdByUserId: release.createdByUserId,
+    createdAt: release.createdAt,
+  };
 }
 
 export async function getLatestSkillRelease(skillId: string) {
-  const rows = await db
-    .select()
-    .from(skillReleases)
-    .where(eq(skillReleases.skillId, skillId))
-    .orderBy(desc(skillReleases.version))
-    .limit(1);
-  return rows[0] ?? null;
+  const release = await getLatestPublishableRelease(skillId);
+  if (!release || release.snapshot.kind !== 'skill') return null;
+  return {
+    id: release.id,
+    skillId: release.publishableId,
+    version: release.version,
+    title: release.title,
+    changelog: release.changelog,
+    snapshotFiles: release.snapshot.files,
+    createdByUserId: release.createdByUserId,
+    createdAt: release.createdAt,
+  };
 }
 
 export async function createSkillRelease(input: {
@@ -439,26 +492,26 @@ export async function createSkillRelease(input: {
   changelog?: string;
 }) {
   const snapshotFiles = await listSkillFilesWithContent(input.skillId);
-  return db.transaction(async (tx) => {
-    const [versionRow] = await tx
-      .select({ latest: max(skillReleases.version) })
-      .from(skillReleases)
-      .where(eq(skillReleases.skillId, input.skillId));
-    const version = Number(versionRow?.latest ?? 0) + 1;
-    const [release] = await tx
-      .insert(skillReleases)
-      .values({
-        skillId: input.skillId,
-        version,
-        title: input.title,
-        changelog: input.changelog ?? '',
-        snapshotFiles,
-        createdByUserId: input.createdByUserId,
-      })
-      .returning();
-    if (!release) throw new Error('createSkillRelease: insert returned no row');
-    return release;
+  const release = await createPublishableRelease({
+    publishableId: input.skillId,
+    createdByUserId: input.createdByUserId,
+    title: input.title,
+    changelog: input.changelog ?? '',
+    snapshot: { kind: 'skill', files: snapshotFiles },
   });
+  if (release.snapshot.kind !== 'skill') {
+    throw new Error('createSkillRelease: unexpected snapshot kind');
+  }
+  return {
+    id: release.id,
+    skillId: release.publishableId,
+    version: release.version,
+    title: release.title,
+    changelog: release.changelog,
+    snapshotFiles: release.snapshot.files,
+    createdByUserId: release.createdByUserId,
+    createdAt: release.createdAt,
+  };
 }
 
 export async function ensureLatestSkillRelease(skill: SkillWithOwner) {
@@ -473,12 +526,10 @@ export async function ensureLatestSkillRelease(skill: SkillWithOwner) {
 }
 
 export async function listAllTags(): Promise<string[]> {
-  // Public + referenced rows only — private rows' tags are owner-private
-  // and shouldn't leak through the global tag cloud.
   const rows = await db
-    .select({ tags: skills.tags })
-    .from(skills)
-    .where(or(eq(skills.type, 'referenced'), eq(skills.visibility, 'public')));
+    .select({ tags: publishables.tags })
+    .from(publishables)
+    .where(eq(publishables.visibility, 'public'));
   return [...new Set(rows.flatMap((r) => r.tags))].sort();
 }
 
@@ -516,19 +567,6 @@ export async function findUserByHandle(handle: string): Promise<UserRow | null> 
   return rows[0] ?? null;
 }
 
-/**
- * Look up a user by their mozia-sso `sub` claim.
- *
- * Used by the matrix proxy auth path (spec 04): matrix backend forwards
- * `Authorization: Bearer <SKILLHUB_SERVICE_TOKEN>` + `X-SSO-SUB: <sub>`
- * and we resolve the sub to a local user row. Returns null if the user has
- * never signed in to SkillHunt directly — caller should 401 + nudge them.
- */
-export async function findUserBySsoSub(sub: string): Promise<UserRow | null> {
-  const rows = await db.select(userRowSelect).from(user).where(eq(user.ssoSub, sub)).limit(1);
-  return rows[0] ?? null;
-}
-
 export async function updateUserProfile(
   userId: string,
   patch: { name?: string; handle?: string; image?: string | null },
@@ -545,27 +583,39 @@ export async function updateUserProfile(
 /** All skills owned by this user (by handle), including private. */
 export async function listSkillsByOwner(ownerHandle: string): Promise<SkillWithOwner[]> {
   const rows = await db
-    .select({ skill: skills, owner: ownerSelect, ...skillSelectExtras(null) })
+    .select({
+      skill: skills,
+      publishable: publishables,
+      owner: ownerSelect,
+      ...skillSelectExtras(null),
+    })
     .from(skills)
-    .innerJoin(user, eq(skills.ownerUserId, user.id))
+    .innerJoin(publishables, eq(skills.id, publishables.id))
+    .innerJoin(user, eq(publishables.ownerUserId, user.id))
     .where(eq(user.handle, ownerHandle))
-    .orderBy(sql`${skills.updatedAt} DESC`);
+    .orderBy(sql`${publishables.updatedAt} DESC`);
   return rows.map(mapSkillRow);
 }
 
 /** Public-only skills owned by this user (by handle). */
 export async function listPublicSkillsByOwner(ownerHandle: string): Promise<SkillWithOwner[]> {
   const rows = await db
-    .select({ skill: skills, owner: ownerSelect, ...skillSelectExtras(null) })
+    .select({
+      skill: skills,
+      publishable: publishables,
+      owner: ownerSelect,
+      ...skillSelectExtras(null),
+    })
     .from(skills)
-    .innerJoin(user, eq(skills.ownerUserId, user.id))
+    .innerJoin(publishables, eq(skills.id, publishables.id))
+    .innerJoin(user, eq(publishables.ownerUserId, user.id))
     .where(
       and(
         eq(user.handle, ownerHandle),
-        or(eq(skills.visibility, 'public'), eq(skills.type, 'referenced')),
+        or(eq(publishables.visibility, 'public'), eq(skills.type, 'referenced')),
       ),
     )
-    .orderBy(sql`${skills.updatedAt} DESC`);
+    .orderBy(sql`${publishables.updatedAt} DESC`);
   return rows.map(mapSkillRow);
 }
 
@@ -606,29 +656,43 @@ export interface CreateSkillData {
   forkSourceReleaseId?: string | null;
   latestSyncedReleaseId?: string | null;
   forkNote?: string | null;
+  initialRelease?: {
+    title: string;
+    changelog: string;
+    createdByUserId: string;
+  };
 }
 
 export async function createOwnedSkill(input: CreateSkillData): Promise<SkillWithOwner> {
   return db.transaction(async (tx) => {
-    const [row] = await tx
-      .insert(skills)
+    const [publishable] = await tx
+      .insert(publishables)
       .values({
+        kind: 'skill',
+        ownerUserId: input.ownerUserId,
         slug: input.slug,
         name: input.name,
         description: input.description,
-        type: 'owned',
         visibility: input.visibility,
         tags: input.tags,
-        frontmatter: input.frontmatter ?? parseFrontmatter(input.skillMdContent),
         icon: input.icon ?? null,
         coverImage: input.coverImage ?? null,
+      })
+      .returning();
+    if (!publishable) throw new Error('createOwnedSkill: publishable insert returned no row');
+
+    const [row] = await tx
+      .insert(skills)
+      .values({
+        id: publishable.id,
+        type: 'owned',
+        frontmatter: input.frontmatter ?? parseFrontmatter(input.skillMdContent),
         demoVideoUrl: input.demoVideoUrl ?? null,
         parentSkillId: input.parentSkillId ?? null,
         rootSkillId: input.rootSkillId ?? null,
         forkSourceReleaseId: input.forkSourceReleaseId ?? null,
         latestSyncedReleaseId: input.latestSyncedReleaseId ?? null,
         forkNote: input.forkNote ?? null,
-        ownerUserId: input.ownerUserId,
       })
       .returning();
     if (!row) throw new Error('createOwnedSkill: insert returned no row');
@@ -637,14 +701,29 @@ export async function createOwnedSkill(input: CreateSkillData): Promise<SkillWit
       .insert(skillFiles)
       .values({ skillId: row.id, path: 'SKILL.md', content: input.skillMdContent });
 
+    if (input.initialRelease) {
+      await tx.insert(publishableReleases).values({
+        publishableId: publishable.id,
+        version: 1,
+        title: input.initialRelease.title,
+        changelog: input.initialRelease.changelog,
+        snapshot: {
+          kind: 'skill',
+          files: [{ path: 'SKILL.md', content: input.skillMdContent }],
+        },
+        createdByUserId: input.initialRelease.createdByUserId,
+      });
+    }
+
     const [ownerRow] = await tx
       .select(ownerSelect)
       .from(user)
-      .where(eq(user.id, input.ownerUserId))
+      .where(eq(user.id, publishable.ownerUserId))
       .limit(1);
     if (!ownerRow) throw new Error('createOwnedSkill: owner user disappeared mid-tx');
 
     return {
+      ...publishable,
       ...row,
       owner: ownerRow,
       upvoteCount: 0,
@@ -666,6 +745,11 @@ export interface UpdateSkillData {
   icon?: string | null;
   coverImage?: string | null;
   demoVideoUrl?: string | null;
+  release?: {
+    title: string;
+    changelog: string;
+    createdByUserId: string;
+  };
 }
 
 export async function updateOwnedSkill(
@@ -673,21 +757,33 @@ export async function updateOwnedSkill(
   input: UpdateSkillData,
 ): Promise<SkillWithOwner | null> {
   return db.transaction(async (tx) => {
-    const patch: Record<string, unknown> = { updatedAt: new Date() };
-    if (input.name !== undefined) patch.name = input.name;
-    if (input.description !== undefined) patch.description = input.description;
-    if (input.tags !== undefined) patch.tags = input.tags;
-    if (input.visibility !== undefined) patch.visibility = input.visibility;
-    if (input.icon !== undefined) patch.icon = input.icon;
-    if (input.coverImage !== undefined) patch.coverImage = input.coverImage;
-    if (input.demoVideoUrl !== undefined) patch.demoVideoUrl = input.demoVideoUrl;
-    if (input.frontmatter !== undefined) {
-      patch.frontmatter = input.frontmatter;
-    } else if (input.skillMdContent !== undefined) {
-      patch.frontmatter = parseFrontmatter(input.skillMdContent);
-    }
+    const publishablePatch: Record<string, unknown> = { updatedAt: new Date() };
+    if (input.name !== undefined) publishablePatch.name = input.name;
+    if (input.description !== undefined) publishablePatch.description = input.description;
+    if (input.tags !== undefined) publishablePatch.tags = input.tags;
+    if (input.visibility !== undefined) publishablePatch.visibility = input.visibility;
+    if (input.icon !== undefined) publishablePatch.icon = input.icon;
+    if (input.coverImage !== undefined) publishablePatch.coverImage = input.coverImage;
 
-    const [row] = await tx.update(skills).set(patch).where(eq(skills.id, skillId)).returning();
+    const skillPatch: Record<string, unknown> = {};
+    if (input.frontmatter !== undefined) {
+      skillPatch.frontmatter = input.frontmatter;
+    } else if (input.skillMdContent !== undefined) {
+      skillPatch.frontmatter = parseFrontmatter(input.skillMdContent);
+    }
+    if (input.demoVideoUrl !== undefined) skillPatch.demoVideoUrl = input.demoVideoUrl;
+
+    const [publishable] = await tx
+      .update(publishables)
+      .set(publishablePatch)
+      .where(eq(publishables.id, skillId))
+      .returning();
+    if (!publishable) return null;
+
+    const [row] =
+      Object.keys(skillPatch).length > 0
+        ? await tx.update(skills).set(skillPatch).where(eq(skills.id, skillId)).returning()
+        : await tx.select().from(skills).where(eq(skills.id, skillId)).limit(1);
     if (!row) return null;
 
     if (input.skillMdContent !== undefined) {
@@ -701,14 +797,41 @@ export async function updateOwnedSkill(
         });
     }
 
+    if (input.release) {
+      const snapshotFiles = await tx
+        .select({ path: skillFiles.path, content: skillFiles.content })
+        .from(skillFiles)
+        .where(eq(skillFiles.skillId, skillId));
+      const [versionRow] = await tx
+        .select({ latest: max(publishableReleases.version) })
+        .from(publishableReleases)
+        .where(eq(publishableReleases.publishableId, skillId));
+      await tx.insert(publishableReleases).values({
+        publishableId: skillId,
+        version: Number(versionRow?.latest ?? 0) + 1,
+        title: input.release.title,
+        changelog: input.release.changelog,
+        snapshot: {
+          kind: 'skill',
+          files: snapshotFiles.sort((a, b) => {
+            if (a.path === 'SKILL.md') return -1;
+            if (b.path === 'SKILL.md') return 1;
+            return a.path.localeCompare(b.path, 'zh-CN');
+          }),
+        },
+        createdByUserId: input.release.createdByUserId,
+      });
+    }
+
     const [ownerRow] = await tx
       .select(ownerSelect)
       .from(user)
-      .where(eq(user.id, row.ownerUserId))
+      .where(eq(user.id, publishable.ownerUserId))
       .limit(1);
     if (!ownerRow) throw new Error('updateOwnedSkill: owner user disappeared mid-tx');
 
     return {
+      ...publishable,
       ...row,
       owner: ownerRow,
       upvoteCount: 0,
@@ -721,14 +844,8 @@ export async function updateOwnedSkill(
 }
 
 export async function listSkillComments(skillId: string): Promise<SkillCommentWithAuthor[]> {
-  const rows = await db
-    .select({ comment: skillComments, author: ownerSelect })
-    .from(skillComments)
-    .innerJoin(user, eq(skillComments.userId, user.id))
-    .where(eq(skillComments.skillId, skillId))
-    .orderBy(desc(skillComments.createdAt));
-
-  return rows.map((row) => ({ ...row.comment, author: row.author }));
+  const rows = await listPublishableComments(skillId);
+  return rows.map((row) => ({ ...row, skillId: row.publishableId }));
 }
 
 export async function createSkillComment(input: {
@@ -737,136 +854,56 @@ export async function createSkillComment(input: {
   content: string;
   parentId?: string | null;
 }): Promise<SkillCommentWithAuthor> {
-  return db.transaction(async (tx) => {
-    const [comment] = await tx
-      .insert(skillComments)
-      .values({
-        skillId: input.skillId,
-        userId: input.userId,
-        content: input.content,
-        parentId: input.parentId ?? null,
-      })
-      .returning();
-    if (!comment) throw new Error('createSkillComment: insert returned no row');
-
-    const [author] = await tx
-      .select(ownerSelect)
-      .from(user)
-      .where(eq(user.id, input.userId))
-      .limit(1);
-    if (!author) throw new Error('createSkillComment: author disappeared mid-tx');
-
-    // Notify skill owner or parent comment author
-    const skill = await findSkillById(input.skillId, null);
-    if (skill) {
-      const notifyType = input.parentId ? 'reply' : 'comment';
-      const targetUserId = input.parentId
-        ? (
-            await db
-              .select()
-              .from(skillComments)
-              .where(eq(skillComments.id, input.parentId))
-              .limit(1)
-          )?.[0]?.userId
-        : skill.ownerUserId;
-      if (targetUserId) {
-        await tx.insert(notifications).values({
-          userId: targetUserId,
-          type: notifyType,
-          actorId: input.userId,
-          skillId: input.skillId,
-          commentId: comment.id,
-          read: 0,
-        });
-      }
-    }
-
-    return { ...comment, author };
+  const comment = await createPublishableComment({
+    publishableId: input.skillId,
+    userId: input.userId,
+    content: input.content,
+    parentId: input.parentId ?? null,
   });
+  return { ...comment, skillId: comment.publishableId };
 }
 
 export async function addSkillUpvote(skillId: string, userId: string): Promise<boolean> {
-  const existing = await db
-    .select({ id: skillUpvotes.id })
-    .from(skillUpvotes)
-    .where(and(eq(skillUpvotes.skillId, skillId), eq(skillUpvotes.userId, userId)))
-    .limit(1);
-  if (existing[0]) return false;
-
-  await db.insert(skillUpvotes).values({ skillId, userId });
-
-  // Notify skill owner
-  const skill = await findSkillById(skillId, null);
-  if (skill && skill.ownerUserId !== userId) {
-    await db.insert(notifications).values({
-      userId: skill.ownerUserId,
-      type: 'upvote',
-      actorId: userId,
-      skillId,
-      read: 0,
-    });
-  }
-
-  return true;
+  return addPublishableUpvote(skillId, userId);
 }
 
 export async function removeSkillUpvote(skillId: string, userId: string): Promise<boolean> {
-  const rows = await db
-    .delete(skillUpvotes)
-    .where(and(eq(skillUpvotes.skillId, skillId), eq(skillUpvotes.userId, userId)))
-    .returning({ id: skillUpvotes.id });
-  return rows.length > 0;
+  return removePublishableUpvote(skillId, userId);
 }
 
 // ─── Bookmarks ──────────────────────────────────────────────────────
 
 export async function addSkillBookmark(skillId: string, userId: string): Promise<boolean> {
-  const existing = await db
-    .select({ id: userBookmarks.id })
-    .from(userBookmarks)
-    .where(and(eq(userBookmarks.skillId, skillId), eq(userBookmarks.userId, userId)))
-    .limit(1);
-  if (existing[0]) return false;
-
-  await db.insert(userBookmarks).values({ skillId, userId });
-
-  // Notify skill owner
-  const skill = await findSkillById(skillId, null);
-  if (skill && skill.ownerUserId !== userId) {
-    await db.insert(notifications).values({
-      userId: skill.ownerUserId,
-      type: 'bookmark',
-      actorId: userId,
-      skillId,
-      read: 0,
-    });
-  }
-
-  return true;
+  return addPublishableBookmark(skillId, userId);
 }
 
 export async function removeSkillBookmark(skillId: string, userId: string): Promise<boolean> {
-  const rows = await db
-    .delete(userBookmarks)
-    .where(and(eq(userBookmarks.skillId, skillId), eq(userBookmarks.userId, userId)))
-    .returning({ id: userBookmarks.id });
-  return rows.length > 0;
+  return removePublishableBookmark(skillId, userId);
 }
 
 export async function listUserBookmarks(userId: string): Promise<SkillWithOwner[]> {
   const rows = await db
-    .select({ skill: skills, owner: ownerSelect, ...skillSelectExtras(userId) })
-    .from(userBookmarks)
-    .innerJoin(skills, eq(userBookmarks.skillId, skills.id))
-    .innerJoin(user, eq(skills.ownerUserId, user.id))
-    .where(eq(userBookmarks.userId, userId))
-    .orderBy(desc(userBookmarks.createdAt));
+    .select({
+      skill: skills,
+      publishable: publishables,
+      owner: ownerSelect,
+      ...skillSelectExtras(userId),
+    })
+    .from(publishableBookmarks)
+    .innerJoin(skills, eq(publishableBookmarks.publishableId, skills.id))
+    .innerJoin(publishables, eq(skills.id, publishables.id))
+    .innerJoin(user, eq(publishables.ownerUserId, user.id))
+    .where(eq(publishableBookmarks.userId, userId))
+    .orderBy(desc(publishableBookmarks.createdAt));
 
   return rows.map(mapSkillRow);
 }
 
 export async function deleteSkill(skillId: string): Promise<boolean> {
-  const result = await db.delete(skills).where(eq(skills.id, skillId)).returning({ id: skills.id });
+  const result = await db
+    .delete(publishables)
+    .where(and(eq(publishables.id, skillId), eq(publishables.kind, 'skill')))
+    .returning({ id: publishables.id });
   return result.length > 0;
 }
 
@@ -987,7 +1024,7 @@ export async function forkSkillToOwner(input: {
         userId: input.sourceSkill.ownerUserId,
         type: 'fork',
         actorId: input.targetOwnerUserId,
-        skillId: created.id,
+        publishableId: created.id,
         read: 0,
       });
     }
@@ -1224,9 +1261,12 @@ export async function syncForkWithUpstream(input: {
       .update(skills)
       .set({
         latestSyncedReleaseId: latestUpstreamRelease.id,
-        updatedAt: new Date(),
       })
       .where(eq(skills.id, input.forkSkill.id));
+    await tx
+      .update(publishables)
+      .set({ updatedAt: new Date() })
+      .where(eq(publishables.id, input.forkSkill.id));
 
     await tx.insert(skillSyncEvents).values({
       forkSkillId: input.forkSkill.id,
@@ -1254,7 +1294,7 @@ export async function syncForkWithUpstream(input: {
       userId: upstream.ownerUserId,
       type: 'sync',
       actorId: input.userId,
-      skillId: input.forkSkill.id,
+      publishableId: input.forkSkill.id,
       read: 0,
     });
   }
@@ -1271,20 +1311,7 @@ export async function listSyncEvents(forkSkillId: string) {
 }
 
 export async function getSkillSubscription(userId: string, skillId: string) {
-  const rows = await db
-    .select()
-    .from(skillSubscriptions)
-    .where(and(eq(skillSubscriptions.userId, userId), eq(skillSubscriptions.skillId, skillId)))
-    .limit(1);
-  const sub = rows[0];
-  if (!sub) return null;
-  return {
-    id: sub.id,
-    active: Boolean(sub.active),
-    notifyOnRelease: Boolean(sub.notifyOnRelease),
-    notifyOnSync: Boolean(sub.notifyOnSync),
-    updatedAt: sub.updatedAt,
-  };
+  return getPublishableSubscription(userId, skillId);
 }
 
 export async function setSkillSubscription(input: {
@@ -1294,27 +1321,13 @@ export async function setSkillSubscription(input: {
   notifyOnRelease: boolean;
   notifyOnSync: boolean;
 }) {
-  const now = new Date();
-  await db
-    .insert(skillSubscriptions)
-    .values({
-      userId: input.userId,
-      skillId: input.skillId,
-      active: input.active ? 1 : 0,
-      notifyOnRelease: input.notifyOnRelease ? 1 : 0,
-      notifyOnSync: input.notifyOnSync ? 1 : 0,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [skillSubscriptions.userId, skillSubscriptions.skillId],
-      set: {
-        active: input.active ? 1 : 0,
-        notifyOnRelease: input.notifyOnRelease ? 1 : 0,
-        notifyOnSync: input.notifyOnSync ? 1 : 0,
-        updatedAt: now,
-      },
-    });
-  return getSkillSubscription(input.userId, input.skillId);
+  return setPublishableSubscription({
+    userId: input.userId,
+    publishableId: input.skillId,
+    active: input.active,
+    notifyOnRelease: input.notifyOnRelease,
+    notifyOnSync: input.notifyOnSync,
+  });
 }
 
 // ─── Notifications ──────────────────────────────────────────────────
@@ -1333,19 +1346,25 @@ export interface NotificationWithActor {
   userId: string;
   type: NotificationType;
   actorId: string | null;
-  skillId: string | null;
+  publishableId: string | null;
   commentId: string | null;
   read: number;
   createdAt: Date;
   actor: OwnerInfo | null;
-  skill: { id: string; slug: string; name: string; owner: OwnerInfo } | null;
+  publishable: {
+    id: string;
+    kind: 'skill' | 'package';
+    slug: string;
+    name: string;
+    owner: OwnerInfo;
+  } | null;
 }
 
 export async function createNotification(input: {
   userId: string;
   type: NotificationType;
   actorId?: string | null;
-  skillId?: string | null;
+  publishableId?: string | null;
   commentId?: string | null;
 }): Promise<void> {
   // Don't notify yourself
@@ -1355,7 +1374,7 @@ export async function createNotification(input: {
     userId: input.userId,
     type: input.type,
     actorId: input.actorId ?? null,
-    skillId: input.skillId ?? null,
+    publishableId: input.publishableId ?? null,
     commentId: input.commentId ?? null,
     read: 0,
   });
@@ -1387,15 +1406,22 @@ export async function listNotifications(
       }
     }
 
-    let skillInfo: { id: string; slug: string; name: string; owner: OwnerInfo } | null = null;
-    if (row.skillId) {
-      const skillRow = await findSkillById(row.skillId, userId);
-      if (skillRow) {
-        skillInfo = {
-          id: skillRow.id,
-          slug: skillRow.slug,
-          name: skillRow.name,
-          owner: skillRow.owner,
+    let publishableInfo: NotificationWithActor['publishable'] = null;
+    if (row.publishableId) {
+      const publishableRows = await db
+        .select({ publishable: publishables, owner: ownerSelect })
+        .from(publishables)
+        .innerJoin(user, eq(publishables.ownerUserId, user.id))
+        .where(eq(publishables.id, row.publishableId))
+        .limit(1);
+      const publishableRow = publishableRows[0];
+      if (publishableRow) {
+        publishableInfo = {
+          id: publishableRow.publishable.id,
+          kind: publishableRow.publishable.kind,
+          slug: publishableRow.publishable.slug,
+          name: publishableRow.publishable.name,
+          owner: publishableRow.owner,
         };
       }
     }
@@ -1403,7 +1429,7 @@ export async function listNotifications(
     result.push({
       ...row,
       actor,
-      skill: skillInfo,
+      publishable: publishableInfo,
     });
   }
 

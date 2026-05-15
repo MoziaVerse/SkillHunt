@@ -2,6 +2,7 @@ import { type JWTPayload, createRemoteJWKSet, jwtVerify } from 'jose';
 
 export interface VerifiedOidcAccessToken {
   sub: string;
+  issuer: string;
   email?: string;
   name?: string;
   clientId: string | null;
@@ -24,12 +25,6 @@ const optionalEnv = (name: string): string | null => {
 };
 
 const normalizeIssuer = (issuer: string) => issuer.trim().replace(/\/+$/, '');
-
-const splitListEnv = (name: string): string[] =>
-  (process.env[name] ?? '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
 
 function stringClaim(payload: JWTPayload, name: string): string | undefined {
   const value = payload[name];
@@ -108,17 +103,11 @@ export async function verifyOidcAccessToken(
     });
     if (!payload.sub) return null;
 
-    const allowedClientIds = splitListEnv('SKILLHUNT_OIDC_ALLOWED_CLIENT_IDS');
     const clientIds = tokenClientIds(payload);
-    if (
-      allowedClientIds.length > 0 &&
-      !clientIds.some((clientId) => allowedClientIds.includes(clientId))
-    ) {
-      return null;
-    }
 
     return {
       sub: payload.sub,
+      issuer: verifiedIssuer,
       email: stringClaim(payload, 'email'),
       name:
         stringClaim(payload, 'name') ??

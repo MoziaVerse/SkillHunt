@@ -8,7 +8,9 @@ import {
 } from '../services/install-grant-service';
 import { recordSkillInstall } from '../services/install-stats-service';
 import {
+  getPublicPackageReleaseSkillFile,
   getPublicPackageSkillFile,
+  listPublicPackageReleaseSkillEntries,
   listPublicPackageSkillEntries,
 } from '../services/skill-package-service';
 import {
@@ -158,6 +160,26 @@ packageWellknownRoute.get('/:owner/:packageSlug/.well-known/agent-skills/index.j
   });
 });
 
+packageWellknownRoute.get(
+  '/:owner/:packageSlug/v/:version/.well-known/agent-skills/index.json',
+  async (c) => {
+    const ownerHandle = c.req.param('owner');
+    const packageSlug = c.req.param('packageSlug');
+    const version = Number(c.req.param('version'));
+    if (!Number.isInteger(version) || version < 1) return c.notFound();
+    const items = await listPublicPackageReleaseSkillEntries(ownerHandle, packageSlug, version);
+    if (!items) return c.notFound();
+
+    return c.json({
+      skills: items.map((item) => ({
+        name: item.protocolName,
+        description: item.skillDescription,
+        files: item.files,
+      })),
+    });
+  },
+);
+
 const handlePackageFile = async (c: import('hono').Context) => {
   const ownerHandle = c.req.param('owner');
   const packageSlug = c.req.param('packageSlug');
@@ -188,6 +210,40 @@ const handlePackageFile = async (c: import('hono').Context) => {
   return c.body(result.content);
 };
 
+const handlePackageVersionFile = async (c: import('hono').Context) => {
+  const ownerHandle = c.req.param('owner');
+  const packageSlug = c.req.param('packageSlug');
+  const version = Number(c.req.param('version'));
+  const skillName = c.req.param('skillName');
+  if (!ownerHandle || !packageSlug || !Number.isInteger(version) || version < 1 || !skillName) {
+    return c.notFound();
+  }
+
+  const prefix = `/p/${ownerHandle}/${packageSlug}/v/${version}/.well-known/agent-skills/${skillName}/`;
+  if (!c.req.path.startsWith(prefix)) return c.text('File path required', 400);
+  const filePath = c.req.path.slice(prefix.length);
+  if (isUnsafePath(filePath)) return c.text('Invalid path', 400);
+
+  const result = await getPublicPackageReleaseSkillFile({
+    ownerHandle,
+    packageSlug,
+    version,
+    protocolName: skillName,
+    path: filePath,
+  });
+  if (!result) return c.notFound();
+
+  if (filePath.toLowerCase() === 'skill.md') {
+    await recordSkillInstall(result.skillId, 'well-known', {
+      ip: c.req.header('x-forwarded-for') ?? null,
+      userAgent: c.req.header('user-agent') ?? null,
+    });
+  }
+
+  c.header('Content-Type', mimeFromPath(filePath));
+  return c.body(result.content);
+};
+
 packageWellknownRoute.get(
   '/:owner/:packageSlug/.well-known/agent-skills/:skillName',
   handlePackageFile,
@@ -195,4 +251,12 @@ packageWellknownRoute.get(
 packageWellknownRoute.get(
   '/:owner/:packageSlug/.well-known/agent-skills/:skillName/*',
   handlePackageFile,
+);
+packageWellknownRoute.get(
+  '/:owner/:packageSlug/v/:version/.well-known/agent-skills/:skillName',
+  handlePackageVersionFile,
+);
+packageWellknownRoute.get(
+  '/:owner/:packageSlug/v/:version/.well-known/agent-skills/:skillName/*',
+  handlePackageVersionFile,
 );

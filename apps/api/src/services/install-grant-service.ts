@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, gt, sql } from 'drizzle-orm';
-import { db, installGrantUses, installGrants, skillFiles, skills, user } from '../db';
+import { db, installGrantUses, installGrants, publishables, skillFiles, skills, user } from '../db';
 import { recordSkillInstall } from './install-stats-service';
 
 // 32 random bytes -> 43 chars base64url. URL becomes:
@@ -56,12 +56,13 @@ export async function peekGrantSkill(token: string): Promise<GrantedSkill | null
     .select({
       skillId: skills.id,
       ownerHandle: user.handle,
-      skillSlug: skills.slug,
-      description: skills.description,
+      skillSlug: publishables.slug,
+      description: publishables.description,
     })
     .from(installGrants)
     .innerJoin(skills, eq(installGrants.skillId, skills.id))
-    .innerJoin(user, eq(skills.ownerUserId, user.id))
+    .innerJoin(publishables, eq(skills.id, publishables.id))
+    .innerJoin(user, eq(publishables.ownerUserId, user.id))
     .where(
       and(
         eq(installGrants.token, token),
@@ -100,12 +101,13 @@ export async function peekGrantSkillForFile(
     .select({
       skillId: skills.id,
       ownerHandle: user.handle,
-      skillSlug: skills.slug,
-      description: skills.description,
+      skillSlug: publishables.slug,
+      description: publishables.description,
     })
     .from(installGrants)
     .innerJoin(skills, eq(installGrants.skillId, skills.id))
-    .innerJoin(user, eq(skills.ownerUserId, user.id))
+    .innerJoin(publishables, eq(skills.id, publishables.id))
+    .innerJoin(user, eq(publishables.ownerUserId, user.id))
     .where(usableGrantCondition(token, filePath))
     .limit(1);
 
@@ -161,9 +163,10 @@ export async function consumeGrant(
   // Load skill + verify owner/slug match (so a token for skill A can't be
   // used to fetch skill B's file via URL substitution)
   const skillRow = await db
-    .select({ skillId: skills.id, ownerHandle: user.handle, skillSlug: skills.slug })
+    .select({ skillId: skills.id, ownerHandle: user.handle, skillSlug: publishables.slug })
     .from(skills)
-    .innerJoin(user, eq(skills.ownerUserId, user.id))
+    .innerJoin(publishables, eq(skills.id, publishables.id))
+    .innerJoin(user, eq(publishables.ownerUserId, user.id))
     .where(and(eq(skills.id, grant.skillId)))
     .limit(1);
   const sk = skillRow[0];

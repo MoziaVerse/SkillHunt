@@ -1,7 +1,8 @@
 import type { Context } from 'hono';
-import { findUserById, findUserBySsoSub } from '../services/skill-service';
+import { findUserById } from '../services/skill-service';
 import { auth } from './auth';
 import { verifyOidcAccessToken } from './oidc-access-token';
+import { findUserBySsoSubject, resolveSsoUser } from './sso-user';
 
 export const API_SCOPES = [
   'profile:read',
@@ -40,6 +41,12 @@ export interface AuthContext {
 
 const PUBLIC_SCOPES: ApiScope[] = ['skills:read'];
 const FIRST_PARTY_USER_SCOPES: ApiScope[] = [...API_SCOPES];
+const TRUSTED_FIRST_PARTY_DEFAULT_SCOPES: ApiScope[] = [
+  'profile:read',
+  'skills:read',
+  'skills:read_private',
+  'skills:files:read',
+];
 const SERVICE_SCOPES: ApiScope[] = [...API_SCOPES];
 
 export const anonymousAuthContext = (): AuthContext => ({
@@ -91,14 +98,38 @@ function scopesFromOidcClaims(rawScopes: string[]): ApiScope[] {
   return [...scopes];
 }
 
+function trustedFirstPartyClientScopes(clientId: string | null): ApiScope[] | null {
+  if (!clientId) return null;
+
+  const configured = process.env.SKILLHUNT_TRUSTED_FIRST_PARTY_CLIENTS?.trim();
+  if (configured) {
+    try {
+      const parsed = JSON.parse(configured) as unknown;
+      if (Array.isArray(parsed)) {
+        for (const entry of parsed) {
+          if (!entry || typeof entry !== 'object') continue;
+          const entryClientId = 'clientId' in entry ? entry.clientId : null;
+          if (entryClientId !== clientId) continue;
+          const scopes = normalizeScopes('scopes' in entry ? entry.scopes : []);
+          return scopes.length > 0 ? scopes : [...TRUSTED_FIRST_PARTY_DEFAULT_SCOPES];
+        }
+      }
+    } catch {
+      // Malformed config should fail closed for private/write scopes.
+    }
+  }
+
+  const clientIds = new Set(splitListEnv('SKILLHUNT_TRUSTED_FIRST_PARTY_CLIENT_IDS'));
+  if (!clientIds.has(clientId)) return null;
+  return [...TRUSTED_FIRST_PARTY_DEFAULT_SCOPES];
+}
+
 function scopesForOidcAccessToken(rawScopes: string[], clientId: string | null): ApiScope[] {
   const apiScopes = normalizeScopes(rawScopes);
   if (apiScopes.length > 0) return scopesFromOidcClaims(rawScopes);
 
-  const explicitlyAllowedClientIds = splitListEnv('SKILLHUNT_OIDC_ALLOWED_CLIENT_IDS');
-  if (clientId && explicitlyAllowedClientIds.includes(clientId)) {
-    return [...FIRST_PARTY_USER_SCOPES];
-  }
+  const trustedScopes = trustedFirstPartyClientScopes(clientId);
+  if (trustedScopes) return trustedScopes;
 
   return scopesFromOidcClaims(rawScopes);
 }
@@ -160,7 +191,7 @@ export async function getAuthContext(c: Context): Promise<AuthContext> {
   if (serviceToken && bearer === serviceToken) {
     const sub = c.req.header('x-sso-sub');
     if (!sub) return anonymousAuthContext();
-    const row = await findUserBySsoSub(sub);
+    const row = await findUserBySsoSubject(sub);
     if (!row) return anonymousAuthContext();
     return userContext(
       { id: row.id, email: row.email, name: row.name, ssoSub: sub },
@@ -185,8 +216,13 @@ export async function getAuthContext(c: Context): Promise<AuthContext> {
 
     const oidc = await verifyOidcAccessToken(bearer);
     if (oidc) {
-      const row = await findUserBySsoSub(oidc.sub);
-      if (!row) return anonymousAuthContext();
+      const row = await resolveSsoUser({
+        provider: 'casdoor',
+        issuer: oidc.issuer,
+        subject: oidc.sub,
+        email: oidc.email,
+        name: oidc.name,
+      });
       return userContext(
         { id: row.id, email: row.email, name: row.name, ssoSub: row.ssoSub ?? oidc.sub },
         'oidc_access_token',

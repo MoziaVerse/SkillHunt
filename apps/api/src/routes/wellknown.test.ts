@@ -1,7 +1,16 @@
 import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
-import { inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
-import { db, skillFiles, skillPackageItems, skillPackages, skills, user } from '../db';
+import {
+  db,
+  publishableReleases,
+  publishables,
+  skillFiles,
+  skillPackageItems,
+  skillPackages,
+  skills,
+  user,
+} from '../db';
 import { skillProtocolName } from '../lib/protocol-name';
 import { packageWellknownRoute, wellknownRoute } from './wellknown';
 
@@ -10,10 +19,82 @@ const packageApp = new Hono().route('/p', packageWellknownRoute);
 const OWNER_ID = 'mozia-virtual';
 const ALICE_ID = 'alice-owner';
 
+async function insertTestSkill(input: {
+  ownerUserId: string;
+  slug: string;
+  name: string;
+  description: string;
+  type: 'owned' | 'referenced';
+  visibility: 'public' | 'private';
+  tags: string[];
+  frontmatter?: Record<string, unknown> | null;
+  sourceRepo?: string | null;
+  sourceSkillName?: string | null;
+  sourceInstallCommand?: string | null;
+  sourceUrl?: string | null;
+}) {
+  const [publishable] = await db
+    .insert(publishables)
+    .values({
+      kind: 'skill',
+      ownerUserId: input.ownerUserId,
+      slug: input.slug,
+      name: input.name,
+      description: input.description,
+      visibility: input.visibility,
+      tags: input.tags,
+    })
+    .returning();
+  if (!publishable) throw new Error('seed: publishable skill insert failed');
+
+  const [skill] = await db
+    .insert(skills)
+    .values({
+      id: publishable.id,
+      type: input.type,
+      frontmatter: input.frontmatter ?? null,
+      sourceRepo: input.sourceRepo ?? null,
+      sourceSkillName: input.sourceSkillName ?? null,
+      sourceInstallCommand: input.sourceInstallCommand ?? null,
+      sourceUrl: input.sourceUrl ?? null,
+    })
+    .returning();
+  if (!skill) throw new Error('seed: skill extension insert failed');
+  return { ...publishable, ...skill };
+}
+
+async function insertTestPackage(input: {
+  ownerUserId: string;
+  slug: string;
+  name: string;
+  description: string;
+  visibility: 'public' | 'private';
+  tags: string[];
+}) {
+  const [publishable] = await db
+    .insert(publishables)
+    .values({
+      kind: 'package',
+      ownerUserId: input.ownerUserId,
+      slug: input.slug,
+      name: input.name,
+      description: input.description,
+      visibility: input.visibility,
+      tags: input.tags,
+    })
+    .returning();
+  if (!publishable) throw new Error('seed: publishable package insert failed');
+
+  const [pkg] = await db.insert(skillPackages).values({ id: publishable.id }).returning();
+  if (!pkg) throw new Error('seed: package extension insert failed');
+  return { ...publishable, ...pkg };
+}
+
 async function resetAndSeed() {
   await db.delete(skillPackageItems);
   await db.delete(skillPackages);
   await db.delete(skills);
+  await db.delete(publishables);
   await db.delete(user).where(inArray(user.id, [OWNER_ID, ALICE_ID]));
   await db.insert(user).values({
     id: OWNER_ID,
@@ -24,20 +105,16 @@ async function resetAndSeed() {
     isVirtual: true,
   });
 
-  const [ownedPublic] = await db
-    .insert(skills)
-    .values({
-      slug: 'test-owned-public',
-      name: 'test-owned-public',
-      description: 'owned + public for testing',
-      type: 'owned',
-      visibility: 'public',
-      tags: [],
-      frontmatter: { name: 'test-owned-public' },
-      ownerUserId: OWNER_ID,
-    })
-    .returning();
-  if (!ownedPublic) throw new Error('seed: ownedPublic insert failed');
+  const ownedPublic = await insertTestSkill({
+    slug: 'test-owned-public',
+    name: 'test-owned-public',
+    description: 'owned + public for testing',
+    type: 'owned',
+    visibility: 'public',
+    tags: [],
+    frontmatter: { name: 'test-owned-public' },
+    ownerUserId: OWNER_ID,
+  });
 
   await db.insert(skillFiles).values([
     {
@@ -48,20 +125,16 @@ async function resetAndSeed() {
     { skillId: ownedPublic.id, path: 'extra.md', content: '# extra\n' },
   ]);
 
-  const [ownedPriv] = await db
-    .insert(skills)
-    .values({
-      slug: 'test-owned-private',
-      name: 'test-owned-private',
-      description: 'owned + private for testing',
-      type: 'owned',
-      visibility: 'private',
-      tags: [],
-      frontmatter: { name: 'test-owned-private' },
-      ownerUserId: OWNER_ID,
-    })
-    .returning();
-  if (!ownedPriv) throw new Error('seed: ownedPriv insert failed');
+  const ownedPriv = await insertTestSkill({
+    slug: 'test-owned-private',
+    name: 'test-owned-private',
+    description: 'owned + private for testing',
+    type: 'owned',
+    visibility: 'private',
+    tags: [],
+    frontmatter: { name: 'test-owned-private' },
+    ownerUserId: OWNER_ID,
+  });
 
   await db.insert(skillFiles).values({
     skillId: ownedPriv.id,
@@ -69,7 +142,7 @@ async function resetAndSeed() {
     content: '---\nname: test-owned-private\ndescription: x\n---\n# private\n',
   });
 
-  await db.insert(skills).values({
+  await insertTestSkill({
     slug: 'test-ref',
     name: 'test-ref',
     description: 'referenced for testing',
@@ -83,18 +156,14 @@ async function resetAndSeed() {
     ownerUserId: OWNER_ID,
   });
 
-  const [pkg] = await db
-    .insert(skillPackages)
-    .values({
-      ownerUserId: OWNER_ID,
-      slug: 'case-suite',
-      name: '案件工作包',
-      description: '一次安装案件处理相关 skills',
-      visibility: 'public',
-      tags: [],
-    })
-    .returning();
-  if (!pkg) throw new Error('seed: package insert failed');
+  const pkg = await insertTestPackage({
+    ownerUserId: OWNER_ID,
+    slug: 'case-suite',
+    name: '案件工作包',
+    description: '一次安装案件处理相关 skills',
+    visibility: 'public',
+    tags: [],
+  });
 
   await db.insert(skillPackageItems).values([
     {
@@ -109,7 +178,7 @@ async function resetAndSeed() {
     },
   ]);
 
-  await db.insert(skillPackages).values({
+  await insertTestPackage({
     ownerUserId: OWNER_ID,
     slug: 'private-suite',
     name: '私有工作包',
@@ -123,6 +192,7 @@ async function cleanup() {
   await db.delete(skillPackageItems);
   await db.delete(skillPackages);
   await db.delete(skills);
+  await db.delete(publishables);
   await db.delete(user).where(inArray(user.id, [OWNER_ID, ALICE_ID]));
 }
 
@@ -220,20 +290,16 @@ describe('well-known endpoint', () => {
       emailVerified: true,
     });
 
-    const [skill] = await db
-      .insert(skills)
-      .values({
-        slug: 'shared-skill',
-        name: 'shared-skill',
-        description: 'alice owned public skill',
-        type: 'owned',
-        visibility: 'public',
-        tags: [],
-        frontmatter: { name: 'shared-skill' },
-        ownerUserId: ALICE_ID,
-      })
-      .returning();
-    if (!skill) throw new Error('seed: alice skill insert failed');
+    const skill = await insertTestSkill({
+      slug: 'shared-skill',
+      name: 'shared-skill',
+      description: 'alice owned public skill',
+      type: 'owned',
+      visibility: 'public',
+      tags: [],
+      frontmatter: { name: 'shared-skill' },
+      ownerUserId: ALICE_ID,
+    });
 
     await db.insert(skillFiles).values({
       skillId: skill.id,
@@ -278,6 +344,64 @@ describe('well-known endpoint', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/markdown');
     expect(await res.text()).toContain('test-owned-public');
+  });
+
+  it('package version route serves a frozen release snapshot', async () => {
+    const [pkg] = await db
+      .select({ package: skillPackages, publishable: publishables })
+      .from(skillPackages)
+      .innerJoin(publishables, eq(skillPackages.id, publishables.id))
+      .where(eq(publishables.slug, 'case-suite'))
+      .limit(1);
+    const [skill] = await db
+      .select({ skill: skills, publishable: publishables })
+      .from(skills)
+      .innerJoin(publishables, eq(skills.id, publishables.id))
+      .where(eq(publishables.slug, 'test-owned-public'))
+      .limit(1);
+    if (!pkg || !skill) throw new Error('seed missing package or skill');
+
+    await db.insert(publishableReleases).values({
+      publishableId: pkg.package.id,
+      version: 1,
+      title: '冻结版本',
+      changelog: '固定包内 Skill 文件。',
+      snapshot: {
+        kind: 'package',
+        items: [
+          {
+            skillId: skill.skill.id,
+            ownerHandle: 'mozia',
+            skillSlug: skill.publishable.slug,
+            skillName: skill.publishable.name,
+            skillDescription: skill.publishable.description,
+            protocolName: skillProtocolName('mozia', skill.publishable.slug),
+            position: 0,
+            note: null,
+            skillReleaseId: 'release-snapshot',
+            skillVersion: 1,
+            files: [{ path: 'SKILL.md', content: '# frozen package release\n' }],
+          },
+        ],
+      },
+      createdByUserId: OWNER_ID,
+    });
+
+    const index = await packageApp.fetch(
+      new Request('http://localhost/p/mozia/case-suite/v/1/.well-known/agent-skills/index.json'),
+    );
+    expect(index.status).toBe(200);
+    const body = (await index.json()) as { skills: Array<{ name: string; files: string[] }> };
+    expect(body.skills[0]?.name).toBe('test-owned-public');
+    expect(body.skills[0]?.files).toEqual(['SKILL.md']);
+
+    const file = await packageApp.fetch(
+      new Request(
+        'http://localhost/p/mozia/case-suite/v/1/.well-known/agent-skills/test-owned-public/SKILL.md',
+      ),
+    );
+    expect(file.status).toBe(200);
+    expect(await file.text()).toBe('# frozen package release\n');
   });
 
   it('package file route does not expose private package items', async () => {

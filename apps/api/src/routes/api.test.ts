@@ -4,20 +4,18 @@ import { Hono } from 'hono';
 import {
   db,
   notifications,
-  skillComments,
+  publishableBookmarks,
+  publishableComments,
+  publishableReleases,
+  publishableSubscriptions,
+  publishableUpvotes,
+  publishables,
   skillFiles,
-  skillPackageComments,
   skillPackageItems,
-  skillPackageUpvotes,
   skillPackages,
-  skillReleases,
-  skillSubscriptions,
   skillSyncEvents,
-  skillUpvotes,
   skills,
   user,
-  userBookmarks,
-  userPackageBookmarks,
 } from '../db';
 import type { AuthContext } from '../lib/auth-context';
 import { VIDEO_UPLOAD_MAX_BYTES, skillListItemSchema } from '../lib/dto';
@@ -45,6 +43,7 @@ const FULL_TEST_SCOPES = [
 const HEADER = 'x-test-user';
 
 mock.module('../lib/auth-context', () => ({
+  hasScope: (ctx: AuthContext, scope: AuthContext['scopes'][number]) => ctx.scopes.includes(scope),
   getAuthContext: async (c: {
     req: { header: (k: string) => string | undefined };
   }): Promise<AuthContext> => {
@@ -86,20 +85,62 @@ beforeAll(async () => {
   app = new Hono().route('/api', apiRoute);
 });
 
+async function insertTestSkill(input: {
+  ownerUserId: string;
+  slug: string;
+  name: string;
+  description: string;
+  type: 'owned' | 'referenced';
+  visibility: 'public' | 'private';
+  tags: string[];
+  frontmatter?: Record<string, unknown> | null;
+  sourceRepo?: string | null;
+  sourceSkillName?: string | null;
+  sourceInstallCommand?: string | null;
+  sourceUrl?: string | null;
+}) {
+  const [publishable] = await db
+    .insert(publishables)
+    .values({
+      kind: 'skill',
+      ownerUserId: input.ownerUserId,
+      slug: input.slug,
+      name: input.name,
+      description: input.description,
+      visibility: input.visibility,
+      tags: input.tags,
+    })
+    .returning();
+  if (!publishable) throw new Error('seed: publishable skill insert failed');
+
+  const [skill] = await db
+    .insert(skills)
+    .values({
+      id: publishable.id,
+      type: input.type,
+      frontmatter: input.frontmatter ?? null,
+      sourceRepo: input.sourceRepo ?? null,
+      sourceSkillName: input.sourceSkillName ?? null,
+      sourceInstallCommand: input.sourceInstallCommand ?? null,
+      sourceUrl: input.sourceUrl ?? null,
+    })
+    .returning();
+  if (!skill) throw new Error('seed: skill extension insert failed');
+  return { ...publishable, ...skill };
+}
+
 async function resetAndSeed() {
   await db.delete(notifications);
-  await db.delete(userPackageBookmarks);
-  await db.delete(skillPackageUpvotes);
-  await db.delete(skillPackageComments);
-  await db.delete(userBookmarks);
-  await db.delete(skillUpvotes);
-  await db.delete(skillComments);
+  await db.delete(publishableBookmarks);
+  await db.delete(publishableUpvotes);
+  await db.delete(publishableComments);
   await db.delete(skillSyncEvents);
-  await db.delete(skillSubscriptions);
-  await db.delete(skillReleases);
+  await db.delete(publishableSubscriptions);
+  await db.delete(publishableReleases);
   await db.delete(skillPackageItems);
   await db.delete(skillPackages);
   await db.delete(skills);
+  await db.delete(publishables);
   await db.delete(user).where(inArray(user.id, [OWNER_USER_ID, OTHER_USER_ID]));
 
   await db.insert(user).values([
@@ -120,20 +161,16 @@ async function resetAndSeed() {
   ]);
 
   // owned + public, owned by tester
-  const [ownedPub] = await db
-    .insert(skills)
-    .values({
-      slug: 'test-owned-pub',
-      name: 'test-owned-pub',
-      description: 'magical owned skill',
-      type: 'owned',
-      visibility: 'public',
-      tags: ['design'],
-      frontmatter: { name: 'test-owned-pub' },
-      ownerUserId: OWNER_USER_ID,
-    })
-    .returning();
-  if (!ownedPub) throw new Error('seed: ownedPub insert failed');
+  const ownedPub = await insertTestSkill({
+    slug: 'test-owned-pub',
+    name: 'test-owned-pub',
+    description: 'magical owned skill',
+    type: 'owned',
+    visibility: 'public',
+    tags: ['design'],
+    frontmatter: { name: 'test-owned-pub' },
+    ownerUserId: OWNER_USER_ID,
+  });
   await db.insert(skillFiles).values({
     skillId: ownedPub.id,
     path: 'SKILL.md',
@@ -141,20 +178,16 @@ async function resetAndSeed() {
   });
 
   // owned + private, owned by tester
-  const [ownedPriv] = await db
-    .insert(skills)
-    .values({
-      slug: 'test-owned-priv',
-      name: 'test-owned-priv',
-      description: 'private only',
-      type: 'owned',
-      visibility: 'private',
-      tags: ['writing'],
-      frontmatter: { name: 'test-owned-priv' },
-      ownerUserId: OWNER_USER_ID,
-    })
-    .returning();
-  if (!ownedPriv) throw new Error('seed: ownedPriv insert failed');
+  const ownedPriv = await insertTestSkill({
+    slug: 'test-owned-priv',
+    name: 'test-owned-priv',
+    description: 'private only',
+    type: 'owned',
+    visibility: 'private',
+    tags: ['writing'],
+    frontmatter: { name: 'test-owned-priv' },
+    ownerUserId: OWNER_USER_ID,
+  });
   await db.insert(skillFiles).values([
     {
       skillId: ownedPriv.id,
@@ -169,7 +202,7 @@ async function resetAndSeed() {
   ]);
 
   // referenced, owned by other
-  await db.insert(skills).values({
+  await insertTestSkill({
     slug: 'test-ref',
     name: 'test-ref',
     description: 'referenced skill',
@@ -185,15 +218,16 @@ async function resetAndSeed() {
 }
 
 async function cleanup() {
-  await db.delete(userPackageBookmarks);
-  await db.delete(skillPackageUpvotes);
-  await db.delete(skillPackageComments);
+  await db.delete(publishableBookmarks);
+  await db.delete(publishableUpvotes);
+  await db.delete(publishableComments);
   await db.delete(skillSyncEvents);
-  await db.delete(skillSubscriptions);
-  await db.delete(skillReleases);
+  await db.delete(publishableSubscriptions);
+  await db.delete(publishableReleases);
   await db.delete(skillPackageItems);
   await db.delete(skillPackages);
   await db.delete(skills);
+  await db.delete(publishables);
   await db.delete(user).where(inArray(user.id, [OWNER_USER_ID, OTHER_USER_ID]));
 }
 
@@ -370,20 +404,6 @@ describe('business API', () => {
     });
   });
 
-  describe('GET /api/skills/:slug (legacy)', () => {
-    it('returns 302 to canonical URL when slug exists', async () => {
-      const res = await app.fetch(reqAnon('/api/skills/test-owned-pub'));
-      expect(res.status).toBe(302);
-      const loc = res.headers.get('location') ?? '';
-      expect(loc).toContain(`/api/skills/${OWNER_NAME}/test-owned-pub`);
-    });
-
-    it('returns 404 when slug does not exist', async () => {
-      const res = await app.fetch(reqAnon('/api/skills/no-such'));
-      expect(res.status).toBe(404);
-    });
-  });
-
   describe('GET /api/tags', () => {
     it('returns tags from public + referenced only (private tags hidden)', async () => {
       const res = await app.fetch(reqAnon('/api/tags'));
@@ -438,6 +458,92 @@ describe('business API', () => {
       );
       expect(body.skills).toHaveLength(1);
       expect(body.skills[0]?.protocolName).toBe(skillProtocolName(OWNER_NAME, 'test-owned-pub'));
+    });
+
+    it('lists skills and packages through the unified publishables API', async () => {
+      const skillId = await publicSkillId();
+      const created = await app.fetch(
+        reqAsUser(
+          '/api/packages',
+          OWNER_USER_ID,
+          jsonInit({
+            owner: OWNER_NAME,
+            slug: 'publishable-suite',
+            name: '统一发现工作包',
+            description: '用于测试统一内容列表',
+            visibility: 'public',
+            tags: ['case'],
+            skillIds: [skillId],
+          }),
+        ),
+      );
+      expect(created.status).toBe(201);
+
+      const all = await app.fetch(reqAnon('/api/publishables?sort=recent&limit=20'));
+      expect(all.status).toBe(200);
+      const allBody = (await all.json()) as {
+        items: Array<{ kind: 'skill' | 'package'; item: { slug: string } }>;
+        total: number;
+      };
+      expect(allBody.items.some((item) => item.kind === 'skill')).toBe(true);
+      expect(
+        allBody.items.some(
+          (item) => item.kind === 'package' && item.item.slug === 'publishable-suite',
+        ),
+      ).toBe(true);
+
+      const packagesOnly = await app.fetch(reqAnon('/api/publishables?kind=package'));
+      const packagesBody = (await packagesOnly.json()) as {
+        items: Array<{ kind: string; item: { slug: string } }>;
+      };
+      expect(packagesBody.items.every((item) => item.kind === 'package')).toBe(true);
+      expect(packagesBody.items.map((item) => item.item.slug)).toContain('publishable-suite');
+    });
+
+    it('publishes package releases with changelog and versioned install command', async () => {
+      const skillId = await publicSkillId();
+      const created = await app.fetch(
+        reqAsUser(
+          '/api/packages',
+          OWNER_USER_ID,
+          jsonInit({
+            owner: OWNER_NAME,
+            slug: 'versioned-suite',
+            name: '可版本化工作包',
+            description: '用于测试包版本',
+            visibility: 'public',
+            tags: ['case'],
+            skillIds: [skillId],
+            releaseChangelog: '创建第一个可安装包版本。',
+          }),
+        ),
+      );
+      expect(created.status).toBe(201);
+
+      const firstList = await app.fetch(
+        reqAnon(`/api/packages/${OWNER_NAME}/versioned-suite/releases`),
+      );
+      expect(firstList.status).toBe(200);
+      const firstBody = (await firstList.json()) as {
+        items: Array<{ version: number; changelog: string; installCommand: string }>;
+      };
+      expect(firstBody.items[0]?.version).toBe(1);
+      expect(firstBody.items[0]?.changelog).toBe('创建第一个可安装包版本。');
+      expect(firstBody.items[0]?.installCommand).toBe(
+        `npx skills add http://localhost/p/${OWNER_NAME}/versioned-suite/v/1 --skill '*' -y`,
+      );
+
+      const second = await app.fetch(
+        reqAsUser(
+          `/api/packages/${OWNER_NAME}/versioned-suite/releases`,
+          OWNER_USER_ID,
+          jsonInit({ title: '补充说明', changelog: '更新包内说明。' }),
+        ),
+      );
+      expect(second.status).toBe(201);
+      const secondBody = (await second.json()) as { version: number; changelog: string };
+      expect(secondBody.version).toBe(2);
+      expect(secondBody.changelog).toBe('更新包内说明。');
     });
 
     it('lists public packages for anonymous users', async () => {
@@ -958,12 +1064,35 @@ describe('business API', () => {
       expect(body.skillMdContent).toContain('Fork 自 acme/repo/test-ref');
     });
 
+    it('allows the first release without a changelog but requires one later', async () => {
+      const first = await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/releases`,
+          OWNER_USER_ID,
+          jsonInit({ title: '缺少说明' }),
+        ),
+      );
+      expect(first.status).toBe(201);
+      const firstBody = (await first.json()) as { version: number; changelog: string };
+      expect(firstBody.version).toBe(1);
+      expect(firstBody.changelog).toBe('');
+
+      const second = await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/releases`,
+          OWNER_USER_ID,
+          jsonInit({ title: '第二次发布' }),
+        ),
+      );
+      expect(second.status).toBe(400);
+    });
+
     it('reports upstream updates for a linked fork', async () => {
       await app.fetch(
         reqAsUser(
           `/api/skills/${OWNER_NAME}/test-owned-pub/releases`,
           OWNER_USER_ID,
-          jsonInit({ title: '首次发布' }),
+          jsonInit({ title: '首次发布', changelog: '建立初始版本。' }),
         ),
       );
       const fork = await app.fetch(
@@ -982,7 +1111,7 @@ describe('business API', () => {
         reqAsUser(
           `/api/skills/${OWNER_NAME}/test-owned-pub/releases`,
           OWNER_USER_ID,
-          jsonInit({ title: '新增参考文件' }),
+          jsonInit({ title: '新增参考文件', changelog: '新增 reference.md 参考文件。' }),
         ),
       );
 
@@ -1005,7 +1134,7 @@ describe('business API', () => {
         reqAsUser(
           `/api/skills/${OWNER_NAME}/test-owned-pub/releases`,
           OWNER_USER_ID,
-          jsonInit({ title: '首次发布' }),
+          jsonInit({ title: '首次发布', changelog: '建立初始版本。' }),
         ),
       );
       await app.fetch(
@@ -1022,7 +1151,7 @@ describe('business API', () => {
         reqAsUser(
           `/api/skills/${OWNER_NAME}/test-owned-pub/releases`,
           OWNER_USER_ID,
-          jsonInit({ title: '新增参考文件' }),
+          jsonInit({ title: '新增参考文件', changelog: '新增 reference.md 参考文件。' }),
         ),
       );
 
@@ -1049,7 +1178,7 @@ describe('business API', () => {
         reqAsUser(
           `/api/skills/${OWNER_NAME}/test-owned-pub/releases`,
           OWNER_USER_ID,
-          jsonInit({ title: '首次发布' }),
+          jsonInit({ title: '首次发布', changelog: '建立初始版本。' }),
         ),
       );
       await app.fetch(
@@ -1066,7 +1195,7 @@ describe('business API', () => {
         reqAsUser(
           `/api/skills/${OWNER_NAME}/test-owned-pub/releases`,
           OWNER_USER_ID,
-          jsonInit({ title: '上游修改' }),
+          jsonInit({ title: '上游修改', changelog: '更新上游 SKILL.md 内容。' }),
         ),
       );
       await app.fetch(
@@ -1116,7 +1245,7 @@ describe('business API', () => {
         userId: OTHER_USER_ID,
         type: 'comment',
         actorId: OWNER_USER_ID,
-        skillId: 'test-skill-id',
+        publishableId: 'test-skill-id',
         read: 0,
       });
 
@@ -1399,32 +1528,25 @@ describe('business API', () => {
     });
   });
 
-  describe('GET /api/users/me', () => {
+  describe('GET /api/me', () => {
     it('401 for anonymous', async () => {
-      const res = await app.fetch(reqAnon('/api/users/me'));
+      const res = await app.fetch(reqAnon('/api/me'));
       expect(res.status).toBe(401);
     });
 
     it('returns current user', async () => {
-      const res = await app.fetch(reqAsUser('/api/users/me', OWNER_USER_ID));
+      const res = await app.fetch(reqAsUser('/api/me', OWNER_USER_ID));
       expect(res.status).toBe(200);
       const body = (await res.json()) as { name: string; isVirtual: boolean };
       expect(body.name).toBe(OWNER_NAME);
       expect(body.isVirtual).toBe(false);
     });
-
-    it('also supports the canonical /api/me endpoint', async () => {
-      const res = await app.fetch(reqAsUser('/api/me', OWNER_USER_ID));
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as { handle: string };
-      expect(body.handle).toBe(OWNER_NAME);
-    });
   });
 
-  describe('PATCH /api/users/me/profile', () => {
+  describe('PATCH /api/me/profile', () => {
     it('updates display name to anything (including spaces, mixed case)', async () => {
       const res = await app.fetch(
-        reqAsUser('/api/users/me/profile', OWNER_USER_ID, jsonInit({ name: '张三 Mr.' }, 'PATCH')),
+        reqAsUser('/api/me/profile', OWNER_USER_ID, jsonInit({ name: '张三 Mr.' }, 'PATCH')),
       );
       expect(res.status).toBe(200);
       const body = (await res.json()) as { name: string; handle: string };
@@ -1434,11 +1556,7 @@ describe('business API', () => {
 
     it('updates handle to a new url-safe value', async () => {
       const res = await app.fetch(
-        reqAsUser(
-          '/api/users/me/profile',
-          OWNER_USER_ID,
-          jsonInit({ handle: 'newhandle' }, 'PATCH'),
-        ),
+        reqAsUser('/api/me/profile', OWNER_USER_ID, jsonInit({ handle: 'newhandle' }, 'PATCH')),
       );
       expect(res.status).toBe(200);
       const body = (await res.json()) as { handle: string };
@@ -1447,50 +1565,42 @@ describe('business API', () => {
 
     it('409 when handle taken', async () => {
       const res = await app.fetch(
-        reqAsUser(
-          '/api/users/me/profile',
-          OWNER_USER_ID,
-          jsonInit({ handle: OTHER_NAME }, 'PATCH'),
-        ),
+        reqAsUser('/api/me/profile', OWNER_USER_ID, jsonInit({ handle: OTHER_NAME }, 'PATCH')),
       );
       expect(res.status).toBe(409);
     });
 
     it('400 for invalid handle', async () => {
       const res = await app.fetch(
-        reqAsUser(
-          '/api/users/me/profile',
-          OWNER_USER_ID,
-          jsonInit({ handle: 'Has Spaces' }, 'PATCH'),
-        ),
+        reqAsUser('/api/me/profile', OWNER_USER_ID, jsonInit({ handle: 'Has Spaces' }, 'PATCH')),
       );
       expect(res.status).toBe(400);
     });
 
     it('400 for reserved handle', async () => {
       const res = await app.fetch(
-        reqAsUser('/api/users/me/profile', OWNER_USER_ID, jsonInit({ handle: 'admin' }, 'PATCH')),
+        reqAsUser('/api/me/profile', OWNER_USER_ID, jsonInit({ handle: 'admin' }, 'PATCH')),
       );
       expect(res.status).toBe(400);
     });
 
     it('400 when neither name nor handle provided', async () => {
       const res = await app.fetch(
-        reqAsUser('/api/users/me/profile', OWNER_USER_ID, jsonInit({}, 'PATCH')),
+        reqAsUser('/api/me/profile', OWNER_USER_ID, jsonInit({}, 'PATCH')),
       );
       expect(res.status).toBe(400);
     });
   });
 
-  describe('GET /api/users/me/skills', () => {
+  describe('GET /api/me/skills', () => {
     it('lists owner public + private', async () => {
-      const res = await app.fetch(reqAsUser('/api/users/me/skills', OWNER_USER_ID));
+      const res = await app.fetch(reqAsUser('/api/me/skills', OWNER_USER_ID));
       expect(res.status).toBe(200);
       const body = (await res.json()) as { items: Array<{ slug: string }> };
       expect(body.items.map((i) => i.slug).sort()).toEqual(['test-owned-priv', 'test-owned-pub']);
     });
 
-    it('supports /api/me/skills and honors private-read scope', async () => {
+    it('honors private-read scope', async () => {
       const res = await app.fetch(
         reqAsUserWithScopes('/api/me/skills', OWNER_USER_ID, ['skills:read']),
       );
@@ -1600,6 +1710,45 @@ describe('business API', () => {
     });
   });
 
+  describe('GET /api/users/:owner/publishables', () => {
+    it('returns a mixed user profile feed with skills and packages', async () => {
+      const skillRes = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`));
+      const skill = (await skillRes.json()) as { id: string };
+      const created = await app.fetch(
+        reqAsUser(
+          '/api/packages',
+          OWNER_USER_ID,
+          jsonInit({
+            owner: OWNER_NAME,
+            slug: 'profile-mixed-suite',
+            name: '主页混合包',
+            description: '用于测试用户主页统一内容流',
+            visibility: 'public',
+            tags: [],
+            skillIds: [skill.id],
+          }),
+        ),
+      );
+      expect(created.status).toBe(201);
+
+      const res = await app.fetch(reqAnon(`/api/users/${OWNER_NAME}/publishables`));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        owner: { handle: string };
+        items: Array<{ kind: 'skill' | 'package'; item: { slug: string } }>;
+        total: number;
+      };
+      expect(body.owner.handle).toBe(OWNER_NAME);
+      expect(body.items.some((item) => item.kind === 'skill')).toBe(true);
+      expect(
+        body.items.some(
+          (item) => item.kind === 'package' && item.item.slug === 'profile-mixed-suite',
+        ),
+      ).toBe(true);
+      expect(body.total).toBe(body.items.length);
+    });
+  });
+
   // ── Capability URL ─────────────────────────────────────────────────
 
   describe('Capability URL: mint + consume', () => {
@@ -1613,7 +1762,7 @@ describe('business API', () => {
       // the skills service by hitting a public skill (ids exposed nowhere). We
       // instead fetch the public skill detail to confirm we can hit /api/install-tokens.
       // For private skill we need to look up id — use list-as-owner.
-      const list = await app.fetch(reqAsUser('/api/users/me/skills', OWNER_USER_ID));
+      const list = await app.fetch(reqAsUser('/api/me/skills', OWNER_USER_ID));
       const listBody = (await list.json()) as { items: Array<{ slug: string }> };
       expect(listBody.items.find((i) => i.slug === sk.slug)).toBeDefined();
       // We can't easily get skill.id without DB. Use the helper exported by service.
@@ -1820,14 +1969,14 @@ describe('business API', () => {
     });
   });
 
-  describe('GET /api/users/me/bookmarks', () => {
+  describe('GET /api/me/bookmarks', () => {
     it('returns bookmarks for authenticated user', async () => {
       await app.fetch(
         reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/bookmark`, OTHER_USER_ID, {
           method: 'POST',
         }),
       );
-      const res = await app.fetch(reqAsUser('/api/users/me/bookmarks', OTHER_USER_ID));
+      const res = await app.fetch(reqAsUser('/api/me/bookmarks', OTHER_USER_ID));
       expect(res.status).toBe(200);
       const body = (await res.json()) as { items: Array<{ slug: string }> };
       expect(body.items.length).toBeGreaterThanOrEqual(1);
@@ -1835,7 +1984,7 @@ describe('business API', () => {
     });
 
     it('401 for anonymous', async () => {
-      const res = await app.fetch(reqAnon('/api/users/me/bookmarks'));
+      const res = await app.fetch(reqAnon('/api/me/bookmarks'));
       expect(res.status).toBe(401);
     });
   });

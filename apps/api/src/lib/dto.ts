@@ -31,6 +31,18 @@ export const listPackagesQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).optional().default(0),
 });
 
+export const listPublishablesQuerySchema = z.object({
+  kind: z.enum(['all', 'skill', 'package']).optional().default('all'),
+  q: z.string().trim().min(1).max(200).optional(),
+  tag: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .transform((v) => (v === undefined ? [] : Array.isArray(v) ? v : [v])),
+  sort: z.enum(['recent', 'hottest', 'az']).optional().default('recent'),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  offset: z.coerce.number().int().min(0).optional().default(0),
+});
+
 // ─── Owner ─────────────────────────────────────────────────────────────
 
 export const ownerInfoSchema = z.object({
@@ -206,6 +218,8 @@ const createSkillSchemaInner = z.object({
       'must be a data:image/ URL or null',
     ),
   demoVideoUrl: z.string().url().max(500).optional().nullable(),
+  releaseTitle: z.string().trim().min(1).max(120).optional(),
+  releaseChangelog: z.string().trim().max(5_000).optional(),
 });
 
 export const createSkillSchema = createSkillSchemaInner.refine(
@@ -238,6 +252,8 @@ const packageDisplayFields = z.object({
       (v) => v === null || v === undefined || v.startsWith('data:image/'),
       'must be a data:image/ URL or null',
     ),
+  releaseTitle: z.string().trim().min(1).max(120).optional(),
+  releaseChangelog: z.string().trim().min(1).max(5_000).optional(),
 });
 
 export const createSkillPackageSchema = packageDisplayFields

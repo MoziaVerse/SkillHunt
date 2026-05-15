@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 const nowMs = sql`(unixepoch() * 1000)`;
 
@@ -72,6 +72,35 @@ export const verification = sqliteTable('verification', {
   updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
 });
 
+export const externalIdentities = sqliteTable(
+  'external_identities',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(),
+    issuer: text('issuer').notNull(),
+    subject: text('subject').notNull(),
+    emailSnapshot: text('email_snapshot'),
+    nameSnapshot: text('name_snapshot'),
+    avatarSnapshot: text('avatar_snapshot'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+  },
+  (t) => [
+    uniqueIndex('external_identities_provider_issuer_subject_idx').on(
+      t.provider,
+      t.issuer,
+      t.subject,
+    ),
+    index('external_identities_user_idx').on(t.userId),
+  ],
+);
+
 export type AuthUser = typeof user.$inferSelect;
 export type AuthSession = typeof session.$inferSelect;
 export type AuthAccount = typeof account.$inferSelect;
+export type ExternalIdentity = typeof externalIdentities.$inferSelect;

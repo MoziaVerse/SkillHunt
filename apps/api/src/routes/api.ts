@@ -17,6 +17,7 @@ import {
   filePathSchema,
   forkSkillSchema,
   listPackagesQuerySchema,
+  listPublishablesQuerySchema,
   listSkillsQuerySchema,
   mintInstallTokenSchema,
   syncUpstreamSchema,
@@ -46,12 +47,14 @@ import {
   addSkillPackageUpvote,
   createSkillPackage,
   createSkillPackageComment,
+  createSkillPackageRelease,
   deleteSkillPackage,
   deleteSkillPackageItem,
   findSkillPackageById,
   findSkillPackageByOwnerAndSlug,
   getSkillPackageDetail,
   listSkillPackageComments,
+  listSkillPackageReleases,
   listSkillPackagesByOwner,
   listSkillPackagesContainingSkill,
   listSkillPackagesForApi,
@@ -74,7 +77,6 @@ import {
   deleteSkillFile,
   findSkillById,
   findSkillByOwnerAndSlug,
-  findSkillBySlug,
   findUserByHandle,
   findUserById,
   forkSkillToOwner,
@@ -285,6 +287,184 @@ const toPackageComment = (
   author: comment.author,
 });
 
+const toPackageReleaseDto = (
+  origin: string,
+  pkg: SkillPackageWithOwner,
+  release: Awaited<ReturnType<typeof listSkillPackageReleases>>[number],
+) => ({
+  id: release.id,
+  packageId: release.packageId,
+  publishableId: release.packageId,
+  kind: 'package' as const,
+  version: release.version,
+  title: release.title,
+  changelog: release.changelog,
+  installCommand: `npx skills add ${origin}/p/${pkg.owner.handle}/${pkg.slug}/v/${release.version} --skill '*' -y`,
+  files: release.items.flatMap((item) =>
+    item.files.map((file) => `${item.protocolName}/${file.path}`),
+  ),
+  skills: release.items.map((item) => ({
+    skillId: item.skillId,
+    ownerHandle: item.ownerHandle,
+    skillSlug: item.skillSlug,
+    skillName: item.skillName,
+    skillDescription: item.skillDescription,
+    protocolName: item.protocolName,
+    position: item.position,
+    note: item.note,
+    skillReleaseId: item.skillReleaseId,
+    skillVersion: item.skillVersion,
+    files: item.files.map((file) => file.path),
+  })),
+  createdBy: release.author,
+  createdByUserId: release.createdByUserId,
+  createdAt: release.createdAt.toISOString(),
+});
+
+type PublishableApiItem =
+  | { kind: 'skill'; item: ReturnType<typeof toListItem>; updatedAt: string; score: number }
+  | {
+      kind: 'package';
+      item: ReturnType<typeof toPackageListItem>;
+      updatedAt: string;
+      score: number;
+    };
+type PublicUserRow = NonNullable<Awaited<ReturnType<typeof findUserByHandle>>>;
+
+function sortPublishableApiItems(items: PublishableApiItem[], sort: 'recent' | 'hottest' | 'az') {
+  return [...items].sort((a, b) => {
+    if (sort === 'az') return a.item.name.localeCompare(b.item.name, 'zh-Hans-CN');
+    if (sort === 'hottest') {
+      const scoreDelta = b.score - a.score;
+      if (scoreDelta !== 0) return scoreDelta;
+    }
+    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+  });
+}
+
+async function listPublishablesResponse(
+  c: import('hono').Context,
+  opts: {
+    kind: 'all' | 'skill' | 'package';
+    q?: string;
+    tag: string[];
+    sort: 'recent' | 'hottest' | 'az';
+    limit: number;
+    offset: number;
+  },
+) {
+  const auth = await getAuthContext(c);
+  const origin = new URL(c.req.url).origin;
+  const fetchLimit = opts.kind === 'all' ? opts.limit + opts.offset : opts.limit;
+  const fetchOffset = opts.kind === 'all' ? 0 : opts.offset;
+  const [skillsRes, packagesRes] = await Promise.all([
+    opts.kind !== 'package'
+      ? listSkillsForApi({
+          type: 'all',
+          q: opts.q,
+          tags: opts.tag,
+          viewerUserId: viewerUserId(auth),
+          includePrivate: canIncludePrivateSkills(auth),
+          sort: opts.sort,
+          limit: fetchLimit,
+          offset: fetchOffset,
+        })
+      : Promise.resolve({ items: [], total: 0 }),
+    opts.kind !== 'skill'
+      ? listSkillPackagesForApi({
+          q: opts.q,
+          tags: opts.tag,
+          sort: opts.sort,
+          limit: fetchLimit,
+          offset: fetchOffset,
+          viewerUserId: viewerUserId(auth),
+          includePrivate: canIncludePrivateSkills(auth),
+        })
+      : Promise.resolve({ items: [], total: 0 }),
+  ]);
+
+  const items = sortPublishableApiItems(
+    [
+      ...skillsRes.items.map(
+        (skill): PublishableApiItem => ({
+          kind: 'skill',
+          item: toListItem(skill),
+          updatedAt: skill.updatedAt.toISOString(),
+          score: skill.upvoteCount * 3 + skill.commentCount * 2 + skill.bookmarkCount,
+        }),
+      ),
+      ...packagesRes.items.map(
+        (pkg): PublishableApiItem => ({
+          kind: 'package',
+          item: toPackageListItem(origin, pkg),
+          updatedAt: pkg.updatedAt.toISOString(),
+          score: pkg.upvoteCount * 3 + pkg.commentCount * 2 + pkg.bookmarkCount,
+        }),
+      ),
+    ],
+    opts.sort,
+  );
+  const sliced = opts.kind === 'all' ? items.slice(opts.offset, opts.offset + opts.limit) : items;
+  return c.json({ items: sliced, total: skillsRes.total + packagesRes.total });
+}
+
+async function listOwnerPublishablesResponse(
+  c: import('hono').Context,
+  ownerRow: PublicUserRow,
+  opts: {
+    kind: 'all' | 'skill' | 'package';
+    sort: 'recent' | 'hottest' | 'az';
+    includePrivate: boolean;
+    viewerUserId: string | null;
+  },
+) {
+  const origin = new URL(c.req.url).origin;
+  const [skillsRows, packageRows] = await Promise.all([
+    opts.kind !== 'package'
+      ? opts.includePrivate
+        ? listSkillsByOwner(ownerRow.handle)
+        : listPublicSkillsByOwner(ownerRow.handle)
+      : Promise.resolve([]),
+    opts.kind !== 'skill'
+      ? listSkillPackagesByOwner(ownerRow.id, {
+          viewerUserId: opts.viewerUserId,
+          includePrivate: opts.includePrivate,
+        })
+      : Promise.resolve({ items: [], total: 0 }),
+  ]);
+  const items = sortPublishableApiItems(
+    [
+      ...skillsRows.map(
+        (skill): PublishableApiItem => ({
+          kind: 'skill',
+          item: toListItem(skill),
+          updatedAt: skill.updatedAt.toISOString(),
+          score: skill.upvoteCount * 3 + skill.commentCount * 2 + skill.bookmarkCount,
+        }),
+      ),
+      ...packageRows.items.map(
+        (pkg): PublishableApiItem => ({
+          kind: 'package',
+          item: toPackageListItem(origin, pkg),
+          updatedAt: pkg.updatedAt.toISOString(),
+          score: pkg.upvoteCount * 3 + pkg.commentCount * 2 + pkg.bookmarkCount,
+        }),
+      ),
+    ],
+    opts.sort,
+  );
+  return c.json({
+    owner: {
+      id: ownerRow.id,
+      name: ownerRow.name,
+      handle: ownerRow.handle,
+      image: ownerRow.image,
+    },
+    items,
+    total: items.length,
+  });
+}
+
 // ─── User-context API: uploads ───────────────────────────────────────
 
 apiRoute.post('/uploads/videos', zValidator('json', createVideoUploadSchema), async (c) => {
@@ -349,6 +529,11 @@ apiRoute.get('/skills', zValidator('query', listSkillsQuerySchema), async (c) =>
   return c.json({ items, total });
 });
 
+apiRoute.get('/publishables', zValidator('query', listPublishablesQuerySchema), async (c) => {
+  const { kind, q, tag, sort, limit, offset } = c.req.valid('query');
+  return listPublishablesResponse(c, { kind, q, tag, sort, limit, offset });
+});
+
 apiRoute.get('/tags', async (c) => {
   const tags = await listAllTags();
   return c.json({ tags });
@@ -401,19 +586,6 @@ apiRoute.get('/skills/:owner/:slug/packages', async (c) => {
   return c.json({ items: items.map((item) => toPackageListItem(origin, item)), total });
 });
 
-// Legacy: /api/skills/:slug — auto-resolves to mozia/<slug> via slug uniqueness
-// fallback. Returns 302 to the canonical URL when found, 404 otherwise.
-apiRoute.get('/skills/:slug', async (c) => {
-  const slug = c.req.param('slug');
-  const auth = await getAuthContext(c);
-  const skill = await findSkillBySlug(slug, viewerUserId(auth));
-  if (!skill) return c.json({ error: 'Not Found' }, 404);
-  if (!canReadSkill(skill, skillAccessActor(auth))) return c.json({ error: 'Not Found' }, 404);
-  const url = new URL(c.req.url);
-  url.pathname = `/api/skills/${skill.owner.handle}/${skill.slug}`;
-  return c.redirect(url.toString(), 302);
-});
-
 // ─── Mutations: skills ────────────────────────────────────────────────
 
 async function authorizeOwner(ctx: AuthContext, ownerHandle: string) {
@@ -464,6 +636,56 @@ apiRoute.get('/packages/:owner/:slug', async (c) => {
   return c.json(toPackageDetail(origin, pkg));
 });
 
+apiRoute.get('/packages/:owner/:slug/releases', async (c) => {
+  const ownerHandle = c.req.param('owner');
+  const slug = c.req.param('slug');
+  const auth = await getAuthContext(c);
+  const pkg = await findSkillPackageByOwnerAndSlug(ownerHandle, slug, {
+    viewerUserId: viewerUserId(auth),
+    includePrivate: canIncludePrivateSkills(auth),
+  });
+  if (!pkg) return c.json({ error: 'Not Found' }, 404);
+  const releases = await listSkillPackageReleases(pkg.id);
+  const origin = new URL(c.req.url).origin;
+  return c.json({
+    items: releases.map((release) => toPackageReleaseDto(origin, pkg, release)),
+    total: releases.length,
+  });
+});
+
+apiRoute.post(
+  '/packages/:owner/:slug/releases',
+  zValidator('json', createReleaseSchema),
+  async (c) => {
+    const ownerHandle = c.req.param('owner');
+    const slug = c.req.param('slug');
+    const input = c.req.valid('json');
+    const authContext = await getAuthContext(c);
+    const ownerAuth = await authorizeOwner(authContext, ownerHandle);
+    if (!ownerAuth.ok) return c.json({ error: ownerAuth.message }, ownerAuth.status);
+
+    const pkg = await findSkillPackageByOwnerAndSlug(ownerHandle, slug, {
+      viewerUserId: ownerAuth.ownerRow.id,
+      includePrivate: true,
+    });
+    if (!pkg) return c.json({ error: 'Not Found' }, 404);
+    if (!input.changelog) return c.json({ error: 'Changelog is required' }, 400);
+
+    try {
+      const release = await createSkillPackageRelease({
+        packageId: pkg.id,
+        createdByUserId: ownerAuth.actorRow.id,
+        title: input.title,
+        changelog: input.changelog,
+      });
+      const origin = new URL(c.req.url).origin;
+      return c.json(toPackageReleaseDto(origin, pkg, release), 201);
+    } catch (error) {
+      return packageErrorResponse(c, error);
+    }
+  },
+);
+
 apiRoute.post('/packages', zValidator('json', createSkillPackageSchema), async (c) => {
   const input = c.req.valid('json');
   const authContext = await getAuthContext(c);
@@ -487,6 +709,11 @@ apiRoute.post('/packages', zValidator('json', createSkillPackageSchema), async (
       icon: input.icon,
       coverImage: input.coverImage,
       skillIds: input.skillIds,
+      initialRelease: {
+        title: input.releaseTitle ?? '首次发布',
+        changelog: input.releaseChangelog ?? '创建 Skills 包初始版本。',
+        createdByUserId: ownerAuth.actorRow.id,
+      },
     });
     const detail = await getSkillPackageDetail(input.owner, created.slug, {
       viewerUserId: ownerAuth.ownerRow.id,
@@ -793,6 +1020,14 @@ apiRoute.post('/skills', zValidator('json', createSkillSchema), async (c) => {
     icon: input.icon,
     coverImage: input.coverImage,
     demoVideoUrl: input.demoVideoUrl,
+    initialRelease:
+      input.releaseTitle || input.releaseChangelog !== undefined
+        ? {
+            title: input.releaseTitle ?? '首次发布',
+            changelog: input.releaseChangelog ?? '',
+            createdByUserId: ownerAuth.actorRow.id,
+          }
+        : undefined,
   });
 
   const origin = new URL(c.req.url).origin;
@@ -816,7 +1051,16 @@ apiRoute.put('/skills/:owner/:slug', zValidator('json', updateSkillSchema), asyn
   if (!skill) return c.json({ error: 'Not Found' }, 404);
   if (skill.type !== 'owned') return c.json({ error: 'Cannot edit referenced skill' }, 400);
 
-  const updated = await updateOwnedSkill(skill.id, input);
+  const updated = await updateOwnedSkill(skill.id, {
+    ...input,
+    release: input.releaseChangelog
+      ? {
+          title: input.releaseTitle ?? '发布更新',
+          changelog: input.releaseChangelog,
+          createdByUserId: ownerAuth.actorRow.id,
+        }
+      : undefined,
+  });
   if (!updated) return c.json({ error: 'Not Found' }, 404);
 
   const origin = new URL(c.req.url).origin;
@@ -902,6 +1146,11 @@ apiRoute.post(
     const skill = await findSkillByOwnerAndSlug(ownerHandle, slug, user?.id ?? null);
     if (!skill) return c.json({ error: 'Not Found' }, 404);
     if (skill.type !== 'owned') return c.json({ error: 'Cannot release referenced skill' }, 400);
+
+    const existingReleases = await listSkillReleases(skill.id);
+    if (existingReleases.length > 0 && !input.changelog) {
+      return c.json({ error: 'Changelog is required after the first release' }, 400);
+    }
 
     const release = await createSkillRelease({
       skillId: skill.id,
@@ -1240,14 +1489,23 @@ apiRoute.patch('/me/avatar', zValidator('json', updateAvatarSchema), handleUpdat
 apiRoute.get('/me/skills', handleListMySkills);
 apiRoute.get('/me/bookmarks', handleListMyBookmarks);
 apiRoute.get('/me/packages', handleListMyPackages);
-
-// Backward-compatible aliases for current web client paths.
-apiRoute.get('/users/me', handleGetMe);
-apiRoute.patch('/users/me/profile', zValidator('json', updateProfileSchema), handleUpdateProfile);
-apiRoute.patch('/users/me/avatar', zValidator('json', updateAvatarSchema), handleUpdateAvatar);
-apiRoute.get('/users/me/skills', handleListMySkills);
-apiRoute.get('/users/me/bookmarks', handleListMyBookmarks);
-apiRoute.get('/users/me/packages', handleListMyPackages);
+apiRoute.get('/me/publishables', zValidator('query', listPublishablesQuerySchema), async (c) => {
+  const auth = await getAuthContext(c);
+  const { user } = auth;
+  if (!user) return c.json({ error: 'Authentication required' }, 401);
+  if (!hasScope(auth, 'skills:read')) {
+    return c.json({ error: 'Missing scope: skills:read' }, 403);
+  }
+  const me = await findUserById(user.id);
+  if (!me) return c.json({ error: 'Not Found' }, 404);
+  const { kind, sort } = c.req.valid('query');
+  return listOwnerPublishablesResponse(c, me, {
+    kind,
+    sort,
+    viewerUserId: user.id,
+    includePrivate: hasScope(auth, 'skills:read_private'),
+  });
+});
 
 apiRoute.get('/users/:owner/skills', async (c) => {
   const ownerHandle = c.req.param('owner');
@@ -1299,6 +1557,27 @@ apiRoute.get('/users/:owner/packages', async (c) => {
   });
 });
 
+apiRoute.get(
+  '/users/:owner/publishables',
+  zValidator('query', listPublishablesQuerySchema),
+  async (c) => {
+    const ownerHandle = c.req.param('owner');
+    const ownerRow = await findUserByHandle(ownerHandle);
+    if (!ownerRow) return c.json({ error: 'Not Found' }, 404);
+    const auth = await getAuthContext(c);
+    const { user } = auth;
+    const { kind, sort } = c.req.valid('query');
+    return listOwnerPublishablesResponse(c, ownerRow, {
+      kind,
+      sort,
+      viewerUserId: viewerUserId(auth),
+      includePrivate: Boolean(
+        user && user.id === ownerRow.id && hasScope(auth, 'skills:read_private'),
+      ),
+    });
+  },
+);
+
 // ─── Notifications ───────────────────────────────────────────────────
 
 apiRoute.get('/notifications', async (c) => {
@@ -1316,12 +1595,13 @@ apiRoute.get('/notifications', async (c) => {
       read: Boolean(n.read),
       createdAt: n.createdAt.toISOString(),
       actor: n.actor,
-      skill: n.skill
+      publishable: n.publishable
         ? {
-            id: n.skill.id,
-            slug: n.skill.slug,
-            name: n.skill.name,
-            owner: n.skill.owner,
+            id: n.publishable.id,
+            kind: n.publishable.kind,
+            slug: n.publishable.slug,
+            name: n.publishable.name,
+            owner: n.publishable.owner,
           }
         : null,
     })),

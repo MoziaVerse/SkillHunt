@@ -4,25 +4,84 @@ import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqli
 const nowMs = sql`(unixepoch() * 1000)`;
 const randomId = () => crypto.randomUUID();
 
+export const publishables = sqliteTable(
+  'publishables',
+  {
+    id: text('id').primaryKey().$defaultFn(randomId),
+    kind: text('kind', { enum: ['skill', 'package'] }).notNull(),
+    ownerUserId: text('owner_user_id').notNull(),
+    slug: text('slug').notNull(),
+    name: text('name').notNull(),
+    description: text('description').notNull(),
+    visibility: text('visibility', { enum: ['public', 'private'] })
+      .notNull()
+      .default('private'),
+    tags: text('tags', { mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
+    icon: text('icon'),
+    coverImage: text('cover_image'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+  },
+  (t) => [
+    uniqueIndex('publishables_owner_kind_slug_idx').on(t.ownerUserId, t.kind, t.slug),
+    index('publishables_kind_idx').on(t.kind),
+    index('publishables_visibility_idx').on(t.visibility),
+    index('publishables_updated_at_idx').on(t.updatedAt),
+  ],
+);
+
+export type PublishableKind = 'skill' | 'package';
+export type SkillReleaseSnapshot = {
+  kind: 'skill';
+  files: Array<{ path: string; content: string }>;
+};
+export type PackageReleaseSnapshot = {
+  kind: 'package';
+  items: Array<{
+    skillId: string;
+    ownerHandle: string;
+    skillSlug: string;
+    skillName: string;
+    skillDescription: string;
+    protocolName: string;
+    position: number;
+    note: string | null;
+    skillReleaseId: string;
+    skillVersion: number;
+    files: Array<{ path: string; content: string }>;
+  }>;
+};
+export type PublishableReleaseSnapshot = SkillReleaseSnapshot | PackageReleaseSnapshot;
+
+export const publishableReleases = sqliteTable(
+  'publishable_releases',
+  {
+    id: text('id').primaryKey().$defaultFn(randomId),
+    publishableId: text('publishable_id')
+      .notNull()
+      .references(() => publishables.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    title: text('title').notNull(),
+    changelog: text('changelog').notNull().default(''),
+    snapshot: text('snapshot', { mode: 'json' }).$type<PublishableReleaseSnapshot>().notNull(),
+    createdByUserId: text('created_by_user_id').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+  },
+  (t) => [
+    uniqueIndex('publishable_releases_publishable_version_idx').on(t.publishableId, t.version),
+    index('publishable_releases_publishable_idx').on(t.publishableId),
+    index('publishable_releases_created_at_idx').on(t.createdAt),
+  ],
+);
+
 export const skills = sqliteTable(
   'skills',
   {
-    id: text('id').primaryKey().$defaultFn(randomId),
-
-    // URL + CLI install identifier. Rule: lowercase, 1-64, [a-z0-9-].
-    slug: text('slug').notNull(),
-
-    name: text('name').notNull(),
-    description: text('description').notNull(),
+    id: text('id')
+      .primaryKey()
+      .references(() => publishables.id, { onDelete: 'cascade' }),
 
     type: text('type', { enum: ['owned', 'referenced'] }).notNull(),
-
-    // Only meaningful for type='owned'. For 'referenced' we always treat as public.
-    visibility: text('visibility', { enum: ['public', 'private'] })
-      .notNull()
-      .default('public'),
-
-    tags: text('tags', { mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
 
     // referenced-only fields (null for owned)
     sourceRepo: text('source_repo'),
@@ -33,9 +92,7 @@ export const skills = sqliteTable(
     // owned-only field: original SKILL.md frontmatter, kept verbatim for future restore.
     frontmatter: text('frontmatter', { mode: 'json' }).$type<Record<string, unknown>>(),
 
-    // SkillHunt display fields (decoupled from SKILL.md content).
-    icon: text('icon'), // emoji character, e.g. "🚀"
-    coverImage: text('cover_image'), // base64 data URL
+    // SkillHunt display field (decoupled from SKILL.md content).
     demoVideoUrl: text('demo_video_url'), // external video URL
 
     // GitHub-like fork lineage. Null means this is an original skill.
@@ -48,21 +105,9 @@ export const skills = sqliteTable(
       .default('linked'),
     allowUpstreamSync: integer('allow_upstream_sync').notNull().default(1),
     forkNote: text('fork_note'),
-
-    // Phase 2: every skill belongs to a user (real or virtual). FK is enforced
-    // by the DB; not declared here via .references() to avoid a module-import
-    // cycle with auth-schema.ts (we don't use drizzle relational queries).
-    ownerUserId: text('owner_user_id').notNull(),
-
-    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
-    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
   },
   (t) => [
-    // Slug is unique per owner — Phase 2 namespacing means two users can each
-    // have their own `foo` skill without collision.
-    uniqueIndex('skills_owner_slug_idx').on(t.ownerUserId, t.slug),
     index('skills_type_idx').on(t.type),
-    index('skills_visibility_idx').on(t.visibility),
     index('skills_parent_idx').on(t.parentSkillId),
     index('skills_root_idx').on(t.rootSkillId),
   ],
@@ -90,29 +135,6 @@ export type Skill = typeof skills.$inferSelect;
 export type NewSkill = typeof skills.$inferInsert;
 export type SkillFile = typeof skillFiles.$inferSelect;
 export type NewSkillFile = typeof skillFiles.$inferInsert;
-
-export const skillReleases = sqliteTable(
-  'skill_releases',
-  {
-    id: text('id').primaryKey().$defaultFn(randomId),
-    skillId: text('skill_id')
-      .notNull()
-      .references(() => skills.id, { onDelete: 'cascade' }),
-    version: integer('version').notNull(),
-    title: text('title').notNull(),
-    changelog: text('changelog').notNull().default(''),
-    snapshotFiles: text('snapshot_files', { mode: 'json' })
-      .$type<Array<{ path: string; content: string }>>()
-      .notNull(),
-    createdByUserId: text('created_by_user_id').notNull(),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
-  },
-  (t) => [
-    uniqueIndex('skill_releases_skill_version_idx').on(t.skillId, t.version),
-    index('skill_releases_skill_idx').on(t.skillId),
-    index('skill_releases_created_at_idx').on(t.createdAt),
-  ],
-);
 
 export const skillSyncEvents = sqliteTable(
   'skill_sync_events',
@@ -142,36 +164,16 @@ export const skillSyncEvents = sqliteTable(
   ],
 );
 
-export const skillSubscriptions = sqliteTable(
-  'skill_subscriptions',
-  {
-    id: text('id').primaryKey().$defaultFn(randomId),
-    userId: text('user_id').notNull(),
-    skillId: text('skill_id')
-      .notNull()
-      .references(() => skills.id, { onDelete: 'cascade' }),
-    active: integer('active').notNull().default(1),
-    notifyOnRelease: integer('notify_on_release').notNull().default(1),
-    notifyOnSync: integer('notify_on_sync').notNull().default(1),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
-    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
-  },
-  (t) => [
-    uniqueIndex('skill_subscriptions_user_skill_idx').on(t.userId, t.skillId),
-    index('skill_subscriptions_skill_idx').on(t.skillId),
-    index('skill_subscriptions_user_idx').on(t.userId),
-  ],
-);
-
-export type SkillRelease = typeof skillReleases.$inferSelect;
-export type NewSkillRelease = typeof skillReleases.$inferInsert;
+export type Publishable = typeof publishables.$inferSelect;
+export type NewPublishable = typeof publishables.$inferInsert;
+export type PublishableRelease = typeof publishableReleases.$inferSelect;
+export type NewPublishableRelease = typeof publishableReleases.$inferInsert;
 export type SkillSyncEvent = typeof skillSyncEvents.$inferSelect;
-export type SkillSubscription = typeof skillSubscriptions.$inferSelect;
 
-// ─── Phase 2 spec 03 · capability URL (single-shot install grant) ─────
+// ─── Capability URL (single-shot install grant) ─────
 //
-// PAT was removed in 0006 — Bearer auth is forwarded to matrix's central
-// key system in spec 04 instead of maintaining a parallel SkillHunt table.
+// Bearer auth is forwarded to matrix's central key system instead of
+// maintaining a parallel SkillHunt PAT table.
 
 export const installGrants = sqliteTable(
   'install_grants',
@@ -229,29 +231,11 @@ export type SkillInstallEvent = typeof skillInstallEvents.$inferSelect;
 
 // ─── SkillHunt: Skill Packages ─────
 
-export const skillPackages = sqliteTable(
-  'skill_packages',
-  {
-    id: text('id').primaryKey().$defaultFn(randomId),
-    ownerUserId: text('owner_user_id').notNull(),
-    slug: text('slug').notNull(),
-    name: text('name').notNull(),
-    description: text('description').notNull(),
-    visibility: text('visibility', { enum: ['public', 'private'] })
-      .notNull()
-      .default('private'),
-    tags: text('tags', { mode: 'json' }).$type<string[]>().notNull().default(sql`'[]'`),
-    icon: text('icon'),
-    coverImage: text('cover_image'),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
-    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
-  },
-  (t) => [
-    uniqueIndex('skill_packages_owner_slug_idx').on(t.ownerUserId, t.slug),
-    index('skill_packages_visibility_idx').on(t.visibility),
-    index('skill_packages_updated_at_idx').on(t.updatedAt),
-  ],
-);
+export const skillPackages = sqliteTable('skill_packages', {
+  id: text('id')
+    .primaryKey()
+    .references(() => publishables.id, { onDelete: 'cascade' }),
+});
 
 export const skillPackageItems = sqliteTable(
   'skill_package_items',
@@ -265,7 +249,7 @@ export const skillPackageItems = sqliteTable(
       .references(() => skills.id, { onDelete: 'cascade' }),
     position: integer('position').notNull().default(0),
     note: text('note'),
-    pinnedReleaseId: text('pinned_release_id').references(() => skillReleases.id, {
+    pinnedReleaseId: text('pinned_release_id').references(() => publishableReleases.id, {
       onDelete: 'set null',
     }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
@@ -282,88 +266,31 @@ export type NewSkillPackage = typeof skillPackages.$inferInsert;
 export type SkillPackageItem = typeof skillPackageItems.$inferSelect;
 export type NewSkillPackageItem = typeof skillPackageItems.$inferInsert;
 
-// ─── SkillHunt: Community Features ─────
-
-// Upvotes table: each user can upvote a skill only once
-// Note: FK constraints are enforced at application level (like ownerUserId on skills)
-export const skillUpvotes = sqliteTable(
-  'skill_upvotes',
+export const publishableUpvotes = sqliteTable(
+  'publishable_upvotes',
   {
     id: text('id').primaryKey().$defaultFn(randomId),
-    skillId: text('skill_id').notNull(),
-    userId: text('user_id').notNull(),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
-  },
-  (t) => [
-    uniqueIndex('skill_upvotes_skill_user_idx').on(t.skillId, t.userId),
-    index('skill_upvotes_skill_idx').on(t.skillId),
-    index('skill_upvotes_user_idx').on(t.userId),
-    index('skill_upvotes_created_at_idx').on(t.createdAt),
-  ],
-);
-
-// Comments table: supports threaded comments via parent_id
-export const skillComments = sqliteTable(
-  'skill_comments',
-  {
-    id: text('id').primaryKey().$defaultFn(randomId),
-    skillId: text('skill_id').notNull(),
-    userId: text('user_id').notNull(),
-    parentId: text('parent_id'), // NULL for top-level comments
-    content: text('content').notNull(), // Markdown content
-    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
-    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
-  },
-  (t) => [
-    index('skill_comments_skill_idx').on(t.skillId),
-    index('skill_comments_user_idx').on(t.userId),
-    index('skill_comments_parent_idx').on(t.parentId),
-    index('skill_comments_created_at_idx').on(t.createdAt),
-  ],
-);
-
-// Bookmarks table: users can bookmark skills for later
-export const userBookmarks = sqliteTable(
-  'user_bookmarks',
-  {
-    id: text('id').primaryKey().$defaultFn(randomId),
-    userId: text('user_id').notNull(),
-    skillId: text('skill_id').notNull(),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
-  },
-  (t) => [
-    uniqueIndex('user_bookmarks_user_skill_idx').on(t.userId, t.skillId),
-    index('user_bookmarks_user_idx').on(t.userId),
-    index('user_bookmarks_skill_idx').on(t.skillId),
-    index('user_bookmarks_created_at_idx').on(t.createdAt),
-  ],
-);
-
-export const skillPackageUpvotes = sqliteTable(
-  'skill_package_upvotes',
-  {
-    id: text('id').primaryKey().$defaultFn(randomId),
-    packageId: text('package_id')
+    publishableId: text('publishable_id')
       .notNull()
-      .references(() => skillPackages.id, { onDelete: 'cascade' }),
+      .references(() => publishables.id, { onDelete: 'cascade' }),
     userId: text('user_id').notNull(),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
   },
   (t) => [
-    uniqueIndex('skill_package_upvotes_package_user_idx').on(t.packageId, t.userId),
-    index('skill_package_upvotes_package_idx').on(t.packageId),
-    index('skill_package_upvotes_user_idx').on(t.userId),
-    index('skill_package_upvotes_created_at_idx').on(t.createdAt),
+    uniqueIndex('publishable_upvotes_publishable_user_idx').on(t.publishableId, t.userId),
+    index('publishable_upvotes_publishable_idx').on(t.publishableId),
+    index('publishable_upvotes_user_idx').on(t.userId),
+    index('publishable_upvotes_created_at_idx').on(t.createdAt),
   ],
 );
 
-export const skillPackageComments = sqliteTable(
-  'skill_package_comments',
+export const publishableComments = sqliteTable(
+  'publishable_comments',
   {
     id: text('id').primaryKey().$defaultFn(randomId),
-    packageId: text('package_id')
+    publishableId: text('publishable_id')
       .notNull()
-      .references(() => skillPackages.id, { onDelete: 'cascade' }),
+      .references(() => publishables.id, { onDelete: 'cascade' }),
     userId: text('user_id').notNull(),
     parentId: text('parent_id'),
     content: text('content').notNull(),
@@ -371,28 +298,49 @@ export const skillPackageComments = sqliteTable(
     updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
   },
   (t) => [
-    index('skill_package_comments_package_idx').on(t.packageId),
-    index('skill_package_comments_user_idx').on(t.userId),
-    index('skill_package_comments_parent_idx').on(t.parentId),
-    index('skill_package_comments_created_at_idx').on(t.createdAt),
+    index('publishable_comments_publishable_idx').on(t.publishableId),
+    index('publishable_comments_user_idx').on(t.userId),
+    index('publishable_comments_parent_idx').on(t.parentId),
+    index('publishable_comments_created_at_idx').on(t.createdAt),
   ],
 );
 
-export const userPackageBookmarks = sqliteTable(
-  'user_package_bookmarks',
+export const publishableBookmarks = sqliteTable(
+  'publishable_bookmarks',
   {
     id: text('id').primaryKey().$defaultFn(randomId),
     userId: text('user_id').notNull(),
-    packageId: text('package_id')
+    publishableId: text('publishable_id')
       .notNull()
-      .references(() => skillPackages.id, { onDelete: 'cascade' }),
+      .references(() => publishables.id, { onDelete: 'cascade' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
   },
   (t) => [
-    uniqueIndex('user_package_bookmarks_user_package_idx').on(t.userId, t.packageId),
-    index('user_package_bookmarks_user_idx').on(t.userId),
-    index('user_package_bookmarks_package_idx').on(t.packageId),
-    index('user_package_bookmarks_created_at_idx').on(t.createdAt),
+    uniqueIndex('publishable_bookmarks_user_publishable_idx').on(t.userId, t.publishableId),
+    index('publishable_bookmarks_user_idx').on(t.userId),
+    index('publishable_bookmarks_publishable_idx').on(t.publishableId),
+    index('publishable_bookmarks_created_at_idx').on(t.createdAt),
+  ],
+);
+
+export const publishableSubscriptions = sqliteTable(
+  'publishable_subscriptions',
+  {
+    id: text('id').primaryKey().$defaultFn(randomId),
+    userId: text('user_id').notNull(),
+    publishableId: text('publishable_id')
+      .notNull()
+      .references(() => publishables.id, { onDelete: 'cascade' }),
+    active: integer('active').notNull().default(1),
+    notifyOnRelease: integer('notify_on_release').notNull().default(1),
+    notifyOnSync: integer('notify_on_sync').notNull().default(1),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+  },
+  (t) => [
+    uniqueIndex('publishable_subscriptions_user_publishable_idx').on(t.userId, t.publishableId),
+    index('publishable_subscriptions_publishable_idx').on(t.publishableId),
+    index('publishable_subscriptions_user_idx').on(t.userId),
   ],
 );
 
@@ -406,7 +354,7 @@ export const notifications = sqliteTable(
       enum: ['upvote', 'comment', 'reply', 'bookmark', 'fork', 'sync', 'release'],
     }).notNull(),
     actorId: text('actor_id'), // User who triggered the notification
-    skillId: text('skill_id'),
+    publishableId: text('publishable_id'),
     commentId: text('comment_id'),
     read: integer('read').notNull().default(0), // SQLite doesn't have boolean
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
@@ -414,39 +362,18 @@ export const notifications = sqliteTable(
   (t) => [
     index('notifications_user_idx').on(t.userId),
     index('notifications_user_read_idx').on(t.userId, t.read),
+    index('notifications_publishable_idx').on(t.publishableId),
     index('notifications_created_at_idx').on(t.createdAt),
   ],
 );
 
-// Skill counts cache table (for performance)
-export const skillCounts = sqliteTable('skill_counts', {
-  skillId: text('skill_id').primaryKey(),
-  upvoteCount: integer('upvote_count').notNull().default(0),
-  commentCount: integer('comment_count').notNull().default(0),
-  bookmarkCount: integer('bookmark_count').notNull().default(0),
-  featuredDate: text('featured_date'), // YYYY-MM-DD format
-});
-
-export type SkillUpvote = typeof skillUpvotes.$inferSelect;
-export type NewSkillUpvote = typeof skillUpvotes.$inferInsert;
-
-export type SkillComment = typeof skillComments.$inferSelect;
-export type NewSkillComment = typeof skillComments.$inferInsert;
-
-export type UserBookmark = typeof userBookmarks.$inferSelect;
-export type NewUserBookmark = typeof userBookmarks.$inferInsert;
-
-export type SkillPackageUpvote = typeof skillPackageUpvotes.$inferSelect;
-export type NewSkillPackageUpvote = typeof skillPackageUpvotes.$inferInsert;
-
-export type SkillPackageComment = typeof skillPackageComments.$inferSelect;
-export type NewSkillPackageComment = typeof skillPackageComments.$inferInsert;
-
-export type UserPackageBookmark = typeof userPackageBookmarks.$inferSelect;
-export type NewUserPackageBookmark = typeof userPackageBookmarks.$inferInsert;
+export type PublishableUpvote = typeof publishableUpvotes.$inferSelect;
+export type NewPublishableUpvote = typeof publishableUpvotes.$inferInsert;
+export type PublishableComment = typeof publishableComments.$inferSelect;
+export type NewPublishableComment = typeof publishableComments.$inferInsert;
+export type PublishableBookmark = typeof publishableBookmarks.$inferSelect;
+export type NewPublishableBookmark = typeof publishableBookmarks.$inferInsert;
+export type PublishableSubscription = typeof publishableSubscriptions.$inferSelect;
 
 export type Notification = typeof notifications.$inferSelect;
 export type NewNotification = typeof notifications.$inferInsert;
-
-export type SkillCounts = typeof skillCounts.$inferSelect;
-export type NewSkillCounts = typeof skillCounts.$inferInsert;

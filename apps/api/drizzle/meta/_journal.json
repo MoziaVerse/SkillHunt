@@ -5,50 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1777533121785,
-      "tag": "0000_perfect_firelord",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1777533997354,
-      "tag": "0001_overconfident_marten_broadcloak",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1778307129979,
-      "tag": "0002_skillhunt_community",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1778310000000,
-      "tag": "0003_skillhunt_fork_sync",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1778382813110,
-      "tag": "0004_thick_silver_sable",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1778654491323,
-      "tag": "0005_tiny_colonel_america",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1778731200000,
-      "tag": "0006_skill_package_community",
+      "when": 1778739489043,
+      "tag": "0000_cute_nextwave",
       "breakpoints": true
     }
   ]
