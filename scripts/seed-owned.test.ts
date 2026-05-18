@@ -14,6 +14,22 @@ async function truncate() {
 
 const silent = (_: string) => {};
 
+function ownedEntry(slug: string) {
+  return {
+    slug,
+    name: slug,
+    description: `${slug} desc`,
+    visibility: 'public' as const,
+    tags: [],
+    files: [
+      {
+        path: 'SKILL.md',
+        content: `---\nname: ${slug}\ndescription: ${slug} desc\n---\n# ${slug}\n`,
+      },
+    ],
+  };
+}
+
 async function createBuiltinFixture(
   dirs: Array<{
     slug: string;
@@ -94,6 +110,20 @@ describe('seed-owned', () => {
       expect(prev).toBeDefined();
       if (prev) expect(row.updatedAt.getTime()).toBeGreaterThanOrEqual(prev.updatedAt.getTime());
     }
+  });
+
+  it('prunes seed-owned skills no longer present in builtin entries', async () => {
+    const kept = ownedEntry('kept-skill');
+    const removed = ownedEntry('removed-skill');
+
+    expect((await seedOwned([kept, removed], silent)).removed).toBe(0);
+    expect((await seedOwned([kept], silent)).removed).toBe(1);
+
+    const rows = await db
+      .select({ slug: publishables.slug })
+      .from(publishables)
+      .orderBy(publishables.slug);
+    expect(rows.map((row) => row.slug)).toEqual(['kept-skill']);
   });
 
   it('rejects overwriting a referenced slug', async () => {

@@ -4,7 +4,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, notInArray } from 'drizzle-orm';
 import { db, publishables, skillFiles, skills, user } from '../apps/api/src/db';
 
 // All seed-driven owned skills are attributed to the `mozia` virtual user.
@@ -191,22 +191,63 @@ export async function loadBuiltinOwnedEntries(
   return entries;
 }
 
+function assertSeedOwnedEntryIsSafe(entry: OwnedEntry) {
+  if (!SLUG_RE.test(entry.slug) && entry.slug.length !== 1) {
+    throw new Error(`[seed-owned] invalid slug: '${entry.slug}'`);
+  }
+  if (!entry.files.some((file) => file.path === 'SKILL.md')) {
+    throw new Error(`[seed-owned] missing SKILL.md for slug '${entry.slug}'`);
+  }
+  for (const file of entry.files) {
+    if (file.path.includes('..') || file.path.startsWith('/')) {
+      throw new Error(`[seed-owned] unsafe path '${file.path}' for slug '${entry.slug}'`);
+    }
+  }
+}
+
+async function pruneRemovedSeedOwnedSkills(entries: OwnedEntry[], log: (msg: string) => void) {
+  const slugs = entries.map((entry) => entry.slug);
+  const where =
+    slugs.length > 0
+      ? and(
+          eq(publishables.kind, 'skill'),
+          eq(publishables.ownerUserId, SEED_OWNER_ID),
+          eq(skills.type, 'owned'),
+          notInArray(publishables.slug, slugs),
+        )
+      : and(
+          eq(publishables.kind, 'skill'),
+          eq(publishables.ownerUserId, SEED_OWNER_ID),
+          eq(skills.type, 'owned'),
+        );
+
+  const staleRows = await db
+    .select({ id: publishables.id, slug: publishables.slug })
+    .from(publishables)
+    .innerJoin(skills, eq(publishables.id, skills.id))
+    .where(where);
+
+  for (const row of staleRows) {
+    await db.delete(publishables).where(eq(publishables.id, row.id));
+    log(`[seed-owned] - ${row.slug} (removed from builtin-skills)`);
+  }
+
+  return staleRows.length;
+}
+
 export async function seedOwned(
   entries: OwnedEntry[],
   log: (msg: string) => void = console.log,
-): Promise<{ upserted: number; fileCount: number }> {
+): Promise<{ upserted: number; fileCount: number; removed: number }> {
   let upserted = 0;
   let fileCount = 0;
+  for (const entry of entries) assertSeedOwnedEntryIsSafe(entry);
   await ensureSeedOwner();
+  const removed = await pruneRemovedSeedOwnedSkills(entries, log);
 
   for (const entry of entries) {
-    if (!SLUG_RE.test(entry.slug) && entry.slug.length !== 1) {
-      throw new Error(`[seed-owned] invalid slug: '${entry.slug}'`);
-    }
     const skillMd = entry.files.find((file) => file.path === 'SKILL.md')?.content;
-    if (!skillMd) {
-      throw new Error(`[seed-owned] missing SKILL.md for slug '${entry.slug}'`);
-    }
+    if (!skillMd) throw new Error(`[seed-owned] missing SKILL.md for slug '${entry.slug}'`);
 
     const existing = await db
       .select({ skill: skills })
@@ -292,9 +333,6 @@ export async function seedOwned(
     await db.delete(skillFiles).where(eq(skillFiles.skillId, row.id));
 
     for (const f of entry.files) {
-      if (f.path.includes('..') || f.path.startsWith('/')) {
-        throw new Error(`[seed-owned] unsafe path '${f.path}' for slug '${entry.slug}'`);
-      }
       await db.insert(skillFiles).values({
         skillId: row.id,
         path: f.path,
@@ -309,12 +347,14 @@ export async function seedOwned(
     upserted++;
   }
 
-  return { upserted, fileCount };
+  return { upserted, fileCount, removed };
 }
 
 if (import.meta.main) {
   const entries = await loadBuiltinOwnedEntries();
   const result = await seedOwned(entries);
-  console.log(`[seed-owned] done (${result.upserted} skills, ${result.fileCount} files)`);
+  console.log(
+    `[seed-owned] done (${result.upserted} skills, ${result.fileCount} files, ${result.removed} removed)`,
+  );
   process.exit(0);
 }
