@@ -260,9 +260,10 @@ describe('getAuthContext — service-token (matrix proxy) path', () => {
       await withSignedOidcToken(
         {
           client_id: 'mclaw',
-          scope: 'openid profile email skills:read_private',
+          scope: 'openid profile email phone skills:read_private',
           email: freshEmail,
           name: 'Fresh Maker',
+          phone: '+86 133-0000-1064',
         },
         freshSub,
         async (token) => {
@@ -276,6 +277,7 @@ describe('getAuthContext — service-token (matrix proxy) path', () => {
 
           const rows = await db.select().from(user).where(eq(user.ssoSub, freshSub)).limit(1);
           expect(rows[0]?.email).toBe(freshEmail);
+          expect(rows[0]?.phone).toBe('13300001064');
           const identities = await db
             .select()
             .from(externalIdentities)

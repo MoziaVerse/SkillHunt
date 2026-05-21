@@ -541,6 +541,7 @@ export interface UserRow {
   handle: string;
   email: string;
   ssoSub: string | null;
+  phone: string | null;
   image: string | null;
   isVirtual: boolean;
   canPublishAs: string[];
@@ -552,6 +553,7 @@ const userRowSelect = {
   handle: user.handle,
   email: user.email,
   ssoSub: user.ssoSub,
+  phone: user.phone,
   image: user.image,
   isVirtual: user.isVirtual,
   canPublishAs: user.canPublishAs,

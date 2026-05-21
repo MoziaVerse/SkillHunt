@@ -88,7 +88,7 @@ const splitListEnv = (name: string): string[] =>
 
 function scopesFromOidcClaims(rawScopes: string[]): ApiScope[] {
   const scopes = new Set<ApiScope>(PUBLIC_SCOPES);
-  const standardProfileScopes = new Set(['openid', 'profile', 'email']);
+  const standardProfileScopes = new Set(['openid', 'profile', 'email', 'phone']);
   if (rawScopes.some((scope) => standardProfileScopes.has(scope))) {
     scopes.add('profile:read');
   }
@@ -222,6 +222,7 @@ export async function getAuthContext(c: Context): Promise<AuthContext> {
         subject: oidc.sub,
         email: oidc.email,
         name: oidc.name,
+        phone: oidc.phone,
       });
       return userContext(
         { id: row.id, email: row.email, name: row.name, ssoSub: row.ssoSub ?? oidc.sub },

@@ -11,6 +11,7 @@ const userRowSelect = {
   email: user.email,
   image: user.image,
   ssoSub: user.ssoSub,
+  phone: user.phone,
   isVirtual: user.isVirtual,
   canPublishAs: user.canPublishAs,
 };
@@ -22,6 +23,7 @@ export interface SsoUserRow {
   email: string;
   image: string | null;
   ssoSub: string | null;
+  phone: string | null;
   isVirtual: boolean;
   canPublishAs: string[];
 }
@@ -33,6 +35,7 @@ export interface ResolveSsoUserInput {
   email?: string;
   name?: string;
   avatar?: string;
+  phone?: string;
 }
 
 const optionalEnv = (name: string): string | null => {
@@ -57,6 +60,14 @@ const trimText = (value: string | undefined): string | undefined => {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
 };
+
+export function normalizeSsoPhone(value: string | undefined): string | undefined {
+  const cleaned = trimText(value)?.replace(/[\s\-()]/g, '');
+  if (!cleaned) return undefined;
+  if (/^\+86\d{11}$/.test(cleaned)) return cleaned.slice(3);
+  if (/^0086\d{11}$/.test(cleaned)) return cleaned.slice(4);
+  return cleaned;
+}
 
 async function findUserByEmail(email: string): Promise<SsoUserRow | null> {
   const rows = await db.select(userRowSelect).from(user).where(eq(user.email, email)).limit(1);
@@ -174,6 +185,7 @@ export async function resolveSsoUser(input: ResolveSsoUserInput): Promise<SsoUse
   const email = trimText(input.email);
   const name = trimText(input.name);
   const avatar = trimText(input.avatar);
+  const phone = normalizeSsoPhone(input.phone);
 
   const existingByIdentity = await findUserByExternalIdentity({ provider, issuer, subject });
   if (existingByIdentity) {
@@ -186,6 +198,13 @@ export async function resolveSsoUser(input: ResolveSsoUserInput): Promise<SsoUse
       name,
       avatar,
     });
+    if (phone && existingByIdentity.phone !== phone) {
+      await db
+        .update(user)
+        .set({ phone, updatedAt: new Date() })
+        .where(eq(user.id, existingByIdentity.id));
+      return (await findUserById(existingByIdentity.id)) ?? existingByIdentity;
+    }
     return existingByIdentity;
   }
 
@@ -197,6 +216,7 @@ export async function resolveSsoUser(input: ResolveSsoUserInput): Promise<SsoUse
         ssoSub: existingByEmail.ssoSub ?? subject,
         name: name ?? existingByEmail.name,
         image: avatar ?? existingByEmail.image,
+        phone: phone ?? existingByEmail.phone,
         updatedAt: new Date(),
       })
       .where(eq(user.id, existingByEmail.id));
@@ -228,6 +248,7 @@ export async function resolveSsoUser(input: ResolveSsoUserInput): Promise<SsoUse
     emailVerified: Boolean(email),
     image: avatar,
     ssoSub: subject,
+    phone,
   });
   await upsertExternalIdentity({
     userId: id,

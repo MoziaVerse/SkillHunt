@@ -8,6 +8,34 @@
       "when": 1778739489043,
       "tag": "0000_cute_nextwave",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1779336880349,
+      "tag": "0001_unique_master_mold",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1779342952257,
+      "tag": "0002_productive_sentinel",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1779343797848,
+      "tag": "0003_careless_stark_industries",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1779346360353,
+      "tag": "0004_motionless_star_brand",
+      "breakpoints": true
     }
   ]
 }

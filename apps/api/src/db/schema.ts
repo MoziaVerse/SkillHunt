@@ -377,3 +377,51 @@ export type PublishableSubscription = typeof publishableSubscriptions.$inferSele
 
 export type Notification = typeof notifications.$inferSelect;
 export type NewNotification = typeof notifications.$inferInsert;
+
+export const contestUsers = sqliteTable(
+  'contest_users',
+  {
+    id: text('id').primaryKey().$defaultFn(randomId),
+    eventSlug: text('event_slug').notNull(),
+    phone: text('phone').notNull(),
+    status: text('status', { enum: ['eligible', 'disqualified'] })
+      .notNull()
+      .default('eligible'),
+    note: text('note'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+  },
+  (t) => [
+    uniqueIndex('contest_users_event_phone_idx').on(t.eventSlug, t.phone),
+    index('contest_users_event_status_idx').on(t.eventSlug, t.status),
+  ],
+);
+
+export const contestSubmissions = sqliteTable(
+  'contest_submissions',
+  {
+    id: text('id').primaryKey().$defaultFn(randomId),
+    eventSlug: text('event_slug').notNull(),
+    skillId: text('skill_id')
+      .notNull()
+      .references(() => skills.id, { onDelete: 'cascade' }),
+    submitterUserId: text('submitter_user_id').notNull(),
+    track: text('track', { enum: ['学习科研', '校园生活', '创意应用', '专业实训'] }).notNull(),
+    videoObjectKey: text('video_object_key'),
+    videoUrl: text('video_url'),
+    videoDurationSeconds: integer('video_duration_seconds'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+  },
+  (t) => [
+    uniqueIndex('contest_submissions_event_skill_idx').on(t.eventSlug, t.skillId),
+    index('contest_submissions_event_user_idx').on(t.eventSlug, t.submitterUserId),
+    index('contest_submissions_event_track_idx').on(t.eventSlug, t.track),
+    index('contest_submissions_created_at_idx').on(t.createdAt),
+  ],
+);
+
+export type ContestSubmission = typeof contestSubmissions.$inferSelect;
+export type NewContestSubmission = typeof contestSubmissions.$inferInsert;
+export type ContestUser = typeof contestUsers.$inferSelect;
+export type NewContestUser = typeof contestUsers.$inferInsert;

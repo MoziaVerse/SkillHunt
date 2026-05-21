@@ -18,6 +18,8 @@ export const user = sqliteTable('user', {
   image: text('image'),
   // mozia-sso (Casdoor) `sub` claim — stable identity for cross-system joins later.
   ssoSub: text('sso_sub'),
+  // Phone number synced from Casdoor. Stored for contest eligibility matching.
+  phone: text('phone'),
   // Phase 2: virtual users like `mozia` represent collective publisher
   // identities, not real SSO accounts. Real users have isVirtual=false.
   isVirtual: integer('is_virtual', { mode: 'boolean' }).notNull().default(false),

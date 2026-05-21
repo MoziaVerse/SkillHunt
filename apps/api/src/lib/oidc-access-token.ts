@@ -5,6 +5,7 @@ export interface VerifiedOidcAccessToken {
   issuer: string;
   email?: string;
   name?: string;
+  phone?: string;
   clientId: string | null;
   rawScopes: string[];
 }
@@ -113,6 +114,10 @@ export async function verifyOidcAccessToken(
         stringClaim(payload, 'name') ??
         stringClaim(payload, 'displayName') ??
         stringClaim(payload, 'preferred_username'),
+      phone:
+        stringClaim(payload, 'phone') ??
+        stringClaim(payload, 'phone_number') ??
+        stringClaim(payload, 'mobile'),
       clientId: clientIds[0] ?? null,
       rawScopes: tokenScopes(payload),
     };

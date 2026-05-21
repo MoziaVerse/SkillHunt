@@ -80,4 +80,19 @@ describe('mapSsoProfileToUser', () => {
       .limit(1);
     expect(identities[0]?.userId).toBe(id);
   });
+
+  it('syncs phone from Casdoor profile into the local user', async () => {
+    const sub = `sso-phone-${Math.random().toString(36).slice(2)}`;
+    cleanupSubs.add(sub);
+
+    const mapped = await mapSsoProfileToUser({
+      sub,
+      name: 'Phone User',
+      phone: '+86 133-0000-1064',
+    });
+
+    expect(mapped.phone).toBe('13300001064');
+    const rows = await db.select().from(user).where(eq(user.ssoSub, sub)).limit(1);
+    expect(rows[0]?.phone).toBe('13300001064');
+  });
 });

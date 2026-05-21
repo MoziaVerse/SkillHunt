@@ -29,6 +29,7 @@ export interface UploadedVideoMetadata {
   playbackUrl: string;
   size: number;
   contentType: string | null;
+  durationSeconds?: number;
 }
 
 function env(name: string): string | undefined {
@@ -249,7 +250,10 @@ async function signedObjectRequest(
   });
 }
 
-export async function completeUploadedVideo(objectKey: string): Promise<UploadedVideoMetadata> {
+export async function completeUploadedVideo(
+  objectKey: string,
+  input: { durationSeconds?: number } = {},
+): Promise<UploadedVideoMetadata> {
   const config = getS3StorageConfig();
   if (!config) throw new Error('S3 storage is not configured');
   const response = await signedObjectRequest(config, 'HEAD', objectKey);
@@ -275,6 +279,7 @@ export async function completeUploadedVideo(objectKey: string): Promise<Uploaded
     playbackUrl: presignObjectUrl(config, 'GET', objectKey, DEFAULT_PLAYBACK_EXPIRES_SECONDS),
     size,
     contentType,
+    durationSeconds: input.durationSeconds,
   };
 }
 

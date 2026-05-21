@@ -4,10 +4,12 @@ import { Hono } from 'hono';
 import { type AuthContext, getAuthContext, hasScope } from '../lib/auth-context';
 import { mimeFromPath } from '../lib/content-type';
 import {
+  CONTEST_VIDEO_MAX_DURATION_SECONDS,
   type SkillComment,
   type SkillDetail,
   type SkillListItem,
   completeVideoUploadSchema,
+  createContestSubmissionSchema,
   createReleaseSchema,
   createSkillCommentSchema,
   createSkillPackageItemSchema,
@@ -30,6 +32,12 @@ import {
   upsertFileBodySchema,
 } from '../lib/dto';
 import { skillProtocolName } from '../lib/protocol-name';
+import {
+  HDU_SKILLS_EVENT_SLUG,
+  ensureContestEligibility,
+  listContestSubmissionsByUser,
+  upsertContestSubmission,
+} from '../services/contest-service';
 import { mintGrant } from '../services/install-grant-service';
 import {
   completeUploadedVideo,
@@ -209,6 +217,25 @@ const toReleaseDto = (release: Awaited<ReturnType<typeof listSkillReleases>>[num
   createdBy: release.author,
   createdAt: release.createdAt.toISOString(),
 });
+
+const toContestSubmissionDto = (
+  item: Awaited<ReturnType<typeof listContestSubmissionsByUser>>[number],
+) => ({
+  id: item.submission.id,
+  eventSlug: item.submission.eventSlug,
+  track: item.submission.track,
+  videoObjectKey: item.submission.videoObjectKey,
+  videoUrl: item.submission.videoUrl,
+  videoPlaybackUrl: item.submission.videoUrl
+    ? (createDemoVideoPlaybackUrl(item.submission.videoUrl) ?? item.submission.videoUrl)
+    : null,
+  videoDurationSeconds: item.submission.videoDurationSeconds,
+  createdAt: item.submission.createdAt.toISOString(),
+  updatedAt: item.submission.updatedAt.toISOString(),
+  skill: toListItem(item.skill),
+});
+
+const isSupportedContestEvent = (eventSlug: string) => eventSlug === HDU_SKILLS_EVENT_SLUG;
 
 const toRawReleaseDto = (release: {
   id: string;
@@ -501,7 +528,9 @@ apiRoute.post(
     }
 
     try {
-      const metadata = await completeUploadedVideo(input.objectKey);
+      const metadata = await completeUploadedVideo(input.objectKey, {
+        durationSeconds: input.durationSeconds,
+      });
       return c.json(metadata);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'OSS 对象校验失败';
@@ -538,6 +567,90 @@ apiRoute.get('/tags', async (c) => {
   const tags = await listAllTags();
   return c.json({ tags });
 });
+
+// ─── Contest API ─────────────────────────────────────────────────────
+
+apiRoute.get('/events/:eventSlug/me/submissions', async (c) => {
+  const eventSlug = c.req.param('eventSlug');
+  if (!isSupportedContestEvent(eventSlug)) return c.json({ error: 'Contest event not found' }, 404);
+
+  const auth = await getAuthContext(c);
+  const { user } = auth;
+  if (!user) return c.json({ error: 'Authentication required' }, 401);
+  if (!hasScope(auth, 'skills:read')) {
+    return c.json({ error: 'Missing scope: skills:read' }, 403);
+  }
+
+  const items = await listContestSubmissionsByUser({ eventSlug, userId: user.id });
+  return c.json({ items: items.map(toContestSubmissionDto), total: items.length });
+});
+
+apiRoute.post(
+  '/events/:eventSlug/submissions',
+  zValidator('json', createContestSubmissionSchema),
+  async (c) => {
+    const eventSlug = c.req.param('eventSlug');
+    if (!isSupportedContestEvent(eventSlug)) {
+      return c.json({ error: 'Contest event not found' }, 404);
+    }
+
+    const input = c.req.valid('json');
+    const auth = await getAuthContext(c);
+    const { user } = auth;
+    if (!user) return c.json({ error: 'Authentication required' }, 401);
+    if (!hasScope(auth, 'skills:write')) {
+      return c.json({ error: 'Missing scope: skills:write' }, 403);
+    }
+
+    const skill = await findSkillById(input.skillId, user.id);
+    if (!skill) return c.json({ error: 'Skill not found' }, 404);
+    if (skill.type !== 'owned')
+      return c.json({ error: '参赛作品必须是平台内真实可安装 Skill' }, 400);
+    if (skill.ownerUserId !== user.id) {
+      return c.json({ error: '只能提交自己账号下发布的 Skill' }, 403);
+    }
+    if (skill.visibility !== 'public') {
+      return c.json({ error: '参赛作品需要先设置为公开' }, 400);
+    }
+    if (!isS3StorageConfigured()) return c.json({ error: 'OSS storage is not configured' }, 503);
+    if (!isVideoObjectKeyForUser(input.videoObjectKey, user.id)) {
+      return c.json({ error: '讲解视频不属于当前用户' }, 403);
+    }
+    if (input.videoDurationSeconds > CONTEST_VIDEO_MAX_DURATION_SECONDS) {
+      return c.json({ error: '作品讲解视频需控制在 3 分钟以内' }, 400);
+    }
+
+    const eligibility = await ensureContestEligibility({ eventSlug, userId: user.id });
+    if (!eligibility.ok) {
+      return c.json({ error: eligibility.message }, eligibility.status);
+    }
+
+    let videoMetadata: Awaited<ReturnType<typeof completeUploadedVideo>>;
+    try {
+      videoMetadata = await completeUploadedVideo(input.videoObjectKey, {
+        durationSeconds: input.videoDurationSeconds,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'OSS 对象校验失败';
+      return c.json({ error: message }, 400);
+    }
+
+    await upsertContestSubmission({
+      eventSlug,
+      skillId: skill.id,
+      submitterUserId: user.id,
+      track: input.track,
+      videoObjectKey: input.videoObjectKey,
+      videoUrl: videoMetadata.videoUrl,
+      videoDurationSeconds: Math.ceil(input.videoDurationSeconds),
+    });
+
+    const items = await listContestSubmissionsByUser({ eventSlug, userId: user.id });
+    const created = items.find((item) => item.submission.skillId === skill.id);
+    if (!created) return c.json({ error: 'Contest submission not found' }, 500);
+    return c.json(toContestSubmissionDto(created), 201);
+  },
+);
 
 // ─── Detail ───────────────────────────────────────────────────────────
 
@@ -1390,6 +1503,7 @@ const handleGetMe = async (c: import('hono').Context) => {
     name: row.name,
     handle: row.handle,
     email: row.email,
+    phone: row.phone,
     image: row.image,
     isVirtual: row.isVirtual,
     canPublishAs: row.canPublishAs,

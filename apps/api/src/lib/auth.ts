@@ -46,6 +46,9 @@ export const OIDC_PROVIDER_ID = process.env.OIDC_PROVIDER_ID ?? 'mozia-sso';
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 
+const phoneFromProfile = (profile: Record<string, unknown>) =>
+  str(profile.phone) ?? str(profile.phone_number) ?? str(profile.mobile);
+
 export async function mapSsoProfileToUser(profile: Record<string, unknown>) {
   const sub = str(profile.sub) ?? str(profile.id) ?? 'unknown';
   const rawName =
@@ -55,6 +58,7 @@ export async function mapSsoProfileToUser(profile: Record<string, unknown>) {
     str(profile.email)?.split('@')[0] ??
     sub;
   const image = str(profile.picture) ?? str(profile.avatar);
+  const phone = phoneFromProfile(profile);
   const row = await resolveSsoUser({
     provider: 'casdoor',
     issuer: cfg('OIDC_ISSUER'),
@@ -62,6 +66,7 @@ export async function mapSsoProfileToUser(profile: Record<string, unknown>) {
     email: str(profile.email),
     name: rawName,
     avatar: image,
+    phone,
   });
 
   return {
@@ -72,6 +77,7 @@ export async function mapSsoProfileToUser(profile: Record<string, unknown>) {
     handle: row.handle,
     emailVerified: true,
     image: row.image ?? image,
+    phone: row.phone,
   };
 }
 
@@ -92,6 +98,7 @@ export const auth = betterAuth({
     additionalFields: {
       ssoSub: { type: 'string', required: false },
       handle: { type: 'string', required: false, input: false },
+      phone: { type: 'string', required: false, input: false },
     },
   },
   plugins: [
@@ -102,7 +109,7 @@ export const auth = betterAuth({
           clientId: cfg('OIDC_CLIENT_ID'),
           clientSecret: cfg('OIDC_CLIENT_SECRET'),
           discoveryUrl: `${cfg('OIDC_ISSUER')}/.well-known/openid-configuration`,
-          scopes: ['openid', 'profile', 'email'],
+          scopes: ['openid', 'profile', 'email', 'phone'],
           mapProfileToUser: mapSsoProfileToUser,
         },
       ],

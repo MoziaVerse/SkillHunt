@@ -2,6 +2,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from 'bun
 import { inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import {
+  contestSubmissions,
+  contestUsers,
   db,
   notifications,
   publishableBookmarks,
@@ -42,6 +44,11 @@ const FULL_TEST_SCOPES = [
 //   (header absent)        → anonymous
 const HEADER = 'x-test-user';
 
+let mockS3Configured = false;
+
+const contestVideoObjectKey = (userId: string) =>
+  `skillhunt/videos/${userId}/2026/05/demo-video.mp4`;
+
 mock.module('../lib/auth-context', () => ({
   hasScope: (ctx: AuthContext, scope: AuthContext['scopes'][number]) => ctx.scopes.includes(scope),
   getAuthContext: async (c: {
@@ -76,6 +83,31 @@ mock.module('../lib/auth-context', () => ({
         : FULL_TEST_SCOPES) as AuthContext['scopes'],
     };
   },
+}));
+
+mock.module('../services/s3-storage', () => ({
+  completeUploadedVideo: async (objectKey: string, input?: { durationSeconds?: number }) => {
+    if (!mockS3Configured) throw new Error('S3 storage is not configured');
+    return {
+      objectKey,
+      videoUrl: `https://oss.example/${objectKey}`,
+      playbackUrl: `https://oss.example/${objectKey}?playback=1`,
+      size: 1024,
+      contentType: 'video/mp4',
+      durationSeconds: input?.durationSeconds,
+    };
+  },
+  createDemoVideoPlaybackUrl: (videoUrl: string) => `${videoUrl}?playback=1`,
+  createVideoUploadTicket: (input: { userId: string; fileName: string }) => ({
+    uploadUrl: `https://oss.example/upload/${input.fileName}`,
+    objectKey: contestVideoObjectKey(input.userId),
+    videoUrl: `https://oss.example/${contestVideoObjectKey(input.userId)}`,
+    maxSizeBytes: VIDEO_UPLOAD_MAX_BYTES,
+    expiresInSeconds: 900,
+  }),
+  isS3StorageConfigured: () => mockS3Configured,
+  isVideoObjectKeyForUser: (objectKey: string, userId: string) =>
+    objectKey.startsWith(`skillhunt/videos/${userId}/`),
 }));
 
 let app: Hono;
@@ -130,10 +162,13 @@ async function insertTestSkill(input: {
 }
 
 async function resetAndSeed() {
+  mockS3Configured = false;
   await db.delete(notifications);
   await db.delete(publishableBookmarks);
   await db.delete(publishableUpvotes);
   await db.delete(publishableComments);
+  await db.delete(contestSubmissions);
+  await db.delete(contestUsers);
   await db.delete(skillSyncEvents);
   await db.delete(publishableSubscriptions);
   await db.delete(publishableReleases);
@@ -149,6 +184,7 @@ async function resetAndSeed() {
       name: OWNER_NAME,
       handle: OWNER_NAME,
       email: 'tester@example.com',
+      phone: '13300001064',
       emailVerified: true,
     },
     {
@@ -159,6 +195,12 @@ async function resetAndSeed() {
       emailVerified: true,
     },
   ]);
+  await db.insert(contestUsers).values({
+    eventSlug: 'hdu-skills-2026',
+    phone: '13300001064',
+    status: 'eligible',
+    note: '测试报名用户',
+  });
 
   // owned + public, owned by tester
   const ownedPub = await insertTestSkill({
@@ -221,6 +263,8 @@ async function cleanup() {
   await db.delete(publishableBookmarks);
   await db.delete(publishableUpvotes);
   await db.delete(publishableComments);
+  await db.delete(contestSubmissions);
+  await db.delete(contestUsers);
   await db.delete(skillSyncEvents);
   await db.delete(publishableSubscriptions);
   await db.delete(publishableReleases);
@@ -1537,9 +1581,10 @@ describe('business API', () => {
     it('returns current user', async () => {
       const res = await app.fetch(reqAsUser('/api/me', OWNER_USER_ID));
       expect(res.status).toBe(200);
-      const body = (await res.json()) as { name: string; isVirtual: boolean };
+      const body = (await res.json()) as { name: string; isVirtual: boolean; phone: string | null };
       expect(body.name).toBe(OWNER_NAME);
       expect(body.isVirtual).toBe(false);
+      expect(body.phone).toBe('13300001064');
     });
   });
 
@@ -1607,6 +1652,244 @@ describe('business API', () => {
       expect(res.status).toBe(200);
       const body = (await res.json()) as { items: Array<{ slug: string }> };
       expect(body.items.map((i) => i.slug)).toEqual(['test-owned-pub']);
+    });
+  });
+
+  describe('contest submissions', () => {
+    beforeEach(() => {
+      mockS3Configured = true;
+    });
+
+    async function ownerSkillId(slug: string) {
+      const res = await app.fetch(reqAsUser('/api/me/skills', OWNER_USER_ID));
+      const body = (await res.json()) as { items: Array<{ id: string; slug: string }> };
+      const skill = body.items.find((item) => item.slug === slug);
+      if (!skill) throw new Error(`missing seeded skill: ${slug}`);
+      return skill.id;
+    }
+
+    const contestSubmissionInput = (
+      skillId: string,
+      track: '学习科研' | '校园生活' | '创意应用' | '专业实训' = '学习科研',
+      userId = OWNER_USER_ID,
+    ) => ({
+      skillId,
+      track,
+      videoObjectKey: contestVideoObjectKey(userId),
+      videoDurationSeconds: 120,
+    });
+
+    it('sets an existing public skill as contest submission and lists it', async () => {
+      const skillId = await ownerSkillId('test-owned-pub');
+      const created = await app.fetch(
+        reqAsUser(
+          '/api/events/hdu-skills-2026/submissions',
+          OWNER_USER_ID,
+          jsonInit(contestSubmissionInput(skillId)),
+        ),
+      );
+      expect(created.status).toBe(201);
+      const createdBody = (await created.json()) as {
+        track: string;
+        videoDurationSeconds: number;
+        videoUrl: string;
+        skill: { slug: string };
+      };
+      expect(createdBody.track).toBe('学习科研');
+      expect(createdBody.videoDurationSeconds).toBe(120);
+      expect(createdBody.videoUrl).toContain('skillhunt/videos/test-owner');
+      expect(createdBody.skill.slug).toBe('test-owned-pub');
+
+      const list = await app.fetch(
+        reqAsUser('/api/events/hdu-skills-2026/me/submissions', OWNER_USER_ID),
+      );
+      expect(list.status).toBe(200);
+      const listBody = (await list.json()) as {
+        items: Array<{ track: string; skill: { slug: string } }>;
+      };
+      expect(listBody.items).toHaveLength(1);
+      expect(listBody.items[0]?.skill.slug).toBe('test-owned-pub');
+    });
+
+    it('updates the track when the same skill is submitted again', async () => {
+      const skillId = await ownerSkillId('test-owned-pub');
+      await app.fetch(
+        reqAsUser(
+          '/api/events/hdu-skills-2026/submissions',
+          OWNER_USER_ID,
+          jsonInit(contestSubmissionInput(skillId)),
+        ),
+      );
+      const updated = await app.fetch(
+        reqAsUser(
+          '/api/events/hdu-skills-2026/submissions',
+          OWNER_USER_ID,
+          jsonInit(contestSubmissionInput(skillId, '创意应用')),
+        ),
+      );
+      expect(updated.status).toBe(201);
+
+      const list = await app.fetch(
+        reqAsUser('/api/events/hdu-skills-2026/me/submissions', OWNER_USER_ID),
+      );
+      const body = (await list.json()) as { items: Array<{ track: string }> };
+      expect(body.items).toHaveLength(1);
+      expect(body.items[0]?.track).toBe('创意应用');
+    });
+
+    it('rejects private skills as contest submissions', async () => {
+      const skillId = await ownerSkillId('test-owned-priv');
+      const res = await app.fetch(
+        reqAsUser(
+          '/api/events/hdu-skills-2026/submissions',
+          OWNER_USER_ID,
+          jsonInit(contestSubmissionInput(skillId)),
+        ),
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects videos longer than 3 minutes', async () => {
+      const skillId = await ownerSkillId('test-owned-pub');
+      const res = await app.fetch(
+        reqAsUser(
+          '/api/events/hdu-skills-2026/submissions',
+          OWNER_USER_ID,
+          jsonInit({
+            ...contestSubmissionInput(skillId),
+            videoDurationSeconds: 181,
+          }),
+        ),
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects video objects that do not belong to the current user', async () => {
+      const skillId = await ownerSkillId('test-owned-pub');
+      const res = await app.fetch(
+        reqAsUser(
+          '/api/events/hdu-skills-2026/submissions',
+          OWNER_USER_ID,
+          jsonInit({
+            ...contestSubmissionInput(skillId),
+            videoObjectKey: contestVideoObjectKey(OTHER_USER_ID),
+          }),
+        ),
+      );
+      expect(res.status).toBe(403);
+    });
+
+    it('rejects users without synced phone', async () => {
+      const publicSkill = await insertTestSkill({
+        slug: 'other-public-no-phone',
+        name: 'other-public-no-phone',
+        description: 'other public skill',
+        type: 'owned',
+        visibility: 'public',
+        tags: ['contest'],
+        frontmatter: { name: 'other-public-no-phone' },
+        ownerUserId: OTHER_USER_ID,
+      });
+      await db.insert(skillFiles).values({
+        skillId: publicSkill.id,
+        path: 'SKILL.md',
+        content: '---\nname: other-public-no-phone\n---\n# body\n',
+      });
+
+      const res = await app.fetch(
+        reqAsUser(
+          '/api/events/hdu-skills-2026/submissions',
+          OTHER_USER_ID,
+          jsonInit(contestSubmissionInput(publicSkill.id, '学习科研', OTHER_USER_ID)),
+        ),
+      );
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain('未同步手机号');
+    });
+
+    it('rejects users whose phone is not marked eligible for the event', async () => {
+      await db
+        .update(user)
+        .set({ phone: '15500001064' })
+        .where(inArray(user.id, [OTHER_USER_ID]));
+      const publicSkill = await insertTestSkill({
+        slug: 'other-public-unregistered',
+        name: 'other-public-unregistered',
+        description: 'other public skill',
+        type: 'owned',
+        visibility: 'public',
+        tags: ['contest'],
+        frontmatter: { name: 'other-public-unregistered' },
+        ownerUserId: OTHER_USER_ID,
+      });
+      await db.insert(skillFiles).values({
+        skillId: publicSkill.id,
+        path: 'SKILL.md',
+        content: '---\nname: other-public-unregistered\n---\n# body\n',
+      });
+
+      const res = await app.fetch(
+        reqAsUser(
+          '/api/events/hdu-skills-2026/submissions',
+          OTHER_USER_ID,
+          jsonInit(contestSubmissionInput(publicSkill.id, '学习科研', OTHER_USER_ID)),
+        ),
+      );
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain('未完成活动报名');
+    });
+
+    it('rejects disqualified contest users', async () => {
+      await db
+        .update(user)
+        .set({ phone: '16600001064' })
+        .where(inArray(user.id, [OTHER_USER_ID]));
+      await db.insert(contestUsers).values({
+        eventSlug: 'hdu-skills-2026',
+        phone: '16600001064',
+        status: 'disqualified',
+        note: '测试取消资格用户',
+      });
+      const publicSkill = await insertTestSkill({
+        slug: 'other-public-disqualified',
+        name: 'other-public-disqualified',
+        description: 'other public skill',
+        type: 'owned',
+        visibility: 'public',
+        tags: ['contest'],
+        frontmatter: { name: 'other-public-disqualified' },
+        ownerUserId: OTHER_USER_ID,
+      });
+      await db.insert(skillFiles).values({
+        skillId: publicSkill.id,
+        path: 'SKILL.md',
+        content: '---\nname: other-public-disqualified\n---\n# body\n',
+      });
+
+      const res = await app.fetch(
+        reqAsUser(
+          '/api/events/hdu-skills-2026/submissions',
+          OTHER_USER_ID,
+          jsonInit(contestSubmissionInput(publicSkill.id, '学习科研', OTHER_USER_ID)),
+        ),
+      );
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain('资格已取消');
+    });
+
+    it('rejects submissions for another user skill', async () => {
+      const skillId = await ownerSkillId('test-owned-pub');
+      const res = await app.fetch(
+        reqAsUser(
+          '/api/events/hdu-skills-2026/submissions',
+          OTHER_USER_ID,
+          jsonInit(contestSubmissionInput(skillId, '学习科研', OTHER_USER_ID)),
+        ),
+      );
+      expect(res.status).toBe(403);
     });
   });
 
