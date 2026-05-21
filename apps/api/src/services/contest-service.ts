@@ -85,9 +85,9 @@ export async function upsertContestSubmission(input: {
   skillId: string;
   submitterUserId: string;
   track: ContestTrack;
-  videoObjectKey: string;
-  videoUrl: string;
-  videoDurationSeconds: number;
+  videoObjectKey?: string | null;
+  videoUrl?: string | null;
+  videoDurationSeconds?: number | null;
 }): Promise<typeof contestSubmissions.$inferSelect> {
   const existing = await db
     .select()
@@ -107,9 +107,9 @@ export async function upsertContestSubmission(input: {
       .set({
         track: input.track,
         submitterUserId: input.submitterUserId,
-        videoObjectKey: input.videoObjectKey,
-        videoUrl: input.videoUrl,
-        videoDurationSeconds: input.videoDurationSeconds,
+        videoObjectKey: input.videoObjectKey ?? null,
+        videoUrl: input.videoUrl ?? null,
+        videoDurationSeconds: input.videoDurationSeconds ?? null,
         updatedAt: new Date(),
       })
       .where(eq(contestSubmissions.id, current.id))
@@ -125,9 +125,9 @@ export async function upsertContestSubmission(input: {
       skillId: input.skillId,
       submitterUserId: input.submitterUserId,
       track: input.track,
-      videoObjectKey: input.videoObjectKey,
-      videoUrl: input.videoUrl,
-      videoDurationSeconds: input.videoDurationSeconds,
+      videoObjectKey: input.videoObjectKey ?? null,
+      videoUrl: input.videoUrl ?? null,
+      videoDurationSeconds: input.videoDurationSeconds ?? null,
     })
     .returning();
   if (!created) throw new Error('upsertContestSubmission: insert returned no row');

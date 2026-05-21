@@ -4,7 +4,6 @@ import { Hono } from 'hono';
 import { type AuthContext, getAuthContext, hasScope } from '../lib/auth-context';
 import { mimeFromPath } from '../lib/content-type';
 import {
-  CONTEST_VIDEO_MAX_DURATION_SECONDS,
   type SkillComment,
   type SkillDetail,
   type SkillListItem,
@@ -32,6 +31,7 @@ import {
   upsertFileBodySchema,
 } from '../lib/dto';
 import { skillProtocolName } from '../lib/protocol-name';
+import { normalizeSsoPhone } from '../lib/sso-user';
 import {
   HDU_SKILLS_EVENT_SLUG,
   ensureContestEligibility,
@@ -585,6 +585,34 @@ apiRoute.get('/events/:eventSlug/me/submissions', async (c) => {
   return c.json({ items: items.map(toContestSubmissionDto), total: items.length });
 });
 
+apiRoute.get('/events/:eventSlug/me/eligibility', async (c) => {
+  const eventSlug = c.req.param('eventSlug');
+  if (!isSupportedContestEvent(eventSlug)) return c.json({ error: 'Contest event not found' }, 404);
+
+  const auth = await getAuthContext(c);
+  const { user } = auth;
+  if (!user) return c.json({ error: 'Authentication required' }, 401);
+  if (!hasScope(auth, 'skills:read')) {
+    return c.json({ error: 'Missing scope: skills:read' }, 403);
+  }
+
+  const eligibility = await ensureContestEligibility({ eventSlug, userId: user.id });
+  if (eligibility.ok) {
+    return c.json({
+      eligible: true,
+      phone: eligibility.phone,
+      message: '当前账号已通过活动资格校验，可以选择 Skill 参赛',
+    });
+  }
+
+  const userRow = await findUserById(user.id);
+  return c.json({
+    eligible: false,
+    phone: normalizeSsoPhone(userRow?.phone ?? undefined),
+    message: eligibility.message,
+  });
+});
+
 apiRoute.post(
   '/events/:eventSlug/submissions',
   zValidator('json', createContestSubmissionSchema),
@@ -612,27 +640,14 @@ apiRoute.post(
     if (skill.visibility !== 'public') {
       return c.json({ error: '参赛作品需要先设置为公开' }, 400);
     }
-    if (!isS3StorageConfigured()) return c.json({ error: 'OSS storage is not configured' }, 503);
-    if (!isVideoObjectKeyForUser(input.videoObjectKey, user.id)) {
-      return c.json({ error: '讲解视频不属于当前用户' }, 403);
-    }
-    if (input.videoDurationSeconds > CONTEST_VIDEO_MAX_DURATION_SECONDS) {
-      return c.json({ error: '作品讲解视频需控制在 3 分钟以内' }, 400);
-    }
 
     const eligibility = await ensureContestEligibility({ eventSlug, userId: user.id });
     if (!eligibility.ok) {
       return c.json({ error: eligibility.message }, eligibility.status);
     }
 
-    let videoMetadata: Awaited<ReturnType<typeof completeUploadedVideo>>;
-    try {
-      videoMetadata = await completeUploadedVideo(input.videoObjectKey, {
-        durationSeconds: input.videoDurationSeconds,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'OSS 对象校验失败';
-      return c.json({ error: message }, 400);
+    if (!skill.demoVideoUrl) {
+      return c.json({ error: '参赛作品需要先在发布或编辑 Skill 时上传演示视频' }, 400);
     }
 
     await upsertContestSubmission({
@@ -640,9 +655,7 @@ apiRoute.post(
       skillId: skill.id,
       submitterUserId: user.id,
       track: input.track,
-      videoObjectKey: input.videoObjectKey,
-      videoUrl: videoMetadata.videoUrl,
-      videoDurationSeconds: Math.ceil(input.videoDurationSeconds),
+      videoUrl: skill.demoVideoUrl,
     });
 
     const items = await listContestSubmissionsByUser({ eventSlug, userId: user.id });

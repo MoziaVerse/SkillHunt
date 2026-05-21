@@ -214,8 +214,12 @@ export interface CreateSkillPackageInput {
 export interface CreateContestSubmissionInput {
   skillId: string;
   track: ContestTrack;
-  videoObjectKey: string;
-  videoDurationSeconds: number;
+}
+
+export interface ContestEligibilityResponse {
+  eligible: boolean;
+  phone: string | null;
+  message: string;
 }
 
 export const apiClient = {
@@ -273,6 +277,13 @@ export const apiClient = {
   listMyContestSubmissions(eventSlug: string): Promise<ListContestSubmissionsResponse> {
     return request<ListContestSubmissionsResponse>(
       `/events/${encodeURIComponent(eventSlug)}/me/submissions`,
+      { credentials: 'include' },
+    );
+  },
+
+  getContestEligibility(eventSlug: string): Promise<ContestEligibilityResponse> {
+    return request<ContestEligibilityResponse>(
+      `/events/${encodeURIComponent(eventSlug)}/me/eligibility`,
       { credentials: 'include' },
     );
   },

@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { useEffect, useMemo, useState } from 'react';
 
 const VIDEO_UPLOAD_MAX_BYTES = 500 * 1024 * 1024;
+const DEMO_VIDEO_MAX_DURATION_SECONDS = 180;
 
 const OFFICIAL_TAGS = [
   '编程开发',
@@ -113,6 +114,13 @@ function formatFileSize(bytes: number) {
   return `${bytes}B`;
 }
 
+function formatDuration(seconds: number) {
+  const total = Math.ceil(seconds);
+  const minutes = Math.floor(total / 60);
+  const rest = String(total % 60).padStart(2, '0');
+  return `${minutes}:${rest}`;
+}
+
 function inferVideoContentType(file: File): string | null {
   if (file.type.toLowerCase().startsWith('video/')) return file.type;
   const ext = file.name.split('.').pop()?.toLowerCase();
@@ -121,6 +129,28 @@ function inferVideoContentType(file: File): string | null {
   if (ext === 'webm') return 'video/webm';
   if (ext === 'ogg' || ext === 'ogv') return 'video/ogg';
   return null;
+}
+
+function readVideoDuration(file: File): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.onloadedmetadata = () => {
+      const { duration } = video;
+      URL.revokeObjectURL(url);
+      if (!Number.isFinite(duration) || duration <= 0) {
+        reject(new Error('无法读取视频时长，请更换视频后重试'));
+        return;
+      }
+      resolve(duration);
+    };
+    video.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('无法读取视频时长，请更换视频后重试'));
+    };
+    video.src = url;
+  });
 }
 
 function isDirectVideoUrl(value: string | null): value is string {
@@ -323,8 +353,16 @@ export function SkillForm({
     }
 
     setVideoUploading(true);
-    setVideoUploadLabel(`${file.name} · 上传中`);
+    setVideoUploadLabel(`${file.name} · 正在读取时长`);
     try {
+      const durationSeconds = await readVideoDuration(file);
+      if (durationSeconds > DEMO_VIDEO_MAX_DURATION_SECONDS) {
+        setError('演示视频需控制在 3 分钟以内');
+        setVideoUploadLabel(null);
+        return;
+      }
+
+      setVideoUploadLabel(`${file.name} · 上传中`);
       const ticket = await apiClient.createVideoUpload({
         fileName: file.name,
         contentType,
@@ -338,10 +376,14 @@ export function SkillForm({
       if (!uploadResponse.ok) {
         throw new Error(`视频上传失败：${uploadResponse.status}`);
       }
-      const uploaded = await apiClient.completeVideoUpload(ticket.objectKey);
+      const uploaded = await apiClient.completeVideoUpload(ticket.objectKey, {
+        durationSeconds: Math.ceil(durationSeconds),
+      });
       setDemoVideoUrl(uploaded.videoUrl);
       setVideoPreviewUrl(uploaded.playbackUrl);
-      setVideoUploadLabel(`${file.name} · ${formatFileSize(uploaded.size)}`);
+      setVideoUploadLabel(
+        `${file.name} · ${formatDuration(durationSeconds)} · ${formatFileSize(uploaded.size)}`,
+      );
     } catch (err) {
       const msg =
         err instanceof ApiError
@@ -447,7 +489,9 @@ export function SkillForm({
 
         {/* Demo video upload */}
         <div>
-          <FieldLabel hint="可选，上传到 SkillHunt OSS，单个视频不超过 500MB">演示视频</FieldLabel>
+          <FieldLabel hint="可选，上传到 SkillHunt OSS，单个视频不超过 3 分钟、500MB">
+            演示视频
+          </FieldLabel>
           <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
@@ -457,7 +501,7 @@ export function SkillForm({
                     : '上传一个演示视频，帮助别人快速判断实际效果'}
                 </div>
                 <div className="mt-1 text-[12px] text-neutral-500">
-                  支持 MP4、WebM、MOV、OGG，文件大小上限 500MB。
+                  支持 MP4、WebM、MOV、OGG，视频时长不超过 3 分钟，文件大小上限 500MB。
                 </div>
                 {isManagedUploadedVideo && (
                   <div className="mt-2 text-[12px] text-emerald-700">

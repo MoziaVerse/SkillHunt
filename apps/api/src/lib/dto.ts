@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const VIDEO_UPLOAD_MAX_BYTES = 500 * 1024 * 1024;
-export const CONTEST_VIDEO_MAX_DURATION_SECONDS = 180;
+export const VIDEO_UPLOAD_MAX_DURATION_SECONDS = 180;
 
 // ─── Query ─────────────────────────────────────────────────────────────
 
@@ -333,11 +333,6 @@ export type ContestTrack = z.infer<typeof contestTrackSchema>;
 export const createContestSubmissionSchema = z.object({
   skillId: z.string().min(1),
   track: contestTrackSchema,
-  videoObjectKey: z.string().min(1).max(1024),
-  videoDurationSeconds: z
-    .number()
-    .positive()
-    .max(CONTEST_VIDEO_MAX_DURATION_SECONDS, '作品讲解视频需控制在 3 分钟以内'),
 });
 
 export type CreateContestSubmissionInput = z.infer<typeof createContestSubmissionSchema>;
@@ -359,7 +354,11 @@ export type CreateVideoUploadInput = z.infer<typeof createVideoUploadSchema>;
 
 export const completeVideoUploadSchema = z.object({
   objectKey: z.string().min(1).max(1024),
-  durationSeconds: z.number().positive().optional(),
+  durationSeconds: z
+    .number()
+    .positive()
+    .max(VIDEO_UPLOAD_MAX_DURATION_SECONDS, '演示视频需控制在 3 分钟以内')
+    .optional(),
 });
 
 export type CompleteVideoUploadInput = z.infer<typeof completeVideoUploadSchema>;

@@ -1,6 +1,6 @@
 import { TwemojiIcon } from '@/components/twemoji-icon';
 import { Button } from '@/components/ui/button';
-import { ApiError, type MeResponse, apiClient } from '@/lib/api-client';
+import { type ContestEligibilityResponse, type MeResponse, apiClient } from '@/lib/api-client';
 import { DEFAULT_SKILL_ICON } from '@/lib/default-icons';
 import { cn } from '@/lib/utils';
 import type {
@@ -24,12 +24,10 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { type ChangeEvent, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
 const EVENT_SLUG = 'hdu-skills-2026';
-const VIDEO_UPLOAD_MAX_BYTES = 500 * 1024 * 1024;
-const CONTEST_VIDEO_MAX_DURATION_SECONDS = 180;
 
 type EventTab = 'overview' | 'guide' | 'submit' | 'submissions' | 'awards';
 
@@ -50,60 +48,6 @@ const eventSecondaryButtonClass = cn(
   eventButtonBaseClass,
   'border-neutral-200 hover:border-neutral-400 hover:bg-neutral-50 hover:text-neutral-950',
 );
-
-interface ContestVideoUpload {
-  objectKey: string;
-  videoUrl: string;
-  playbackUrl: string;
-  durationSeconds: number;
-  size: number;
-  fileName: string;
-}
-
-function formatFileSize(bytes: number) {
-  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-  return `${bytes}B`;
-}
-
-function formatDuration(seconds: number) {
-  const total = Math.ceil(seconds);
-  const minutes = Math.floor(total / 60);
-  const rest = String(total % 60).padStart(2, '0');
-  return `${minutes}:${rest}`;
-}
-
-function inferVideoContentType(file: File): string | null {
-  if (file.type.toLowerCase().startsWith('video/')) return file.type;
-  const ext = file.name.split('.').pop()?.toLowerCase();
-  if (ext === 'mp4' || ext === 'm4v') return 'video/mp4';
-  if (ext === 'mov') return 'video/quicktime';
-  if (ext === 'webm') return 'video/webm';
-  if (ext === 'ogg' || ext === 'ogv') return 'video/ogg';
-  return null;
-}
-
-function readVideoDuration(file: File): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const video = document.createElement('video');
-    video.preload = 'metadata';
-    video.onloadedmetadata = () => {
-      const { duration } = video;
-      URL.revokeObjectURL(url);
-      if (!Number.isFinite(duration) || duration <= 0) {
-        reject(new Error('无法读取视频时长，请更换视频后重试'));
-        return;
-      }
-      resolve(duration);
-    };
-    video.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('无法读取视频时长，请更换视频后重试'));
-    };
-    video.src = url;
-  });
-}
 
 const tracks: Array<{ name: ContestTrack; text: string }> = [
   {
@@ -137,7 +81,7 @@ const schedule = [
     date: '5 月 22 日 - 6 月 5 日 24:00',
     start: '2026-05-22T00:00:00',
     end: '2026-06-06T00:00:00',
-    text: '发布真实可安装 Skill，并提交讲解视频。',
+    text: '发布真实可安装 Skill，并提交为参赛作品。',
   },
   {
     title: '评审投票期',
@@ -164,8 +108,7 @@ const awards = [
 ] as const;
 
 const guideRules = [
-  '个人或 2 人团队参赛，团队仅需 1 人代表完成报名与提交。',
-  '团队内任一队员在平台提交的作品均视为团队作品。',
+  '个人或 2 人团队参赛，团队仅需 1 人代表报名，团队内任一选手在平台提交的作品均视为团队作品。',
   '每个参赛主体不限作品提交数量，同/跨赛道均可。',
   '每个 Skill 只能选择 1 个赛道参加活动。',
   '作品须原创、积极健康、贴合高校校园场景，不得抄袭、侵权、涉密或违反法律法规。',
@@ -180,7 +123,7 @@ const guideFlow = [
 
 const submissionChecklist = [
   ['标准 Skill', '作品必须是平台内真实可安装的 Skill。'],
-  ['讲解视频', '上传 3 分钟以内作品讲解视频。'],
+  ['Skill 演示视频', '发布或编辑 Skill 时上传 3 分钟以内演示视频，提交参赛时无需重复上传。'],
 ] as const;
 
 function dateInShanghai(value: string) {
@@ -395,6 +338,38 @@ function EmptyState({
   );
 }
 
+function EligibilityStatus({ eligibility }: { eligibility: ContestEligibilityResponse | null }) {
+  if (!eligibility) return null;
+
+  return (
+    <div
+      className={cn(
+        'rounded-xl border px-4 py-3',
+        eligibility.eligible
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+          : 'border-amber-200 bg-amber-50 text-amber-800',
+      )}
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-2">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <div className="text-[14px] font-semibold">
+              {eligibility.eligible ? '参赛资格已通过' : '参赛资格待确认'}
+            </div>
+            <p className="mt-1 text-[13px] leading-5 opacity-80">{eligibility.message}</p>
+          </div>
+        </div>
+        {eligibility.phone ? (
+          <div className="shrink-0 font-mono text-[12px] opacity-70">
+            手机号 {eligibility.phone}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function ContestTimeline() {
   return (
     <div className="rounded-xl border border-neutral-200 bg-white p-5">
@@ -500,8 +475,20 @@ function Hero({
               <QrCode className="h-4 w-4" />
             </Button>
             <Button asChild variant="outline" className={eventSecondaryButtonClass}>
+              <Link to={`/events/${EVENT_SLUG}?tab=submit`}>
+                检查参赛资格
+                <CheckCircle2 className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className={eventSecondaryButtonClass}>
               <Link to="/publish/skill">
-                发布 Skill 后加入竞赛
+                发布 Skill
+                <Upload className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className={eventSecondaryButtonClass}>
+              <Link to={`/events/${EVENT_SLUG}?tab=submit`}>
+                选择 Skill 参赛
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>
@@ -571,7 +558,7 @@ function OverviewTab() {
             <Upload className="mb-4 h-5 w-5 text-emerald-600" />
             <div className="text-[16px] font-semibold text-neutral-950">发布作品</div>
             <p className="mt-2 text-[13px] leading-6 text-neutral-500">
-              参赛作品必须是真实可安装 Skill，并上传 3 分钟以内的作品讲解视频。
+              参赛作品必须是真实可安装 Skill，且 Skill 本身已上传 3 分钟以内演示视频。
             </p>
           </div>
           <div className="rounded-xl border border-neutral-200 bg-white p-5">
@@ -588,7 +575,7 @@ function OverviewTab() {
         <SectionTitle
           eyebrow="Contact"
           title="报名与咨询"
-          description="完成外部问卷报名后，请继续准备标准 Skill 和讲解视频。赛事教程、答疑和节点提醒会在企微群内同步。"
+          description="完成外部问卷报名后，请继续准备标准 Skill，并在发布或编辑 Skill 时上传演示视频。赛事教程、答疑和节点提醒会在企微群内同步。"
         />
         <div className="grid gap-4 md:grid-cols-2">
           <QrCard
@@ -784,7 +771,7 @@ function ContestSkillOptionCard({
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span>@{skill.owner.handle}</span>
           <span>▲ {skill.upvoteCount}</span>
-          {submission?.videoUrl ? <span>已提交讲解视频</span> : <span>需上传讲解视频</span>}
+          {skill.demoVideoUrl ? <span>已有演示视频</span> : <span>缺少演示视频</span>}
         </div>
         {submission ? (
           <div className="mt-1 text-emerald-700">参赛赛道：{submission.track}</div>
@@ -803,9 +790,7 @@ function SubmitTab() {
   const [submissions, setSubmissions] = useState<ContestSubmission[]>([]);
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
   const [selectedTrack, setSelectedTrack] = useState<ContestTrack>('学习科研');
-  const [contestVideo, setContestVideo] = useState<ContestVideoUpload | null>(null);
-  const [videoUploading, setVideoUploading] = useState(false);
-  const [videoUploadLabel, setVideoUploadLabel] = useState<string | null>(null);
+  const [eligibility, setEligibility] = useState<ContestEligibilityResponse | null>(null);
   const [skillQuery, setSkillQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -827,12 +812,14 @@ function SubmitTab() {
           setSkills([]);
           setSubmissions([]);
           setSelectedSkillId(null);
+          setEligibility(null);
           return;
         }
 
-        const [skillRes, submissionRes] = await Promise.all([
+        const [skillRes, submissionRes, eligibilityRes] = await Promise.all([
           apiClient.getMySkills(),
           apiClient.listMyContestSubmissions(EVENT_SLUG),
+          apiClient.getContestEligibility(EVENT_SLUG),
         ]);
         if (cancelled) return;
 
@@ -844,6 +831,7 @@ function SubmitTab() {
           : null;
         setSkills(ownedSkills);
         setSubmissions(submissionRes.items);
+        setEligibility(eligibilityRes);
         setSelectedSkillId((current) => current ?? initialSkillId);
         if (initialSubmission) setSelectedTrack(initialSubmission.track);
       } catch (err) {
@@ -872,19 +860,10 @@ function SubmitTab() {
   );
 
   const selectedSubmission = selectedSkill ? submissionsBySkillId.get(selectedSkill.id) : undefined;
-  const selectedVideoObjectKey = contestVideo?.objectKey ?? selectedSubmission?.videoObjectKey;
-  const selectedVideoDuration =
-    contestVideo?.durationSeconds ?? selectedSubmission?.videoDurationSeconds ?? null;
-  const selectedVideoPreviewUrl =
-    contestVideo?.playbackUrl ??
-    selectedSubmission?.videoPlaybackUrl ??
-    selectedSubmission?.videoUrl ??
-    null;
-  const hasContestVideo = Boolean(selectedVideoObjectKey && selectedVideoDuration);
-  const submitAlreadySet =
-    selectedSubmission?.track === selectedTrack && !contestVideo && hasContestVideo;
+  const selectedSkillHasVideo = Boolean(selectedSkill?.demoVideoUrl);
+  const submitAlreadySet = selectedSubmission?.track === selectedTrack && selectedSkillHasVideo;
   const submitUnavailable =
-    !selectedSkill || selectedSkill.visibility !== 'public' || !hasContestVideo || videoUploading;
+    !selectedSkill || selectedSkill.visibility !== 'public' || !selectedSkillHasVideo;
 
   const visibleSkills = useMemo(() => {
     const query = skillQuery.trim().toLowerCase();
@@ -897,76 +876,6 @@ function SubmitTab() {
     );
   }, [skillQuery, skills]);
 
-  const handleContestVideoFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const input = event.currentTarget;
-    const file = input.files?.[0];
-    input.value = '';
-    if (!file) return;
-
-    const contentType = inferVideoContentType(file);
-    if (!contentType) {
-      setError('请上传 MP4、MOV、WebM 等常见视频格式');
-      return;
-    }
-    if (file.size > VIDEO_UPLOAD_MAX_BYTES) {
-      setError(`讲解视频不能超过 ${formatFileSize(VIDEO_UPLOAD_MAX_BYTES)}`);
-      return;
-    }
-
-    setVideoUploading(true);
-    setError(null);
-    setNotice(null);
-    setVideoUploadLabel('正在读取视频时长…');
-    try {
-      const durationSeconds = await readVideoDuration(file);
-      if (durationSeconds > CONTEST_VIDEO_MAX_DURATION_SECONDS) {
-        setError('作品讲解视频需控制在 3 分钟以内');
-        setVideoUploadLabel(null);
-        return;
-      }
-
-      setVideoUploadLabel('正在上传讲解视频…');
-      const ticket = await apiClient.createVideoUpload({
-        fileName: file.name,
-        contentType,
-        size: file.size,
-      });
-      const uploadRes = await fetch(ticket.uploadUrl, {
-        method: 'PUT',
-        headers: { 'content-type': contentType },
-        body: file,
-      });
-      if (!uploadRes.ok) {
-        throw new Error('讲解视频上传失败，请稍后重试');
-      }
-
-      const uploaded = await apiClient.completeVideoUpload(ticket.objectKey, {
-        durationSeconds: Math.ceil(durationSeconds),
-      });
-      const finalDuration = uploaded.durationSeconds ?? Math.ceil(durationSeconds);
-      setContestVideo({
-        objectKey: uploaded.objectKey,
-        videoUrl: uploaded.videoUrl,
-        playbackUrl: uploaded.playbackUrl,
-        durationSeconds: finalDuration,
-        size: uploaded.size || file.size,
-        fileName: file.name,
-      });
-      setVideoUploadLabel(
-        `${file.name} · ${formatDuration(finalDuration)} · ${formatFileSize(uploaded.size || file.size)}`,
-      );
-    } catch (err) {
-      setError(
-        err instanceof ApiError || err instanceof Error
-          ? err.message
-          : '讲解视频上传失败，请稍后重试',
-      );
-      setVideoUploadLabel(null);
-    } finally {
-      setVideoUploading(false);
-    }
-  };
-
   const submit = async () => {
     if (!selectedSkill) {
       setError('请先选择一个 Skill');
@@ -976,8 +885,8 @@ function SubmitTab() {
       setError('参赛作品需要先设置为公开');
       return;
     }
-    if (!selectedVideoObjectKey || !selectedVideoDuration) {
-      setError('请先上传 3 分钟以内作品讲解视频');
+    if (!selectedSkill.demoVideoUrl) {
+      setError('请先在发布或编辑 Skill 时上传 3 分钟以内演示视频');
       return;
     }
 
@@ -988,15 +897,11 @@ function SubmitTab() {
       const submission = await apiClient.createContestSubmission(EVENT_SLUG, {
         skillId: selectedSkill.id,
         track: selectedTrack,
-        videoObjectKey: selectedVideoObjectKey,
-        videoDurationSeconds: Math.ceil(selectedVideoDuration),
       });
       setSubmissions((prev) => [
         submission,
         ...prev.filter((item) => item.skill.id !== selectedSkill.id),
       ]);
-      setContestVideo(null);
-      setVideoUploadLabel(null);
       setNotice(`已将「${selectedSkill.name}」设置为 ${selectedTrack} 赛道活动作品。`);
     } catch (err) {
       setError(err instanceof Error ? err.message : '设置活动作品失败');
@@ -1049,12 +954,13 @@ function SubmitTab() {
 
   if (skills.length === 0) {
     return (
-      <div>
+      <div className="space-y-6">
         <SectionTitle
           eyebrow="Submit"
           title="提交作品"
           description="第一版操作路径是先发布一个真实可安装 Skill，再把该 Skill 加入本次竞赛。"
         />
+        <EligibilityStatus eligibility={eligibility} />
         <EmptyState
           icon={<Upload className="h-5 w-5" />}
           title="还没有可提交的 Skill"
@@ -1079,6 +985,7 @@ function SubmitTab() {
         title="提交作品"
         description="从你已经发布的公开 Skill 中选择作品，设置赛道后加入本次活动。"
       />
+      <EligibilityStatus eligibility={eligibility} />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <section className="rounded-xl border border-neutral-200 bg-white p-5">
@@ -1118,14 +1025,9 @@ function SubmitTab() {
                   submission={submissionsBySkillId.get(skill.id)}
                   onSelect={() => {
                     if (skill.visibility !== 'public') return;
-                    const isSwitchingSkill = selectedSkillId !== skill.id;
                     setSelectedSkillId(skill.id);
                     setError(null);
                     setNotice(null);
-                    if (isSwitchingSkill) {
-                      setContestVideo(null);
-                      setVideoUploadLabel(null);
-                    }
                     const existing = submissionsBySkillId.get(skill.id);
                     if (existing) setSelectedTrack(existing.track);
                   }}
@@ -1183,77 +1085,24 @@ function SubmitTab() {
           </div>
 
           <div className="mt-5">
-            <div className="mb-1 text-[13px] font-semibold text-neutral-900">讲解视频</div>
+            <div className="mb-1 text-[13px] font-semibold text-neutral-900">Skill 演示视频</div>
             <p className="text-[12px] leading-5 text-neutral-500">
-              上传到 SkillHunt OSS，视频时长需控制在 3 分钟以内。
+              有效参赛作品需要 Skill 本身已上传 3 分钟以内演示视频，提交时无需重复上传。
             </p>
 
-            <label
-              className={cn(
-                'mt-3 flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-white px-4 text-[14px] font-medium text-neutral-700 transition hover:border-neutral-400 hover:bg-neutral-50',
-                (!selectedSkill || videoUploading) &&
-                  'cursor-not-allowed bg-neutral-100 text-neutral-400 hover:border-neutral-200 hover:bg-neutral-100',
-              )}
-              aria-disabled={!selectedSkill || videoUploading}
-            >
-              <input
-                type="file"
-                accept="video/mp4,video/quicktime,video/webm,video/ogg,video/*"
-                className="sr-only"
-                disabled={!selectedSkill || videoUploading}
-                onChange={handleContestVideoFileChange}
-              />
-              <Upload className="h-4 w-4" />
-              {videoUploading
-                ? '正在上传…'
-                : selectedVideoObjectKey
-                  ? '重新上传视频'
-                  : '上传讲解视频'}
-            </label>
-
-            {selectedVideoObjectKey ? (
+            {selectedSkill?.demoVideoUrl ? (
               <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
                 <div className="flex items-start gap-2 text-[13px] leading-5 text-emerald-800">
                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
                   <div>
-                    <div className="font-medium">
-                      {contestVideo ? '已选择讲解视频' : '已提交讲解视频'}
-                    </div>
-                    <div className="mt-0.5 text-emerald-700">
-                      {videoUploadLabel ??
-                        (selectedVideoDuration
-                          ? `视频时长 ${formatDuration(selectedVideoDuration)}`
-                          : '视频已上传')}
-                    </div>
+                    <div className="font-medium">已上传 Skill 演示视频</div>
+                    <div className="mt-0.5 text-emerald-700">可以直接提交为活动作品。</div>
                   </div>
                 </div>
-                {selectedVideoPreviewUrl ? (
-                  // biome-ignore lint/a11y/useMediaCaption: 用户上传讲解视频暂不提供字幕文件。
-                  <video
-                    src={selectedVideoPreviewUrl}
-                    controls
-                    preload="metadata"
-                    className="mt-3 aspect-video w-full rounded-md border border-emerald-200 bg-black"
-                  >
-                    当前浏览器不支持视频预览。
-                  </video>
-                ) : null}
-                {contestVideo ? (
-                  <button
-                    type="button"
-                    className="mt-3 text-[12px] font-medium text-emerald-700 transition hover:text-emerald-900"
-                    onClick={() => {
-                      setContestVideo(null);
-                      setVideoUploadLabel(null);
-                    }}
-                  >
-                    移除本次上传
-                  </button>
-                ) : null}
               </div>
             ) : (
               <div className="mt-3 rounded-lg border border-dashed border-neutral-300 bg-white px-3 py-3 text-[12px] leading-5 text-neutral-500">
-                提交活动作品前，需要先上传 3 分钟以内讲解视频。
+                这个 Skill 还没有演示视频。请先进入发布或编辑页上传视频，再回到这里提交参赛作品。
               </div>
             )}
           </div>
