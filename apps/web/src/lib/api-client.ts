@@ -1,5 +1,8 @@
 import type {
   BaseSkill,
+  ContestSubmission,
+  ContestTrack,
+  ListContestSubmissionsResponse,
   ListPackagesResponse,
   ListPublishablesResponse,
   ListSkillsResponse,
@@ -36,7 +39,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, init);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new ApiError(res.status, text);
+    let message: string | undefined;
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+        const error = parsed.error;
+        if (typeof error === 'string') message = error;
+      }
+    } catch {
+      message = undefined;
+    }
+    throw new ApiError(res.status, text, message);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
@@ -98,6 +111,7 @@ export interface MeResponse {
   /** URL handle (lowercase + dashes) */
   handle: string;
   email: string;
+  phone: string | null;
   image: string | null;
   isVirtual: boolean;
   canPublishAs: string[];
@@ -152,6 +166,7 @@ export interface UploadedVideoMetadata {
   playbackUrl: string;
   size: number;
   contentType: string | null;
+  durationSeconds?: number;
 }
 
 export interface CreateSkillInput {
@@ -194,6 +209,13 @@ export interface CreateSkillPackageInput {
   skillIds: string[];
   releaseTitle?: string;
   releaseChangelog?: string;
+}
+
+export interface CreateContestSubmissionInput {
+  skillId: string;
+  track: ContestTrack;
+  videoObjectKey: string;
+  videoDurationSeconds: number;
 }
 
 export const apiClient = {
@@ -246,6 +268,23 @@ export const apiClient = {
 
   listTags(): Promise<ListTagsResponse> {
     return request<ListTagsResponse>('/tags', { credentials: 'include' });
+  },
+
+  listMyContestSubmissions(eventSlug: string): Promise<ListContestSubmissionsResponse> {
+    return request<ListContestSubmissionsResponse>(
+      `/events/${encodeURIComponent(eventSlug)}/me/submissions`,
+      { credentials: 'include' },
+    );
+  },
+
+  createContestSubmission(
+    eventSlug: string,
+    input: CreateContestSubmissionInput,
+  ): Promise<ContestSubmission> {
+    return request<ContestSubmission>(
+      `/events/${encodeURIComponent(eventSlug)}/submissions`,
+      json(input, 'POST'),
+    );
   },
 
   listPackages(params: ListPackagesParams = {}): Promise<ListPackagesResponse> {
@@ -320,8 +359,14 @@ export const apiClient = {
     return request<VideoUploadTicket>('/uploads/videos', json(input, 'POST'));
   },
 
-  completeVideoUpload(objectKey: string): Promise<UploadedVideoMetadata> {
-    return request<UploadedVideoMetadata>('/uploads/videos/complete', json({ objectKey }, 'POST'));
+  completeVideoUpload(
+    objectKey: string,
+    input: { durationSeconds?: number } = {},
+  ): Promise<UploadedVideoMetadata> {
+    return request<UploadedVideoMetadata>(
+      '/uploads/videos/complete',
+      json({ objectKey, ...input }, 'POST'),
+    );
   },
 
   createSkill(input: CreateSkillInput): Promise<SkillDetail> {

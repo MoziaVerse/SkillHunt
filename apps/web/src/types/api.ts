@@ -237,3 +237,23 @@ export interface OwnerPublishablesResponse {
 export interface ListTagsResponse {
   tags: string[];
 }
+
+export type ContestTrack = '学习科研' | '校园生活' | '创意应用' | '专业实训';
+
+export interface ContestSubmission {
+  id: string;
+  eventSlug: string;
+  track: ContestTrack;
+  videoObjectKey: string | null;
+  videoUrl: string | null;
+  videoPlaybackUrl: string | null;
+  videoDurationSeconds: number | null;
+  createdAt: string;
+  updatedAt: string;
+  skill: SkillListItem;
+}
+
+export interface ListContestSubmissionsResponse {
+  items: ContestSubmission[];
+  total: number;
+}

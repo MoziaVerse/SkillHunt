@@ -8,6 +8,7 @@ import QualityChecklist from './routes/docs/quality-checklist';
 import QuickStart from './routes/docs/quick-start';
 import WhatIsASkill from './routes/docs/what-is-a-skill';
 import WriteSkillMd from './routes/docs/write-skill-md';
+import HduSkillsEventPage from './routes/hdu-skills-event';
 import Layout from './routes/layout';
 import NotificationsPage from './routes/notifications';
 import PackageCreate from './routes/package-create';
@@ -32,6 +33,7 @@ const router = createBrowserRouter([
       { path: 'publish/skill', element: <PublishPage /> },
       { path: 'publish/package', element: <PackageCreate /> },
       { path: 'notifications', element: <NotificationsPage /> },
+      { path: 'events/hdu-skills-2026', element: <HduSkillsEventPage /> },
       { path: 'u/:owner', element: <UserPage /> },
       {
         path: 'docs',

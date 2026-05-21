@@ -531,6 +531,7 @@ export default function ApiReference() {
   "name": "Alice",
   "handle": "alice",
   "email": "alice@example.com",
+  "phone": "13300001064",
   "image": null,
   "isVirtual": false,
   "canPublishAs": ["team-org"]

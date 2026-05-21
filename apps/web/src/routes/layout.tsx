@@ -211,15 +211,25 @@ function SessionWidget() {
 function TopNav() {
   const { pathname } = useLocation();
   const onDocs = pathname.startsWith('/docs');
-  const onDiscover = !onDocs;
+  const onEvents = pathname.startsWith('/events');
+  const onDiscover = !onDocs && !onEvents;
 
   return (
     <header className="bg-[#0a0a0a] sticky top-0 z-20">
-      <div className="mx-auto max-w-[1200px] px-6 h-[58px] flex items-center justify-between">
-        <Link to="/" className="flex items-end gap-3">
+      <div className="mx-auto flex h-[58px] max-w-[1200px] items-center justify-between gap-4 px-6">
+        <Link to="/" className="flex shrink-0 items-end gap-3">
           <Logo size={28} className="text-white" />
         </Link>
-        <nav className="flex items-center gap-3 font-mono text-[12.5px]">
+        <nav className="flex min-w-0 items-center gap-3 overflow-x-auto whitespace-nowrap font-mono text-[12.5px] [scrollbar-width:none] [&>*]:shrink-0 [&::-webkit-scrollbar]:hidden">
+          <Link
+            to="/events/hdu-skills-2026"
+            className={cn(
+              'px-3 py-1.5 transition rounded-sm',
+              onEvents ? 'text-white' : 'text-neutral-400 hover:text-white',
+            )}
+          >
+            活动专区
+          </Link>
           <Link
             to="/"
             className={cn(
