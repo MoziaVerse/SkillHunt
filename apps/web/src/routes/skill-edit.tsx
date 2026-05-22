@@ -128,10 +128,12 @@ export default function SkillEditPage() {
     if (failures.length) {
       window.alert(`已保存，但部分附加文件处理失败：\n${failures.join('\n')}`);
     }
-    await apiClient.createSkillRelease(owner, slug, {
-      title: values.releaseTitle,
-      changelog: values.releaseChangelog,
-    });
+    if (values.releaseChangelog.trim()) {
+      await apiClient.createSkillRelease(owner, slug, {
+        title: values.releaseTitle,
+        changelog: values.releaseChangelog,
+      });
+    }
     navigate(`/skills/${owner}/${slug}`);
   };
 
@@ -158,8 +160,8 @@ export default function SkillEditPage() {
                 </Link>
               </div>
               <p className="max-w-xl text-[15px] text-[#64748b]">
-                更新这个 Skill 的说明、标签、图标和 SKILL.md
-                内容。保存后会自动生成一次新的版本记录。
+                更新这个 Skill 的说明、标签、图标和 SKILL.md 内容。只有替换 Skill
+                文件或改变可安装内容时，才需要填写版本说明。
               </p>
               <div className="mt-2 font-mono text-[12px] text-neutral-400">
                 {owner}/{slug}
@@ -218,6 +220,7 @@ export default function SkillEditPage() {
               coverImage: skill.coverImage,
               demoVideoUrl: skill.demoVideoUrl,
             }}
+            requiresVersionRelease={Boolean(overrideSkillMd || extras.length > 0)}
             onSubmit={handleSubmit}
             onCancel={() => navigate(`/skills/${owner}/${slug}`)}
             submitLabel="保存更改"

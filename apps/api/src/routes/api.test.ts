@@ -1019,6 +1019,53 @@ describe('business API', () => {
       expect(body.description).toBe('updated desc');
     });
 
+    it('does not create a release for metadata-only edits without changelog', async () => {
+      const res = await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub`,
+          OWNER_USER_ID,
+          jsonInit({ visibility: 'private', tags: ['metadata-only'] }, 'PUT'),
+        ),
+      );
+      expect(res.status).toBe(200);
+
+      const releases = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/releases`, OWNER_USER_ID),
+      );
+      const body = (await releases.json()) as { total: number; items: unknown[] };
+      expect(body.total).toBe(0);
+      expect(body.items).toHaveLength(0);
+    });
+
+    it('creates a release when an edit includes changelog', async () => {
+      const res = await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub`,
+          OWNER_USER_ID,
+          jsonInit(
+            {
+              skillMdContent: '---\nname: test-owned-pub\n---\n# changed body\n',
+              releaseTitle: '更新 Skill 内容',
+              releaseChangelog: '调整 Agent 使用说明。',
+            },
+            'PUT',
+          ),
+        ),
+      );
+      expect(res.status).toBe(200);
+
+      const releases = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub/releases`, OWNER_USER_ID),
+      );
+      const body = (await releases.json()) as {
+        total: number;
+        items: Array<{ title: string; changelog: string }>;
+      };
+      expect(body.total).toBe(1);
+      expect(body.items[0]?.title).toBe('更新 Skill 内容');
+      expect(body.items[0]?.changelog).toBe('调整 Agent 使用说明。');
+    });
+
     it('refuses to edit a referenced skill (400)', async () => {
       // owner of referenced is OTHER; they can authorize but business rule blocks.
       const res = await app.fetch(

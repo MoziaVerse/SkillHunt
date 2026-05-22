@@ -6,6 +6,7 @@ import { ApiError, apiClient } from '@/lib/api-client';
 import { DEFAULT_SKILL_ICON } from '@/lib/default-icons';
 import { cn } from '@/lib/utils';
 import { useEffect, useMemo, useState } from 'react';
+import { shouldShowSkillReleaseFields } from './skill-form-helpers';
 
 const VIDEO_UPLOAD_MAX_BYTES = 500 * 1024 * 1024;
 const DEMO_VIDEO_MAX_DURATION_SECONDS = 180;
@@ -52,6 +53,7 @@ export interface SkillFormProps {
   // Owners the current user can publish as. First is highlighted as default.
   ownerOptions: OwnerOption[];
   initial?: Partial<SkillFormValues>;
+  requiresVersionRelease?: boolean;
   onSubmit: (values: SkillFormValues) => Promise<void>;
   onCancel?: () => void;
   submitLabel?: string;
@@ -188,6 +190,7 @@ export function SkillForm({
   mode,
   ownerOptions,
   initial,
+  requiresVersionRelease = false,
   onSubmit,
   onCancel,
   submitLabel,
@@ -254,6 +257,13 @@ export function SkillForm({
 
   const slugProblem = !slug;
   const tooShort = rawSkillMd.trim().length < 20;
+  const initialSkillMd = initial?.skillMdContent ?? defaultSkillMd(initial?.name ?? '');
+  const shouldShowReleaseFields = shouldShowSkillReleaseFields({
+    mode,
+    requiresVersionRelease,
+    initialSkillMd,
+    currentSkillMd: rawSkillMd,
+  });
   const isManagedUploadedVideo = isManagedOssVideoUrl(demoVideoUrl);
   const effectiveVideoPreviewUrl =
     videoPreviewUrl ??
@@ -304,8 +314,8 @@ export function SkillForm({
     if (slugProblem) return setError('slug 格式无效');
     if (tooShort) return setError('SKILL.md 至少需要 20 个字符');
     if (!tagline.trim()) return setError('请填写一句话介绍');
-    if (mode !== 'create' && !releaseTitle.trim()) return setError('请填写版本标题');
-    if (mode !== 'create' && !releaseChangelog.trim()) return setError('请填写本次版本说明');
+    if (shouldShowReleaseFields && !releaseTitle.trim()) return setError('请填写版本标题');
+    if (shouldShowReleaseFields && !releaseChangelog.trim()) return setError('请填写本次版本说明');
     if (videoUploading) return setError('视频还在上传中，请稍等片刻');
 
     setSubmitting(true);
@@ -321,8 +331,12 @@ export function SkillForm({
         icon,
         coverImage,
         demoVideoUrl,
-        releaseTitle: mode === 'create' ? '首次发布' : releaseTitle.trim(),
-        releaseChangelog: mode === 'create' ? '' : releaseChangelog.trim(),
+        releaseTitle: shouldShowReleaseFields
+          ? releaseTitle.trim()
+          : mode === 'create'
+            ? '首次发布'
+            : '',
+        releaseChangelog: shouldShowReleaseFields ? releaseChangelog.trim() : '',
       });
     } catch (err) {
       const msg =
@@ -633,7 +647,7 @@ export function SkillForm({
         </div>
       </div>
 
-      {mode !== 'create' && (
+      {shouldShowReleaseFields && (
         <div className="rounded-2xl border border-neutral-200 bg-white p-5 space-y-4">
           <div>
             <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-emerald-700 mb-1">
@@ -641,7 +655,8 @@ export function SkillForm({
             </div>
             <h2 className="text-[22px] font-semibold text-[#0f172a]">说明这次更新</h2>
             <p className="mt-2 text-[14px] text-neutral-500">
-              每次发布都会生成一个版本记录。请写清楚这个版本新增、修复或调整了什么，方便使用者选择合适版本。
+              这次修改会影响 Skill 的可安装内容或 Agent
+              使用方式。请写清楚新增、修复或调整了什么，方便使用者选择合适版本。
             </p>
           </div>
 
