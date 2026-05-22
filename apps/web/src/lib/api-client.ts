@@ -298,6 +298,13 @@ export const apiClient = {
     );
   },
 
+  deleteContestSubmission(eventSlug: string, skillId: string): Promise<void> {
+    return request<void>(
+      `/events/${encodeURIComponent(eventSlug)}/submissions/${encodeURIComponent(skillId)}`,
+      { method: 'DELETE', credentials: 'include' },
+    );
+  },
+
   listPackages(params: ListPackagesParams = {}): Promise<ListPackagesResponse> {
     const usp = new URLSearchParams();
     if (params.q) usp.set('q', params.q);

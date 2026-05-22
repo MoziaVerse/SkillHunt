@@ -34,6 +34,7 @@ import { skillProtocolName } from '../lib/protocol-name';
 import { normalizeSsoPhone } from '../lib/sso-user';
 import {
   HDU_SKILLS_EVENT_SLUG,
+  deleteContestSubmission,
   ensureContestEligibility,
   listContestSubmissionsByUser,
   upsertContestSubmission,
@@ -664,6 +665,34 @@ apiRoute.post(
     return c.json(toContestSubmissionDto(created), 201);
   },
 );
+
+apiRoute.delete('/events/:eventSlug/submissions/:skillId', async (c) => {
+  const eventSlug = c.req.param('eventSlug');
+  if (!isSupportedContestEvent(eventSlug)) {
+    return c.json({ error: 'Contest event not found' }, 404);
+  }
+
+  const auth = await getAuthContext(c);
+  const { user } = auth;
+  if (!user) return c.json({ error: 'Authentication required' }, 401);
+  if (!hasScope(auth, 'skills:write')) {
+    return c.json({ error: 'Missing scope: skills:write' }, 403);
+  }
+
+  const skill = await findSkillById(c.req.param('skillId'), user.id);
+  if (!skill) return c.json({ error: 'Skill not found' }, 404);
+  if (skill.ownerUserId !== user.id) {
+    return c.json({ error: '只能取消自己账号下发布的 Skill 参赛' }, 403);
+  }
+
+  await deleteContestSubmission({
+    eventSlug,
+    skillId: skill.id,
+    submitterUserId: user.id,
+  });
+
+  return c.body(null, 204);
+});
 
 // ─── Detail ───────────────────────────────────────────────────────────
 

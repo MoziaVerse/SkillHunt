@@ -889,6 +889,13 @@ function SubmitTab() {
       setError('请先在发布或编辑 Skill 时上传 3 分钟以内演示视频');
       return;
     }
+    if (
+      selectedSubmission &&
+      selectedSubmission.track !== selectedTrack &&
+      !window.confirm('更换赛道会清空该作品已获得的竞赛投票数，确认继续吗？')
+    ) {
+      return;
+    }
 
     setSaving(true);
     setError(null);
@@ -905,6 +912,28 @@ function SubmitTab() {
       setNotice(`已将「${selectedSkill.name}」设置为 ${selectedTrack} 赛道活动作品。`);
     } catch (err) {
       setError(err instanceof Error ? err.message : '设置活动作品失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const cancelSubmission = async () => {
+    if (!selectedSkill || !selectedSubmission) return;
+    if (
+      !window.confirm('取消参赛会清空该作品已获得的竞赛投票数，并移出活动作品列表，确认继续吗？')
+    ) {
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await apiClient.deleteContestSubmission(EVENT_SLUG, selectedSkill.id);
+      setSubmissions((prev) => prev.filter((item) => item.skill.id !== selectedSkill.id));
+      setNotice(`已取消「${selectedSkill.name}」的参赛状态。`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '取消参赛失败');
     } finally {
       setSaving(false);
     }
@@ -1044,7 +1073,7 @@ function SubmitTab() {
         <aside className="rounded-xl border border-neutral-200 bg-neutral-50 p-5 lg:sticky lg:top-[118px] lg:self-start">
           <div className="text-[16px] font-semibold text-neutral-950">设置活动作品</div>
           <p className="mt-2 text-[13px] leading-6 text-neutral-500">
-            每个 Skill 只能选择一个赛道。重复设置会更新该 Skill 的参赛赛道。
+            每个 Skill 只能选择一个赛道。更换赛道或取消参赛后，已获得的竞赛投票数会清零。
           </p>
 
           <div className="mt-5 rounded-xl border border-neutral-200 bg-white p-4">
@@ -1082,6 +1111,12 @@ function SubmitTab() {
                 </button>
               ))}
             </div>
+            {selectedSubmission ? (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-5 text-amber-800">
+                当前已参加 {selectedSubmission.track}{' '}
+                赛道。更换赛道或取消参赛，会清空该作品已获得的竞赛投票数。
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-5">
@@ -1146,6 +1181,20 @@ function SubmitTab() {
               '设为活动作品'
             )}
           </Button>
+          {selectedSubmission ? (
+            <Button
+              type="button"
+              disabled={saving}
+              onClick={cancelSubmission}
+              variant="outline"
+              className={cn(
+                eventButtonBaseClass,
+                'mt-3 w-full border-red-200 bg-white text-red-600 hover:border-red-300 hover:bg-red-50 hover:text-red-700',
+              )}
+            >
+              取消参赛
+            </Button>
+          ) : null}
         </aside>
       </div>
     </div>

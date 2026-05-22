@@ -1775,6 +1775,40 @@ describe('business API', () => {
       expect(body.items[0]?.track).toBe('创意应用');
     });
 
+    it('cancels an existing contest submission', async () => {
+      const skillId = await ownerSkillId('test-owned-pub');
+      await app.fetch(
+        reqAsUser(
+          '/api/events/hdu-skills-2026/submissions',
+          OWNER_USER_ID,
+          jsonInit(contestSubmissionInput(skillId)),
+        ),
+      );
+
+      const deleted = await app.fetch(
+        reqAsUser(`/api/events/hdu-skills-2026/submissions/${skillId}`, OWNER_USER_ID, {
+          method: 'DELETE',
+        }),
+      );
+      expect(deleted.status).toBe(204);
+
+      const list = await app.fetch(
+        reqAsUser('/api/events/hdu-skills-2026/me/submissions', OWNER_USER_ID),
+      );
+      const body = (await list.json()) as { items: unknown[] };
+      expect(body.items).toHaveLength(0);
+    });
+
+    it('rejects canceling another user contest submission', async () => {
+      const skillId = await ownerSkillId('test-owned-pub');
+      const res = await app.fetch(
+        reqAsUser(`/api/events/hdu-skills-2026/submissions/${skillId}`, OTHER_USER_ID, {
+          method: 'DELETE',
+        }),
+      );
+      expect(res.status).toBe(403);
+    });
+
     it('rejects private skills as contest submissions', async () => {
       const skillId = await ownerSkillId('test-owned-priv');
       const res = await app.fetch(

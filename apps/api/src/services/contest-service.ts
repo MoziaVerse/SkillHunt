@@ -133,3 +133,22 @@ export async function upsertContestSubmission(input: {
   if (!created) throw new Error('upsertContestSubmission: insert returned no row');
   return created;
 }
+
+export async function deleteContestSubmission(input: {
+  eventSlug: string;
+  skillId: string;
+  submitterUserId: string;
+}): Promise<boolean> {
+  const deleted = await db
+    .delete(contestSubmissions)
+    .where(
+      and(
+        eq(contestSubmissions.eventSlug, input.eventSlug),
+        eq(contestSubmissions.skillId, input.skillId),
+        eq(contestSubmissions.submitterUserId, input.submitterUserId),
+      ),
+    )
+    .returning({ id: contestSubmissions.id });
+
+  return deleted.length > 0;
+}
