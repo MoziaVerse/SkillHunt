@@ -26,7 +26,7 @@ export interface SkillUploaderProps {
 }
 
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
-const MAX_TOTAL_BYTES = 1_000_000; // 1MB safety cap on a single upload bundle
+const MAX_TOTAL_BYTES = 5 * 1024 * 1024; // 5 MB safety cap on a single upload bundle
 
 function readText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -77,7 +77,7 @@ export function pickSkillFromFiles(files: UploadFileLike[]): PickResult {
   if (files.length === 0) throw new Error('No files selected.');
   const totalBytes = files.reduce((acc, f) => acc + f.size, 0);
   if (totalBytes > MAX_TOTAL_BYTES) {
-    throw new Error(`Total upload size ${(totalBytes / 1024).toFixed(0)} KB exceeds 1 MB cap.`);
+    throw new Error(`上传文件总大小 ${(totalBytes / 1024).toFixed(0)} KB，已超过 5 MB 上限。`);
   }
 
   let skillMd: UploadFileLike | null = null;

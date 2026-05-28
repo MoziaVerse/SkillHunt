@@ -56,15 +56,27 @@ describe('pickSkillFromFiles · folder', () => {
     expect(r.rejected.find((x) => x.relPath.endsWith('.DS_Store'))).toBeDefined();
   });
 
-  it('rejects total >1MB', () => {
+  it('allows total size under 5 MB', () => {
+    const r = pickSkillFromFiles(
+      fakeFolder([
+        ['skill-x/SKILL.md', 100],
+        ['skill-x/template.md', 5 * 1024 * 1024 - 200],
+      ]),
+    );
+
+    expect(r.skillMd.name).toBe('SKILL.md');
+    expect(r.extras).toHaveLength(1);
+  });
+
+  it('rejects total >5 MB', () => {
     expect(() =>
       pickSkillFromFiles(
         fakeFolder([
           ['skill-x/SKILL.md', 100],
-          ['skill-x/big.bin', 2_000_000],
+          ['skill-x/big.bin', 5 * 1024 * 1024],
         ]),
       ),
-    ).toThrow(/exceeds 1 MB/);
+    ).toThrow(/超过 5 MB 上限/);
   });
 
   it('preserves nested paths in extras', () => {

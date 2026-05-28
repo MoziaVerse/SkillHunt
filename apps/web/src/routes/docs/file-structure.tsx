@@ -42,7 +42,7 @@ export default function FileStructure() {
         <li>
           <code>SKILL.md</code> 同级及其子目录中的文件会作为附加文件一并上传。
         </li>
-        <li>总上传大小上限为 1 MB，适合放轻量模板和文本材料。</li>
+        <li>总上传大小上限为 5 MB，适合放轻量模板和文本材料。</li>
         <li>支持预览常见文本文件，如 md、txt、json、yaml、ts、js、py、sh 等。</li>
       </ul>
 
