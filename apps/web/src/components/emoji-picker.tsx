@@ -38,11 +38,16 @@ export function EmojiPicker({ value, onChange, disabled = false }: EmojiPickerPr
   return (
     <div className={cn(disabled && 'opacity-40 pointer-events-none')}>
       <div className="flex flex-wrap gap-1.5">
-        {EMOJI_GROUPS.flatMap((g) => g.items).map((emoji) => {
+        {EMOJI_GROUPS.flatMap((g) =>
+          g.items.map((emoji, index) => ({
+            emoji,
+            key: `${g.label}-${index}-${emoji}`,
+          })),
+        ).map(({ emoji, key }) => {
           const active = value === emoji;
           return (
             <button
-              key={emoji}
+              key={key}
               type="button"
               disabled={disabled}
               onClick={() => onChange(active ? null : emoji)}
