@@ -3,7 +3,8 @@ import { Logo } from '@/components/logo';
 import { type MeResponse, apiClient } from '@/lib/api-client';
 import { subscribeUnreadNotificationCount } from '@/lib/notifications';
 import { cn } from '@/lib/utils';
-import { useEffect, useState } from 'react';
+import { Bell, ExternalLink, LogOut, Plus } from 'lucide-react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router';
 
 function NotificationBell() {
@@ -23,25 +24,11 @@ function NotificationBell() {
   return (
     <Link
       to="/notifications"
-      className="relative p-1.5 text-neutral-400 hover:text-white transition"
+      className="relative rounded-sm p-1.5 text-neutral-400 transition hover:bg-neutral-900 hover:text-white"
       title="通知"
+      aria-label="通知"
     >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="w-5 h-5"
-        role="img"
-        aria-label="通知铃铛"
-      >
-        <title>通知</title>
-        <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-        <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-      </svg>
+      <Bell className="h-5 w-5" aria-hidden="true" />
       {unreadCount > 0 && (
         <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
           {unreadCount > 9 ? '9+' : unreadCount}
@@ -95,7 +82,7 @@ function SessionWidget() {
   }, []);
 
   if (state.loading) {
-    return <span className="font-mono text-[12.5px] text-neutral-400">…</span>;
+    return <span className="shrink-0 font-mono text-[12.5px] text-neutral-400">…</span>;
   }
 
   const signIn = async () => {
@@ -148,31 +135,25 @@ function SessionWidget() {
 
   if (state.me) {
     return (
-      <span className="flex items-center gap-2 font-mono text-[12.5px]">
-        <Link
-          to="/publish"
-          className="px-2 py-1 bg-neutral-900 text-neutral-100 hover:bg-neutral-700 transition"
-        >
-          + 发布
-        </Link>
-        <span className="text-neutral-500">|</span>
+      <div className="flex shrink-0 items-center gap-2 border-neutral-800 font-mono text-[12.5px] sm:border-l sm:pl-4">
         <NotificationBell />
         <Link
           to={`/u/${encodeURIComponent(state.me.handle)}`}
-          className="flex items-center gap-2 hover:opacity-80 transition"
+          className="flex min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-neutral-200 transition hover:bg-neutral-900 hover:text-white"
+          title={state.me.name}
         >
           <Avatar src={state.me.image} name={state.me.name} handle={state.me.handle} size={24} />
-          <span className="text-neutral-200 hover:underline">{state.me.name}</span>
+          <span className="hidden max-w-[120px] truncate sm:inline">{state.me.name}</span>
         </Link>
-        <span className="text-neutral-500">·</span>
         <button
           type="button"
           onClick={signOut}
-          className="text-neutral-400 hover:text-neutral-200 transition"
+          className="flex items-center gap-1 rounded-sm px-2 py-1.5 text-neutral-400 transition hover:bg-neutral-900 hover:text-neutral-100"
         >
+          <LogOut className="h-4 w-4" aria-hidden="true" />
           退出
         </button>
-      </span>
+      </div>
     );
   }
 
@@ -188,7 +169,7 @@ function SessionWidget() {
   }
 
   return (
-    <span className="flex items-center gap-2">
+    <span className="flex shrink-0 items-center gap-2">
       <button
         type="button"
         onClick={signIn}
@@ -208,48 +189,77 @@ function SessionWidget() {
   );
 }
 
+function NavLink({
+  to,
+  active,
+  children,
+}: {
+  to: string;
+  active: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Link
+      to={to}
+      className={cn(
+        'rounded-sm px-3 py-1.5 transition',
+        active
+          ? 'bg-neutral-900 text-white'
+          : 'text-neutral-400 hover:bg-neutral-900 hover:text-white',
+      )}
+    >
+      {children}
+    </Link>
+  );
+}
+
 function TopNav() {
   const { pathname } = useLocation();
   const onDocs = pathname.startsWith('/docs');
   const onEvents = pathname.startsWith('/events');
-  const onDiscover = !onDocs && !onEvents;
+  const onPublish = pathname.startsWith('/publish');
+  const onDiscover =
+    pathname === '/' || pathname.startsWith('/skills') || pathname.startsWith('/packages');
 
   return (
     <header className="bg-[#0a0a0a] sticky top-0 z-20">
-      <div className="mx-auto flex h-[58px] max-w-[1200px] items-center justify-between gap-4 px-6">
-        <Link to="/" className="flex shrink-0 items-end gap-3">
-          <Logo size={28} className="text-white" />
-        </Link>
-        <nav className="flex min-w-0 items-center gap-3 overflow-x-auto whitespace-nowrap font-mono text-[12.5px] [scrollbar-width:none] [&>*]:shrink-0 [&::-webkit-scrollbar]:hidden">
-          <Link
-            to="/events/hdu-skills-2026"
-            className={cn(
-              'px-3 py-1.5 transition rounded-sm',
-              onEvents ? 'text-white' : 'text-neutral-400 hover:text-white',
-            )}
-          >
-            活动专区
+      <div className="relative h-[58px] w-full">
+        <div className="mx-auto flex h-full max-w-[1200px] items-center px-6">
+          <Link to="/" className="flex shrink-0 items-end gap-3" aria-label="SkillHunt 首页">
+            <Logo size={28} className="text-white" />
           </Link>
-          <Link
-            to="/"
-            className={cn(
-              'px-3 py-1.5 transition rounded-sm',
-              onDiscover ? 'text-white' : 'text-neutral-400 hover:text-white',
-            )}
-          >
-            发现
-          </Link>
-          <Link
-            to="/docs"
-            className={cn(
-              'px-3 py-1.5 transition rounded-sm',
-              onDocs ? 'text-white' : 'text-neutral-400 hover:text-white',
-            )}
-          >
-            文档
-          </Link>
+        </div>
+
+        <div className="absolute inset-y-0 right-4 left-[220px] flex min-w-0 items-center justify-end gap-3 sm:right-6">
+          <nav className="flex min-w-0 items-center gap-1 overflow-x-auto whitespace-nowrap font-mono text-[12.5px] [scrollbar-width:none] [&>*]:shrink-0 [&::-webkit-scrollbar]:hidden">
+            <NavLink to="/" active={onDiscover}>
+              发现
+            </NavLink>
+            <NavLink to="/docs" active={onDocs}>
+              文档
+            </NavLink>
+            <NavLink to="/publish" active={onPublish}>
+              <span className="inline-flex items-center gap-1">
+                发布
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              </span>
+            </NavLink>
+            <span className="mx-1 h-4 w-px bg-neutral-800" aria-hidden="true" />
+            <NavLink to="/events/hdu-skills-2026" active={onEvents}>
+              竞赛专区
+            </NavLink>
+            <a
+              href="https://matrix.mzsjai.com"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 rounded-sm px-3 py-1.5 text-neutral-400 transition hover:bg-neutral-900 hover:text-white"
+            >
+              Matrix
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            </a>
+          </nav>
           <SessionWidget />
-        </nav>
+        </div>
       </div>
     </header>
   );

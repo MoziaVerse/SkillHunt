@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { ApiError, apiClient } from '@/lib/api-client';
 import { DEFAULT_SKILL_ICON } from '@/lib/default-icons';
 import { cn } from '@/lib/utils';
+import { LoaderCircle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { shouldShowSkillReleaseFields } from './skill-form-helpers';
 
@@ -272,6 +273,7 @@ export function SkillForm({
       : isDirectVideoUrl(demoVideoUrl)
         ? demoVideoUrl
         : null);
+  const submitBusyLabel = mode === 'create' ? '正在上传并发布 Skill' : '正在保存 Skill 更新';
 
   // Mutual exclusion: selecting one clears the other
   const handleIconChange = (newIcon: string | null) => {
@@ -307,6 +309,16 @@ export function SkillForm({
     slug,
     tagline,
   ]);
+
+  useEffect(() => {
+    if (!submitting) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [submitting]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -691,6 +703,21 @@ export function SkillForm({
         </div>
       )}
 
+      {submitting && (
+        <output
+          aria-live="polite"
+          className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900"
+        >
+          <LoaderCircle className="mt-0.5 h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
+          <div>
+            <div className="text-[14px] font-semibold">{submitBusyLabel}，请不要离开当前页面。</div>
+            <div className="mt-1 text-[12px] leading-5 text-amber-800">
+              图片、视频或二进制附件较多时可能需要一点时间，完成后会自动进入 Skill 详情页。
+            </div>
+          </div>
+        </output>
+      )}
+
       {/* Preview card */}
       <div className="rounded-2xl border border-neutral-200 bg-white overflow-hidden">
         <div className="px-5 py-4 border-b border-neutral-100 bg-neutral-50">
@@ -748,14 +775,17 @@ export function SkillForm({
           className="font-mono text-[12px] uppercase tracking-[0.1em] bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-lg transition shadow-sm disabled:opacity-50"
         >
           {submitting || videoUploading
-            ? '…'
+            ? submitting
+              ? '正在上传…'
+              : '视频上传中…'
             : (submitLabel ?? (mode === 'create' ? '立即发布' : '保存'))}
         </button>
         {onCancel && (
           <button
             type="button"
+            disabled={submitting || videoUploading}
             onClick={onCancel}
-            className="font-mono text-[12px] uppercase tracking-[0.1em] text-neutral-500 hover:text-neutral-900 px-3 py-2.5 border border-neutral-300 hover:border-neutral-900 rounded-lg transition"
+            className="font-mono text-[12px] uppercase tracking-[0.1em] text-neutral-500 hover:text-neutral-900 px-3 py-2.5 border border-neutral-300 hover:border-neutral-900 rounded-lg transition disabled:cursor-not-allowed disabled:opacity-50"
           >
             取消
           </button>
