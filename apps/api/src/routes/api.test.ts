@@ -45,9 +45,16 @@ const FULL_TEST_SCOPES = [
 const HEADER = 'x-test-user';
 
 let mockS3Configured = false;
+const mockSkillFileObjects = new Map<string, { body: Uint8Array; contentType: string | null }>();
+const mockDeletedObjectKeys: string[] = [];
+const mockDeleteFailures = new Set<string>();
 
 const contestVideoObjectKey = (userId: string) =>
   `skillhunt/videos/${userId}/2026/05/demo-video.mp4`;
+const skillFileObjectKey = (input: { userId: string; skillId: string; path: string }) =>
+  `skillhunt/skill-files/${input.userId}/${input.skillId}/2026/05/${encodeURIComponent(
+    input.path,
+  )}`;
 
 mock.module('../lib/auth-context', () => ({
   hasScope: (ctx: AuthContext, scope: AuthContext['scopes'][number]) => ctx.scopes.includes(scope),
@@ -86,6 +93,19 @@ mock.module('../lib/auth-context', () => ({
 }));
 
 mock.module('../services/s3-storage', () => ({
+  completeUploadedSkillFile: async (
+    objectKey: string,
+    input: { path: string; contentType?: string | null },
+  ) => {
+    if (!mockS3Configured) throw new Error('S3 storage is not configured');
+    const object = mockSkillFileObjects.get(objectKey);
+    if (!object) throw new Error('OSS 对象校验失败：404');
+    return {
+      objectKey,
+      size: object.body.byteLength,
+      contentType: object.contentType ?? input.contentType ?? 'application/octet-stream',
+    };
+  },
   completeUploadedVideo: async (objectKey: string, input?: { durationSeconds?: number }) => {
     if (!mockS3Configured) throw new Error('S3 storage is not configured');
     return {
@@ -97,6 +117,15 @@ mock.module('../services/s3-storage', () => ({
       durationSeconds: input?.durationSeconds,
     };
   },
+  createSkillFileUploadTicket: (input: { userId: string; skillId: string; path: string }) => {
+    const objectKey = skillFileObjectKey(input);
+    return {
+      uploadUrl: `https://oss.example/upload/${objectKey}`,
+      objectKey,
+      maxSizeBytes: 5 * 1024 * 1024,
+      expiresInSeconds: 900,
+    };
+  },
   createDemoVideoPlaybackUrl: (videoUrl: string) => `${videoUrl}?playback=1`,
   createVideoUploadTicket: (input: { userId: string; fileName: string }) => ({
     uploadUrl: `https://oss.example/upload/${input.fileName}`,
@@ -105,7 +134,25 @@ mock.module('../services/s3-storage', () => ({
     maxSizeBytes: VIDEO_UPLOAD_MAX_BYTES,
     expiresInSeconds: 900,
   }),
+  deleteUploadedObject: async (objectKey: string) => {
+    if (!mockS3Configured) throw new Error('S3 storage is not configured');
+    mockDeletedObjectKeys.push(objectKey);
+    if (mockDeleteFailures.has(objectKey)) throw new Error('OSS 对象删除失败：500');
+    mockSkillFileObjects.delete(objectKey);
+  },
+  fetchUploadedObject: async (objectKey: string) => {
+    if (!mockS3Configured) throw new Error('S3 storage is not configured');
+    const object = mockSkillFileObjects.get(objectKey);
+    if (!object) throw new Error('OSS 对象读取失败：404');
+    return {
+      body: object.body,
+      size: object.body.byteLength,
+      contentType: object.contentType,
+    };
+  },
   isS3StorageConfigured: () => mockS3Configured,
+  isSkillFileObjectKeyForSkill: (objectKey: string, userId: string, skillId: string) =>
+    objectKey.startsWith(`skillhunt/skill-files/${userId}/${skillId}/`),
   isVideoObjectKeyForUser: (objectKey: string, userId: string) =>
     objectKey.startsWith(`skillhunt/videos/${userId}/`),
 }));
@@ -165,6 +212,9 @@ async function insertTestSkill(input: {
 
 async function resetAndSeed() {
   mockS3Configured = false;
+  mockSkillFileObjects.clear();
+  mockDeletedObjectKeys.length = 0;
+  mockDeleteFailures.clear();
   await db.delete(notifications);
   await db.delete(publishableBookmarks);
   await db.delete(publishableUpvotes);
@@ -1091,6 +1141,86 @@ describe('business API', () => {
       const get = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`));
       expect(get.status).toBe(404);
     });
+
+    it('owner delete cleans current OSS file objects', async () => {
+      mockS3Configured = true;
+      const skillRes = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`));
+      const skill = (await skillRes.json()) as { id: string };
+      const objectKey = skillFileObjectKey({
+        userId: OWNER_USER_ID,
+        skillId: skill.id,
+        path: 'references/ppt/assets/background.webp',
+      });
+      mockSkillFileObjects.set(objectKey, {
+        body: Uint8Array.of(1, 2, 3),
+        contentType: 'image/webp',
+      });
+      await db.insert(skillFiles).values({
+        skillId: skill.id,
+        path: 'references/ppt/assets/background.webp',
+        content: '',
+        storageKind: 'oss',
+        objectKey,
+        contentType: 'image/webp',
+        sizeBytes: 3,
+      });
+
+      const del = await app.fetch(
+        reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub`, OWNER_USER_ID, { method: 'DELETE' }),
+      );
+
+      expect(del.status).toBe(204);
+      expect(mockDeletedObjectKeys).toEqual([objectKey]);
+      expect(mockSkillFileObjects.has(objectKey)).toBe(false);
+    });
+
+    it('owner delete succeeds even when OSS cleanup fails', async () => {
+      mockS3Configured = true;
+      const originalWarn = console.warn;
+      const warnings: unknown[][] = [];
+      console.warn = (...args: unknown[]) => {
+        warnings.push(args);
+      };
+
+      try {
+        const skillRes = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`));
+        const skill = (await skillRes.json()) as { id: string };
+        const objectKey = skillFileObjectKey({
+          userId: OWNER_USER_ID,
+          skillId: skill.id,
+          path: 'assets/failed-cleanup.webp',
+        });
+        mockDeleteFailures.add(objectKey);
+        mockSkillFileObjects.set(objectKey, {
+          body: Uint8Array.of(9, 9, 9),
+          contentType: 'image/webp',
+        });
+        await db.insert(skillFiles).values({
+          skillId: skill.id,
+          path: 'assets/failed-cleanup.webp',
+          content: '',
+          storageKind: 'oss',
+          objectKey,
+          contentType: 'image/webp',
+          sizeBytes: 3,
+        });
+
+        const del = await app.fetch(
+          reqAsUser(`/api/skills/${OWNER_NAME}/test-owned-pub`, OWNER_USER_ID, {
+            method: 'DELETE',
+          }),
+        );
+        const get = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`));
+
+        expect(del.status).toBe(204);
+        expect(get.status).toBe(404);
+        expect(mockDeletedObjectKeys).toEqual([objectKey]);
+        expect(mockSkillFileObjects.has(objectKey)).toBe(true);
+        expect(warnings).toHaveLength(1);
+      } finally {
+        console.warn = originalWarn;
+      }
+    });
   });
 
   describe('POST /api/skills/:owner/:slug/fork', () => {
@@ -1453,6 +1583,58 @@ describe('business API', () => {
       expect(body.files).toContain('references/foo.md');
     });
 
+    it('owner uploads a binary image file', async () => {
+      mockS3Configured = true;
+      const bytes = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x01, 0x02, 0x03, 0x04]);
+      const path = 'references/ppt/assets/background.webp';
+      const encoded = path.split('/').map(encodeURIComponent).join('/');
+      const ticketRes = await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/file-uploads`,
+          OWNER_USER_ID,
+          jsonInit({ path, contentType: 'image/webp', size: bytes.byteLength }),
+        ),
+      );
+      expect(ticketRes.status).toBe(201);
+      const ticket = (await ticketRes.json()) as { objectKey: string; uploadUrl: string };
+      expect(ticket.uploadUrl).toContain(ticket.objectKey);
+      mockSkillFileObjects.set(ticket.objectKey, { body: bytes, contentType: 'image/webp' });
+
+      const complete = await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/file-uploads/complete`,
+          OWNER_USER_ID,
+          jsonInit({ path, objectKey: ticket.objectKey, contentType: 'image/webp' }),
+        ),
+      );
+      expect(complete.status).toBe(200);
+
+      const file = await app.fetch(
+        reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub/files/${encoded}`),
+      );
+      expect(file.status).toBe(200);
+      expect(file.headers.get('content-type')).toBe('image/webp');
+      expect(new Uint8Array(await file.arrayBuffer())).toEqual(bytes);
+
+      const pkg = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub/package`));
+      const body = (await pkg.json()) as {
+        files: Array<{
+          path: string;
+          content: string;
+          storageKind?: string;
+          objectKey?: string | null;
+          contentType?: string | null;
+          sizeBytes?: number;
+        }>;
+      };
+      const uploaded = body.files.find((entry) => entry.path === path);
+      expect(uploaded?.storageKind).toBe('oss');
+      expect(uploaded?.objectKey).toBe(ticket.objectKey);
+      expect(uploaded?.content).toBe('');
+      expect(uploaded?.contentType).toBe('image/webp');
+      expect(uploaded?.sizeBytes).toBe(bytes.byteLength);
+    });
+
     it('rejects non-owner (403)', async () => {
       const res = await app.fetch(
         reqAsUser(
@@ -1470,6 +1652,32 @@ describe('business API', () => {
           `/api/skills/${OWNER_NAME}/test-owned-pub/files/..%2Fetc%2Fpasswd`,
           OWNER_USER_ID,
           jsonInit({ content: 'x' }),
+        ),
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects repository and generated system paths on the API side', async () => {
+      for (const path of ['.gitignore', '.git/config', '.DS_Store', '.idea/workspace.xml']) {
+        const encoded = path.split('/').map(encodeURIComponent).join('/');
+        const res = await app.fetch(
+          reqAsUser(
+            `/api/skills/${OWNER_NAME}/test-owned-pub/files/${encoded}`,
+            OWNER_USER_ID,
+            jsonInit({ content: 'ignored' }),
+          ),
+        );
+        expect(res.status).toBe(400);
+      }
+    });
+
+    it('rejects OSS upload tickets for ignored system paths', async () => {
+      mockS3Configured = true;
+      const res = await app.fetch(
+        reqAsUser(
+          `/api/skills/${OWNER_NAME}/test-owned-pub/file-uploads`,
+          OWNER_USER_ID,
+          jsonInit({ path: 'node_modules/pkg/index.js', contentType: 'text/javascript', size: 10 }),
         ),
       );
       expect(res.status).toBe(400);

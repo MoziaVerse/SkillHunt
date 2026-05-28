@@ -13,6 +13,11 @@ import {
 } from '../db';
 import { skillProtocolName } from '../lib/protocol-name';
 import {
+  type SkillFilePayload,
+  type SkillFileSnapshotEntry,
+  normalizeSkillFileEntry,
+} from '../lib/skill-file-payload';
+import {
   addPublishableBookmark,
   addPublishableUpvote,
   createPublishableComment,
@@ -112,7 +117,7 @@ export interface SkillPackageReleaseWithAuthor {
     note: string | null;
     skillReleaseId: string;
     skillVersion: number;
-    files: Array<{ path: string; content: string }>;
+    files: SkillFileSnapshotEntry[];
   }>;
   createdByUserId: string;
   createdAt: Date;
@@ -274,19 +279,27 @@ async function getPackageItemFileContent(input: {
   skillId: string;
   pinnedReleaseId: string | null;
   path: string;
-}) {
+}): Promise<SkillFilePayload | null> {
   if (input.pinnedReleaseId) {
     const release = await getSkillReleaseById(input.pinnedReleaseId);
     if (release?.skillId !== input.skillId) return null;
-    return release.snapshotFiles.find((file) => file.path === input.path)?.content ?? null;
+    const file = release.snapshotFiles.find((entry) => entry.path === input.path);
+    return file ? normalizeSkillFileEntry(file) : null;
   }
 
   const rows = await db
-    .select({ content: skillFiles.content })
+    .select({
+      path: skillFiles.path,
+      content: skillFiles.content,
+      storageKind: skillFiles.storageKind,
+      objectKey: skillFiles.objectKey,
+      contentType: skillFiles.contentType,
+      sizeBytes: skillFiles.sizeBytes,
+    })
     .from(skillFiles)
     .where(and(eq(skillFiles.skillId, input.skillId), eq(skillFiles.path, input.path)))
     .limit(1);
-  return rows[0]?.content ?? null;
+  return rows[0] ? normalizeSkillFileEntry(rows[0]) : null;
 }
 
 async function assertPackageCanUseSkill(input: {
@@ -1030,7 +1043,7 @@ export async function getPublicPackageSkillFile(input: {
   if (content === null) return null;
   return {
     skillId: item.skillId,
-    content,
+    file: content,
   };
 }
 
@@ -1054,6 +1067,6 @@ export async function getPublicPackageReleaseSkillFile(input: {
   if (!file) return null;
   return {
     skillId: item.skillId,
-    content: file.content,
+    file: normalizeSkillFileEntry(file),
   };
 }

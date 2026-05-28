@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import type { SkillFileSnapshotEntry } from '../lib/skill-file-payload';
 
 const nowMs = sql`(unixepoch() * 1000)`;
 const randomId = () => crypto.randomUUID();
@@ -33,7 +34,7 @@ export const publishables = sqliteTable(
 export type PublishableKind = 'skill' | 'package';
 export type SkillReleaseSnapshot = {
   kind: 'skill';
-  files: Array<{ path: string; content: string }>;
+  files: SkillFileSnapshotEntry[];
 };
 export type PackageReleaseSnapshot = {
   kind: 'package';
@@ -48,7 +49,7 @@ export type PackageReleaseSnapshot = {
     note: string | null;
     skillReleaseId: string;
     skillVersion: number;
-    files: Array<{ path: string; content: string }>;
+    files: SkillFileSnapshotEntry[];
   }>;
 };
 export type PublishableReleaseSnapshot = SkillReleaseSnapshot | PackageReleaseSnapshot;
@@ -125,6 +126,12 @@ export const skillFiles = sqliteTable(
 
     path: text('path').notNull(),
     content: text('content').notNull(),
+    storageKind: text('storage_kind', { enum: ['inline', 'oss'] })
+      .notNull()
+      .default('inline'),
+    objectKey: text('object_key'),
+    contentType: text('content_type'),
+    sizeBytes: integer('size_bytes').notNull().default(0),
 
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
   },

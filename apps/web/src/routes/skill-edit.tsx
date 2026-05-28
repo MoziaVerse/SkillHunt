@@ -1,7 +1,11 @@
 import { Logo } from '@/components/logo';
 import { SkillForm, type SkillFormValues } from '@/components/skill-form';
 import { SkillUploadPreview } from '@/components/skill-upload-preview';
-import { type SkillFromUpload, SkillUploader } from '@/components/skill-uploader';
+import {
+  type SkillFromUpload,
+  type SkillUploadExtra,
+  SkillUploader,
+} from '@/components/skill-uploader';
 import { TwemojiIcon } from '@/components/twemoji-icon';
 import { apiClient } from '@/lib/api-client';
 import type { SkillDetail } from '@/types/api';
@@ -35,8 +39,9 @@ export default function SkillEditPage() {
   const [skill, setSkill] = useState<SkillDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [formKey, setFormKey] = useState(0);
-  const [extras, setExtras] = useState<Array<{ path: string; content: string }>>([]);
+  const [extras, setExtras] = useState<SkillUploadExtra[]>([]);
   const [overrideSkillMd, setOverrideSkillMd] = useState<string | null>(null);
+  const [ignoredSystemFileCount, setIgnoredSystemFileCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -103,6 +108,7 @@ export default function SkillEditPage() {
   const handleUpload = (data: SkillFromUpload) => {
     setOverrideSkillMd(data.skillMdContent);
     setExtras(data.extras);
+    setIgnoredSystemFileCount(data.ignoredSystemFiles.length);
     setFormKey((k) => k + 1);
   };
 
@@ -120,7 +126,14 @@ export default function SkillEditPage() {
     const failures: string[] = [];
     for (const f of extras) {
       try {
-        await apiClient.upsertSkillFile(owner, slug, f.path, f.content);
+        await apiClient.upsertSkillFile(
+          owner,
+          slug,
+          f.path,
+          f.kind === 'text'
+            ? { kind: 'text', content: f.content }
+            : { kind: 'binary', file: f.file, contentType: f.contentType },
+        );
       } catch (e) {
         failures.push(`${f.path}: ${e instanceof Error ? e.message : 'unknown'}`);
       }
@@ -187,7 +200,11 @@ export default function SkillEditPage() {
 
             {overrideSkillMd ? (
               <div className="space-y-4">
-                <SkillUploadPreview skillMdContent={overrideSkillMd} extras={extras} />
+                <SkillUploadPreview
+                  skillMdContent={overrideSkillMd}
+                  extras={extras}
+                  ignoredSystemFileCount={ignoredSystemFileCount}
+                />
                 <details className="rounded-xl border border-neutral-200 px-4 py-3">
                   <summary className="cursor-pointer text-[12px] tracking-[0.14em] text-neutral-600">
                     重新上传 / 替换文件

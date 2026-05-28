@@ -1,5 +1,6 @@
 import { TwemojiIcon } from '@/components/twemoji-icon';
 import { cn } from '@/lib/utils';
+import { type SkillUploadIgnoredReason, getSkillUploadIgnoredPath } from '@mozia/skillhub-shared';
 import { useRef, useState } from 'react';
 
 // Type augmentation for HTMLInputElement to include webkitdirectory
@@ -8,14 +9,16 @@ type DirectoryInput = HTMLInputElement & { webkitdirectory?: boolean };
 export interface SkillFromUpload {
   // SKILL.md content (root)
   skillMdContent: string;
-  // Auxiliary files (relative paths, content). Empty for single-file upload.
-  extras: Array<{ path: string; content: string }>;
+  // Auxiliary files (relative paths). Empty for single-file upload.
+  extras: SkillUploadExtra[];
   // Suggested slug from frontmatter `name:` or filename
   suggestedSlug?: string;
   // Suggested display name from frontmatter
   suggestedName?: string;
   // Suggested description from frontmatter
   suggestedDescription?: string;
+  // Repository/system files skipped before upload.
+  ignoredSystemFiles: Array<{ relPath: string; reason: SkillUploadIgnoredReason }>;
 }
 
 export interface SkillUploaderProps {
@@ -27,6 +30,37 @@ export interface SkillUploaderProps {
 
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 const MAX_TOTAL_BYTES = 5 * 1024 * 1024; // 5 MB safety cap on a single upload bundle
+const TEXT_FILE_RE = /\.(md|markdown|txt|json|ya?ml|toml|ts|tsx|js|jsx|py|sh|css|html)$/i;
+
+export type SkillUploadExtra =
+  | { kind: 'text'; path: string; content: string; size: number }
+  | { kind: 'binary'; path: string; file: File; contentType: string; size: number };
+
+function inferContentType(path: string, type?: string) {
+  if (type) return type;
+  const ext = path.split('.').pop()?.toLowerCase();
+  const map: Record<string, string> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    avif: 'image/avif',
+    svg: 'image/svg+xml',
+  };
+  return (ext && map[ext]) || 'application/octet-stream';
+}
+
+function isTextUpload(path: string, type?: string) {
+  const normalizedType = type?.split(';')[0]?.toLowerCase() ?? '';
+  return (
+    path.toLowerCase() === 'skill.md' ||
+    TEXT_FILE_RE.test(path) ||
+    normalizedType.startsWith('text/') ||
+    normalizedType === 'application/json' ||
+    normalizedType.endsWith('/xml')
+  );
+}
 
 function readText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -63,6 +97,8 @@ export interface UploadFileLike {
   name: string;
   webkitRelativePath: string;
   size: number;
+  type?: string;
+  file?: File;
   readText: () => Promise<string>;
 }
 
@@ -70,23 +106,29 @@ export interface PickResult {
   skillMd: UploadFileLike;
   skillMdRoot: string;
   extras: UploadFileLike[];
+  ignoredSystemFiles: Array<{ relPath: string; reason: SkillUploadIgnoredReason }>;
   rejected: Array<{ relPath: string; reason: string }>;
 }
 
 export function pickSkillFromFiles(files: UploadFileLike[]): PickResult {
   if (files.length === 0) throw new Error('No files selected.');
-  const totalBytes = files.reduce((acc, f) => acc + f.size, 0);
-  if (totalBytes > MAX_TOTAL_BYTES) {
-    throw new Error(`上传文件总大小 ${(totalBytes / 1024).toFixed(0)} KB，已超过 5 MB 上限。`);
-  }
 
   let skillMd: UploadFileLike | null = null;
   let skillMdRoot = '';
   const candidates: UploadFileLike[] = [];
+  const ignoredSystemFiles: Array<{ relPath: string; reason: SkillUploadIgnoredReason }> = [];
   const rejected: Array<{ relPath: string; reason: string }> = [];
 
   for (const file of files) {
     const relPath = file.webkitRelativePath ?? '';
+    const displayPath = relPath || file.name;
+    const ignored = getSkillUploadIgnoredPath(displayPath);
+    if (ignored.ignored) {
+      ignoredSystemFiles.push({ relPath: displayPath, reason: ignored.reason });
+      rejected.push({ relPath: displayPath, reason: ignored.reason });
+      continue;
+    }
+
     const segments = relPath.split('/').filter(Boolean);
 
     if (segments.length === 0) {
@@ -97,12 +139,6 @@ export function pickSkillFromFiles(files: UploadFileLike[]): PickResult {
       } else if (!file.name.toLowerCase().endsWith('.md')) {
         rejected.push({ relPath: file.name, reason: 'not a .md file' });
       }
-      continue;
-    }
-
-    // Reject if any segment is a dotfile/dotdir (e.g. .DS_Store, .git/HEAD).
-    if (segments.some((s) => s.startsWith('.'))) {
-      rejected.push({ relPath, reason: 'dotfile or hidden directory' });
       continue;
     }
     const fileName = segments[segments.length - 1] ?? '';
@@ -138,10 +174,21 @@ export function pickSkillFromFiles(files: UploadFileLike[]): PickResult {
       rejected.push({ relPath: c.webkitRelativePath, reason: 'unsafe path' });
       continue;
     }
+    const ignored = getSkillUploadIgnoredPath(subPath, { rootRelative: true });
+    if (ignored.ignored) {
+      ignoredSystemFiles.push({ relPath: c.webkitRelativePath, reason: ignored.reason });
+      rejected.push({ relPath: c.webkitRelativePath, reason: ignored.reason });
+      continue;
+    }
     extras.push({ ...c, webkitRelativePath: subPath });
   }
 
-  return { skillMd, skillMdRoot, extras, rejected };
+  const totalBytes = [skillMd, ...extras].reduce((acc, f) => acc + f.size, 0);
+  if (totalBytes > MAX_TOTAL_BYTES) {
+    throw new Error(`上传文件总大小 ${(totalBytes / 1024).toFixed(0)} KB，已超过 5 MB 上限。`);
+  }
+
+  return { skillMd, skillMdRoot, extras, ignoredSystemFiles, rejected };
 }
 
 async function processFiles(files: File[]): Promise<SkillFromUpload> {
@@ -149,14 +196,31 @@ async function processFiles(files: File[]): Promise<SkillFromUpload> {
     name: f.name,
     webkitRelativePath: (f as File & { webkitRelativePath?: string }).webkitRelativePath ?? '',
     size: f.size,
+    type: f.type,
+    file: f,
     readText: () => readText(f),
   }));
   const picked = pickSkillFromFiles(adapted);
 
   const skillMdContent = await picked.skillMd.readText();
-  const extras: Array<{ path: string; content: string }> = [];
+  const extras: SkillUploadExtra[] = [];
   for (const e of picked.extras) {
-    extras.push({ path: e.webkitRelativePath, content: await e.readText() });
+    if (isTextUpload(e.webkitRelativePath, e.type)) {
+      extras.push({
+        kind: 'text',
+        path: e.webkitRelativePath,
+        content: await e.readText(),
+        size: e.size,
+      });
+    } else if (e.file) {
+      extras.push({
+        kind: 'binary',
+        path: e.webkitRelativePath,
+        file: e.file,
+        contentType: inferContentType(e.webkitRelativePath, e.type),
+        size: e.size,
+      });
+    }
   }
 
   const fm = parseFrontmatter(skillMdContent);
@@ -173,10 +237,11 @@ async function processFiles(files: File[]): Promise<SkillFromUpload> {
     suggestedSlug,
     suggestedName: fm.name,
     suggestedDescription: fm.description,
+    ignoredSystemFiles: picked.ignoredSystemFiles,
   };
 }
 
-export const __test__ = { parseFrontmatter, SLUG_RE };
+export const __test__ = { parseFrontmatter, SLUG_RE, isTextUpload, inferContentType };
 
 export function SkillUploader({ onLoaded, compact = false }: SkillUploaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);

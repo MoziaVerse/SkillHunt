@@ -42,8 +42,17 @@ export default function FileStructure() {
         <li>
           <code>SKILL.md</code> 同级及其子目录中的文件会作为附加文件一并上传。
         </li>
-        <li>总上传大小上限为 5 MB，适合放轻量模板和文本材料。</li>
+        <li>总上传大小上限为 5 MB，适合放轻量模板、文本材料和少量图片资源。</li>
+        <li>
+          <code>SKILL.md</code>{' '}
+          和小文本文件会直接保存；图片、WebP、字体等二进制资源会上传到对象存储。
+        </li>
+        <li>安装时，图片和二进制资源会按原路径还原为原始文件。</li>
         <li>支持预览常见文本文件，如 md、txt、json、yaml、ts、js、py、sh 等。</li>
+        <li>
+          <code>.git</code>、<code>node_modules</code>、<code>dist</code>
+          、缓存目录等仓库/系统文件会被忽略，不计入 5 MB 上传大小。
+        </li>
       </ul>
 
       <h2>会被拒绝或忽略的内容</h2>
@@ -52,8 +61,8 @@ export default function FileStructure() {
           没有 <code>SKILL.md</code> 的文件夹。
         </li>
         <li>
-          以 <code>.</code> 开头的隐藏文件或隐藏目录，例如 <code>.git</code>、<code>.DS_Store</code>
-          。
+          <code>.git</code>、<code>.DS_Store</code>、<code>.idea</code>、<code>node_modules</code>、
+          <code>dist</code>、缓存目录和 Skill 根目录下的 <code>.gitignore</code>。
         </li>
         <li>位于 Skill 根目录外的文件。</li>
         <li>
@@ -69,7 +78,7 @@ export default function FileStructure() {
         </li>
         <li>目录名使用小写英文、数字和短横线，便于生成 URL 标识。</li>
         <li>模板放在 templates，参考材料放在 references，脚本放在 scripts。</li>
-        <li>不要上传二进制大文件；需要演示时优先使用外部视频链接。</li>
+        <li>不要上传超出 Skill 使用所需的大文件；需要演示时优先使用外部视频链接。</li>
       </ul>
 
       <h2>延伸阅读</h2>

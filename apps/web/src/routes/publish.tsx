@@ -1,7 +1,11 @@
 import { Logo } from '@/components/logo';
 import { SkillForm, type SkillFormValues } from '@/components/skill-form';
 import { SkillUploadPreview } from '@/components/skill-upload-preview';
-import { type SkillFromUpload, SkillUploader } from '@/components/skill-uploader';
+import {
+  type SkillFromUpload,
+  type SkillUploadExtra,
+  SkillUploader,
+} from '@/components/skill-uploader';
 import { TwemojiIcon } from '@/components/twemoji-icon';
 import { type MeResponse, apiClient } from '@/lib/api-client';
 import { useEffect, useState } from 'react';
@@ -13,7 +17,8 @@ export default function PublishPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [formKey, setFormKey] = useState(0);
   const [initial, setInitial] = useState<Partial<SkillFormValues> | undefined>(undefined);
-  const [extras, setExtras] = useState<Array<{ path: string; content: string }>>([]);
+  const [extras, setExtras] = useState<SkillUploadExtra[]>([]);
+  const [ignoredSystemFileCount, setIgnoredSystemFileCount] = useState(0);
 
   useEffect(() => {
     apiClient
@@ -120,6 +125,7 @@ export default function PublishPage() {
       skillMdContent: data.skillMdContent,
     });
     setExtras(data.extras);
+    setIgnoredSystemFileCount(data.ignoredSystemFiles.length);
     setFormKey((k) => k + 1);
   };
 
@@ -132,7 +138,14 @@ export default function PublishPage() {
     const failures: string[] = [];
     for (const f of extras) {
       try {
-        await apiClient.upsertSkillFile(values.owner, values.slug, f.path, f.content);
+        await apiClient.upsertSkillFile(
+          values.owner,
+          values.slug,
+          f.path,
+          f.kind === 'text'
+            ? { kind: 'text', content: f.content }
+            : { kind: 'binary', file: f.file, contentType: f.contentType },
+        );
       } catch (e) {
         failures.push(`${f.path}: ${e instanceof Error ? e.message : 'unknown'}`);
       }
@@ -198,7 +211,11 @@ export default function PublishPage() {
             </div>
             {initial?.skillMdContent ? (
               <div className="space-y-4">
-                <SkillUploadPreview skillMdContent={initial.skillMdContent} extras={extras} />
+                <SkillUploadPreview
+                  skillMdContent={initial.skillMdContent}
+                  extras={extras}
+                  ignoredSystemFileCount={ignoredSystemFileCount}
+                />
                 <details className="border border-neutral-200 px-4 py-3 rounded-xl">
                   <summary className="font-mono text-[11.5px] uppercase tracking-[0.14em] text-neutral-600 cursor-pointer">
                     重新上传 / 替换文件

@@ -1,7 +1,8 @@
 import { MarkdownView } from '@/components/markdown-view';
+import type { SkillUploadExtra } from '@/components/skill-uploader';
 import { TwemojiIcon } from '@/components/twemoji-icon';
 import { cn } from '@/lib/utils';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 // ─── Shared tree types & helpers (same logic as skill-detail.tsx) ─────
 
@@ -111,10 +112,16 @@ export interface SkillUploadPreviewProps {
   /** SKILL.md content */
   skillMdContent: string;
   /** Additional files */
-  extras: UploadFileData[];
+  extras: SkillUploadExtra[];
+  /** Repository/system files skipped before upload */
+  ignoredSystemFileCount?: number;
 }
 
-export function SkillUploadPreview({ skillMdContent, extras }: SkillUploadPreviewProps) {
+export function SkillUploadPreview({
+  skillMdContent,
+  extras,
+  ignoredSystemFileCount = 0,
+}: SkillUploadPreviewProps) {
   // All files: SKILL.md + extras
   const allFiles = useMemo(() => {
     const paths = ['SKILL.md', ...extras.map((e) => e.path)];
@@ -122,11 +129,14 @@ export function SkillUploadPreview({ skillMdContent, extras }: SkillUploadPrevie
   }, [extras]);
 
   // Content map for quick lookup
-  const contentMap = useMemo(() => {
-    const map = new Map<string, string>();
-    map.set('SKILL.md', skillMdContent);
+  const fileMap = useMemo(() => {
+    const map = new Map<
+      string,
+      SkillUploadExtra | { kind: 'text'; path: string; content: string }
+    >();
+    map.set('SKILL.md', { kind: 'text', path: 'SKILL.md', content: skillMdContent });
     for (const e of extras) {
-      map.set(e.path, e.content);
+      map.set(e.path, e);
     }
     return map;
   }, [skillMdContent, extras]);
@@ -141,8 +151,22 @@ export function SkillUploadPreview({ skillMdContent, extras }: SkillUploadPrevie
     setExpandedFolders(new Set(collectFolderPaths(fileTree)));
   }
 
-  const content = contentMap.get(activeFile);
+  const activeData = fileMap.get(activeFile);
+  const content = activeData?.kind === 'text' ? activeData.content : undefined;
   const previewable = isTextPreviewable(activeFile);
+  const imagePreviewable =
+    activeData?.kind === 'binary' && activeData.contentType.toLowerCase().startsWith('image/');
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!imagePreviewable || activeData?.kind !== 'binary') {
+      setImagePreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(activeData.file);
+    setImagePreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [activeData, imagePreviewable]);
 
   const toggleFolder = (path: string) => {
     setExpandedFolders((current) => {
@@ -193,7 +217,13 @@ export function SkillUploadPreview({ skillMdContent, extras }: SkillUploadPrevie
           >
             <div className="flex items-center gap-2">
               <TwemojiIcon
-                emoji={node.path.endsWith('.md') ? '📝' : '📄'}
+                emoji={
+                  node.path.endsWith('.md')
+                    ? '📝'
+                    : /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(node.path)
+                      ? '🖼️'
+                      : '📄'
+                }
                 className="text-[14px]"
               />
               <div className="min-w-0 flex-1">
@@ -207,42 +237,67 @@ export function SkillUploadPreview({ skillMdContent, extras }: SkillUploadPrevie
   };
 
   return (
-    <div className="grid grid-cols-1 gap-8 lg:grid-cols-[280px_minmax(0,1fr)]">
-      <aside className="flex max-h-[720px] min-h-0 flex-col overflow-hidden rounded-3xl border border-neutral-200 bg-white">
-        <div className="px-4 py-3 border-b border-neutral-100 bg-neutral-50">
-          <div className="text-[12px] font-semibold text-neutral-700">
-            文件树 · {allFiles.length}
-          </div>
+    <div className="space-y-4">
+      {ignoredSystemFileCount > 0 ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
+          已忽略 {ignoredSystemFileCount} 个仓库/系统文件，未计入 5 MB 上传大小。
         </div>
-        <ul className="min-h-0 flex-1 overflow-auto py-2">{renderTree(fileTree)}</ul>
-      </aside>
+      ) : null}
 
-      <section className="rounded-3xl border border-neutral-200 bg-white overflow-hidden">
-        <div className="px-5 py-4 border-b border-neutral-100 bg-neutral-50 flex items-center justify-between gap-3">
-          <div>
-            <div className="text-[16px] font-semibold text-neutral-900">{activeFile}</div>
-            <div className="mt-1 text-[12px] text-neutral-500">
-              {previewable ? '可在线预览' : '当前文件仅展示文件名'}
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <aside className="flex max-h-[720px] min-h-0 flex-col overflow-hidden rounded-3xl border border-neutral-200 bg-white">
+          <div className="px-4 py-3 border-b border-neutral-100 bg-neutral-50">
+            <div className="text-[12px] font-semibold text-neutral-700">
+              文件树 · {allFiles.length}
             </div>
           </div>
-        </div>
-        <div className="px-5 py-5">
-          {previewable && content !== undefined ? (
-            activeFile.endsWith('.md') ? (
-              <MarkdownView source={content} />
-            ) : (
-              <pre className="text-[12.5px] leading-relaxed whitespace-pre-wrap break-words">
-                {content}
-              </pre>
-            )
-          ) : (
-            <div className="rounded-2xl border border-dashed border-neutral-200 px-4 py-10 text-center text-[14px] text-neutral-500">
-              <div className="font-medium text-neutral-700">{activeFile}</div>
-              <p className="mt-2">这个文件暂不支持在线预览。</p>
+          <ul className="min-h-0 flex-1 overflow-auto py-2">{renderTree(fileTree)}</ul>
+        </aside>
+
+        <section className="rounded-3xl border border-neutral-200 bg-white overflow-hidden">
+          <div className="px-5 py-4 border-b border-neutral-100 bg-neutral-50 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[16px] font-semibold text-neutral-900">{activeFile}</div>
+              <div className="mt-1 text-[12px] text-neutral-500">
+                {previewable ? '可在线预览' : imagePreviewable ? '图片资源' : '二进制附件'}
+              </div>
             </div>
-          )}
-        </div>
-      </section>
+          </div>
+          <div className="px-5 py-5">
+            {previewable && content !== undefined ? (
+              activeFile.endsWith('.md') ? (
+                <MarkdownView source={content} />
+              ) : (
+                <pre className="text-[12.5px] leading-relaxed whitespace-pre-wrap break-words">
+                  {content}
+                </pre>
+              )
+            ) : imagePreviewUrl ? (
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3">
+                <img
+                  src={imagePreviewUrl}
+                  alt={activeFile}
+                  className="max-h-[520px] w-full object-contain"
+                />
+                {activeData?.kind === 'binary' ? (
+                  <div className="mt-3 text-center text-[12px] text-neutral-500">
+                    {activeData.contentType} · {(activeData.size / 1024).toFixed(0)} KB
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-neutral-200 px-4 py-10 text-center text-[14px] text-neutral-500">
+                <div className="font-medium text-neutral-700">{activeFile}</div>
+                <p className="mt-2">
+                  {activeData?.kind === 'binary'
+                    ? '这个文件会作为二进制附件上传。'
+                    : '这个文件暂不支持在线预览。'}
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import {
@@ -12,12 +12,58 @@ import {
   user,
 } from '../db';
 import { skillProtocolName } from '../lib/protocol-name';
-import { packageWellknownRoute, wellknownRoute } from './wellknown';
 
-const app = new Hono().route('/.well-known', wellknownRoute);
-const packageApp = new Hono().route('/p', packageWellknownRoute);
+let app: Hono;
+let packageApp: Hono;
 const OWNER_ID = 'mozia-virtual';
 const ALICE_ID = 'alice-owner';
+const BINARY_OBJECT_KEY = 'skillhunt/skill-files/mozia-virtual/test-owned-public/background.webp';
+const mockOssObjects = new Map<string, { body: Uint8Array; contentType: string | null }>();
+const originalFetch = globalThis.fetch;
+const s3EnvKeys = [
+  'S3_ENDPOINT',
+  'S3_PUBLIC_URL',
+  'S3_BUCKET',
+  'S3_ACCESS_KEY_ID',
+  'S3_SECRET_ACCESS_KEY',
+  'S3_REGION',
+] as const;
+const originalS3Env = Object.fromEntries(s3EnvKeys.map((key) => [key, process.env[key]]));
+
+beforeAll(async () => {
+  process.env.S3_ENDPOINT = 'https://oss.example';
+  process.env.S3_PUBLIC_URL = 'https://oss.example';
+  process.env.S3_BUCKET = 'skillhunt-test';
+  process.env.S3_ACCESS_KEY_ID = 'test-access-key';
+  process.env.S3_SECRET_ACCESS_KEY = 'test-secret-key';
+  process.env.S3_REGION = 'us-east-1';
+  const mockedFetch = (async (...args: Parameters<typeof fetch>) => {
+    const target = args[0];
+    const url = new URL(
+      typeof target === 'string' ? target : target instanceof URL ? target.toString() : target.url,
+    );
+    const decodedPath = decodeURIComponent(url.pathname);
+    const objectKey = [...mockOssObjects.keys()].find((key) => decodedPath.endsWith(`/${key}`));
+    if (objectKey) {
+      const object = mockOssObjects.get(objectKey);
+      if (object) {
+        return new Response(object.body, {
+          headers: {
+            'content-type': object.contentType ?? 'application/octet-stream',
+            'content-length': String(object.body.byteLength),
+          },
+        });
+      }
+    }
+    return originalFetch(...args);
+  }) as typeof fetch;
+  mockedFetch.preconnect = originalFetch.preconnect;
+  globalThis.fetch = mockedFetch;
+
+  const { packageWellknownRoute, wellknownRoute } = await import('./wellknown');
+  app = new Hono().route('/.well-known', wellknownRoute);
+  packageApp = new Hono().route('/p', packageWellknownRoute);
+});
 
 async function insertTestSkill(input: {
   ownerUserId: string;
@@ -91,6 +137,7 @@ async function insertTestPackage(input: {
 }
 
 async function resetAndSeed() {
+  mockOssObjects.clear();
   await db.delete(skillPackageItems);
   await db.delete(skillPackages);
   await db.delete(skills);
@@ -123,7 +170,20 @@ async function resetAndSeed() {
       content: '---\nname: test-owned-public\ndescription: x\n---\n# body\n',
     },
     { skillId: ownedPublic.id, path: 'extra.md', content: '# extra\n' },
+    {
+      skillId: ownedPublic.id,
+      path: 'assets/background.webp',
+      content: '',
+      storageKind: 'oss',
+      objectKey: BINARY_OBJECT_KEY,
+      contentType: 'image/webp',
+      sizeBytes: 5,
+    },
   ]);
+  mockOssObjects.set(BINARY_OBJECT_KEY, {
+    body: new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x01]),
+    contentType: 'image/webp',
+  });
 
   const ownedPriv = await insertTestSkill({
     slug: 'test-owned-private',
@@ -198,7 +258,18 @@ async function cleanup() {
 
 describe('well-known endpoint', () => {
   beforeEach(resetAndSeed);
-  afterAll(cleanup);
+  afterAll(async () => {
+    await cleanup();
+    globalThis.fetch = originalFetch;
+    for (const key of s3EnvKeys) {
+      const original = originalS3Env[key];
+      if (original === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = original;
+      }
+    }
+  });
 
   it('index.json contains only owned + public skills', async () => {
     const res = await app.fetch(
@@ -241,6 +312,19 @@ describe('well-known endpoint', () => {
     expect(res.headers.get('content-type')).toContain('text/markdown');
     const body = await res.text();
     expect(body).toContain('extra');
+  });
+
+  it('binary assets return original bytes with image content type', async () => {
+    const res = await app.fetch(
+      new Request(
+        'http://localhost/.well-known/agent-skills/test-owned-public/assets/background.webp',
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/webp');
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(
+      new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x01]),
+    );
   });
 
   it('private skill returns 404', async () => {

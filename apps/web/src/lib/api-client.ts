@@ -67,6 +67,23 @@ const json = (body: unknown, method: string): RequestInit => ({
 // non-ASCII chars like Chinese filenames).
 const encodePath = (p: string) => p.split('/').map(encodeURIComponent).join('/');
 
+export type SkillFileUpload =
+  | { kind: 'text'; content: string }
+  | { kind: 'binary'; file: Blob; contentType?: string };
+
+export interface SkillFileUploadTicket {
+  uploadUrl: string;
+  objectKey: string;
+  maxSizeBytes: number;
+  expiresInSeconds: number;
+}
+
+export interface UploadedSkillFileMetadata {
+  objectKey: string;
+  size: number;
+  contentType: string | null;
+}
+
 export interface ListSkillsParams {
   type?: 'all' | 'owned' | 'referenced';
   q?: string;
@@ -405,10 +422,51 @@ export const apiClient = {
     });
   },
 
-  upsertSkillFile(owner: string, slug: string, path: string, content: string): Promise<void> {
-    return request<void>(
-      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/files/${encodePath(path)}`,
-      json({ content }, 'POST'),
+  async upsertSkillFile(
+    owner: string,
+    slug: string,
+    path: string,
+    input: string | SkillFileUpload,
+  ): Promise<void> {
+    const upload: SkillFileUpload =
+      typeof input === 'string' ? { kind: 'text', content: input } : input;
+    const endpoint = `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/files/${encodePath(path)}`;
+    if (upload.kind === 'text') {
+      return request<void>(endpoint, json({ content: upload.content }, 'POST'));
+    }
+
+    const uploadTicket = await request<SkillFileUploadTicket>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/file-uploads`,
+      json(
+        {
+          path,
+          contentType: upload.contentType,
+          size: upload.file.size,
+        },
+        'POST',
+      ),
+    );
+
+    const res = await fetch(uploadTicket.uploadUrl, {
+      method: 'PUT',
+      headers: upload.contentType ? { 'content-type': upload.contentType } : undefined,
+      body: upload.file,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new ApiError(res.status, text, 'OSS 文件上传失败');
+    }
+
+    await request<UploadedSkillFileMetadata>(
+      `/skills/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/file-uploads/complete`,
+      json(
+        {
+          path,
+          objectKey: uploadTicket.objectKey,
+          contentType: upload.contentType,
+        },
+        'POST',
+      ),
     );
   },
 

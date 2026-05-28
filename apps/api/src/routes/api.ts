@@ -2,15 +2,16 @@ import { createHash } from 'node:crypto';
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 import { type AuthContext, getAuthContext, hasScope } from '../lib/auth-context';
-import { mimeFromPath } from '../lib/content-type';
 import {
   type SkillComment,
   type SkillDetail,
   type SkillListItem,
+  completeSkillFileUploadSchema,
   completeVideoUploadSchema,
   createContestSubmissionSchema,
   createReleaseSchema,
   createSkillCommentSchema,
+  createSkillFileUploadSchema,
   createSkillPackageItemSchema,
   createSkillPackageSchema,
   createSkillSchema,
@@ -31,6 +32,8 @@ import {
   upsertFileBodySchema,
 } from '../lib/dto';
 import { skillProtocolName } from '../lib/protocol-name';
+import { skillFileFingerprint } from '../lib/skill-file-payload';
+import { createSkillFileResponse } from '../lib/skill-file-response';
 import { normalizeSsoPhone } from '../lib/sso-user';
 import {
   HDU_SKILLS_EVENT_SLUG,
@@ -41,10 +44,13 @@ import {
 } from '../services/contest-service';
 import { mintGrant } from '../services/install-grant-service';
 import {
+  completeUploadedSkillFile,
   completeUploadedVideo,
   createDemoVideoPlaybackUrl,
+  createSkillFileUploadTicket,
   createVideoUploadTicket,
   isS3StorageConfigured,
+  isSkillFileObjectKeyForSkill,
   isVideoObjectKeyForUser,
 } from '../services/s3-storage';
 import {
@@ -89,7 +95,7 @@ import {
   findUserByHandle,
   findUserById,
   forkSkillToOwner,
-  getSkillFileContent,
+  getSkillFilePayload,
   getSkillSubscription,
   getUnreadNotificationCount,
   getUpstreamStatus,
@@ -112,6 +118,7 @@ import {
   updateOwnedSkill,
   updateUserProfile,
   upsertSkillFile,
+  upsertSkillOssFile,
 } from '../services/skill-service';
 
 export const apiRoute = new Hono();
@@ -124,12 +131,12 @@ const skillAccessActor = (ctx: AuthContext) => ({
 const viewerUserId = (ctx: AuthContext) => ctx.user?.id ?? null;
 const canIncludePrivateSkills = (ctx: AuthContext) => hasScope(ctx, 'skills:read_private');
 
-function hashFiles(files: Array<{ path: string; content: string }>): string {
+function hashFiles(files: Awaited<ReturnType<typeof listSkillFilesWithContent>>): string {
   const hash = createHash('sha256');
   for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
     hash.update(file.path);
     hash.update('\0');
-    hash.update(file.content);
+    hash.update(skillFileFingerprint(file));
     hash.update('\0');
   }
   return hash.digest('hex');
@@ -244,7 +251,7 @@ const toRawReleaseDto = (release: {
   version: number;
   title: string;
   changelog: string;
-  snapshotFiles: Array<{ path: string; content: string }>;
+  snapshotFiles: Array<{ path: string }>;
   createdByUserId: string;
   createdAt: Date;
 }) => ({
@@ -1464,6 +1471,80 @@ apiRoute.get('/skills/:owner/:slug/package', async (c) => {
   });
 });
 
+apiRoute.post(
+  '/skills/:owner/:slug/file-uploads',
+  zValidator('json', createSkillFileUploadSchema),
+  async (c) => {
+    const ownerHandle = c.req.param('owner');
+    const slug = c.req.param('slug');
+    const input = c.req.valid('json');
+    if (input.path.toLowerCase() === 'skill.md') {
+      return c.json({ error: 'SKILL.md 必须作为文本内容保存' }, 400);
+    }
+
+    const authContext = await getAuthContext(c);
+    const ownerAuth = await authorizeOwner(authContext, ownerHandle);
+    if (!ownerAuth.ok) return c.json({ error: ownerAuth.message }, ownerAuth.status);
+
+    const skill = await findSkillByOwnerAndSlug(ownerHandle, slug);
+    if (!skill) return c.json({ error: 'Not Found' }, 404);
+    if (skill.type !== 'owned') {
+      return c.json({ error: 'Cannot attach files to referenced skill' }, 400);
+    }
+    if (!isS3StorageConfigured()) return c.json({ error: 'OSS storage is not configured' }, 503);
+
+    const ticket = createSkillFileUploadTicket({
+      userId: ownerAuth.actorRow.id,
+      skillId: skill.id,
+      path: input.path,
+    });
+    return c.json(ticket, 201);
+  },
+);
+
+apiRoute.post(
+  '/skills/:owner/:slug/file-uploads/complete',
+  zValidator('json', completeSkillFileUploadSchema),
+  async (c) => {
+    const ownerHandle = c.req.param('owner');
+    const slug = c.req.param('slug');
+    const input = c.req.valid('json');
+    if (input.path.toLowerCase() === 'skill.md') {
+      return c.json({ error: 'SKILL.md 必须作为文本内容保存' }, 400);
+    }
+
+    const authContext = await getAuthContext(c);
+    const ownerAuth = await authorizeOwner(authContext, ownerHandle);
+    if (!ownerAuth.ok) return c.json({ error: ownerAuth.message }, ownerAuth.status);
+
+    const skill = await findSkillByOwnerAndSlug(ownerHandle, slug);
+    if (!skill) return c.json({ error: 'Not Found' }, 404);
+    if (skill.type !== 'owned') {
+      return c.json({ error: 'Cannot attach files to referenced skill' }, 400);
+    }
+    if (!isS3StorageConfigured()) return c.json({ error: 'OSS storage is not configured' }, 503);
+    if (!isSkillFileObjectKeyForSkill(input.objectKey, ownerAuth.actorRow.id, skill.id)) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+
+    try {
+      const metadata = await completeUploadedSkillFile(input.objectKey, {
+        path: input.path,
+        contentType: input.contentType,
+      });
+      await upsertSkillOssFile(skill.id, input.path, {
+        objectKey: metadata.objectKey,
+        contentType: metadata.contentType,
+        sizeBytes: metadata.size,
+      });
+      return c.json(metadata);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'OSS 对象校验失败';
+      return c.json({ error: message }, 400);
+    }
+  },
+);
+
 apiRoute.get('/skills/:owner/:slug/files/:path{.+}', async (c) => {
   const ownerHandle = c.req.param('owner');
   const slug = c.req.param('slug');
@@ -1477,37 +1558,52 @@ apiRoute.get('/skills/:owner/:slug/files/:path{.+}', async (c) => {
     return c.json({ error: 'Not Found' }, 404);
   }
 
-  const content = await getSkillFileContent(skill.id, pathParse.data);
-  if (content === null) return c.json({ error: 'Not Found' }, 404);
+  const file = await getSkillFilePayload(skill.id, pathParse.data);
+  if (!file) return c.json({ error: 'Not Found' }, 404);
 
-  c.header('Content-Type', mimeFromPath(pathParse.data));
-  return c.body(content);
+  try {
+    return await createSkillFileResponse(file);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '文件资源读取失败';
+    return c.json({ error: message }, message.includes('configured') ? 503 : 502);
+  }
 });
 
-apiRoute.post(
-  '/skills/:owner/:slug/files/:path{.+}',
-  zValidator('json', upsertFileBodySchema),
-  async (c) => {
-    const ownerHandle = c.req.param('owner');
-    const slug = c.req.param('slug');
-    const filePath = c.req.param('path');
-    const pathParse = filePathSchema.safeParse(filePath);
-    if (!pathParse.success) return c.json({ error: 'Invalid path' }, 400);
+apiRoute.post('/skills/:owner/:slug/files/:path{.+}', async (c) => {
+  const ownerHandle = c.req.param('owner');
+  const slug = c.req.param('slug');
+  const filePath = c.req.param('path');
+  const pathParse = filePathSchema.safeParse(filePath);
+  if (!pathParse.success) return c.json({ error: 'Invalid path' }, 400);
 
-    const authContext = await getAuthContext(c);
-    const ownerAuth = await authorizeOwner(authContext, ownerHandle);
-    if (!ownerAuth.ok) return c.json({ error: ownerAuth.message }, ownerAuth.status);
+  const authContext = await getAuthContext(c);
+  const ownerAuth = await authorizeOwner(authContext, ownerHandle);
+  if (!ownerAuth.ok) return c.json({ error: ownerAuth.message }, ownerAuth.status);
 
-    const skill = await findSkillByOwnerAndSlug(ownerHandle, slug);
-    if (!skill) return c.json({ error: 'Not Found' }, 404);
-    if (skill.type !== 'owned')
-      return c.json({ error: 'Cannot attach files to referenced skill' }, 400);
+  const skill = await findSkillByOwnerAndSlug(ownerHandle, slug);
+  if (!skill) return c.json({ error: 'Not Found' }, 404);
+  if (skill.type !== 'owned')
+    return c.json({ error: 'Cannot attach files to referenced skill' }, 400);
 
-    const { content } = c.req.valid('json');
-    await upsertSkillFile(skill.id, pathParse.data, content);
+  const requestContentType = c.req.header('content-type') ?? '';
+  if (requestContentType.toLowerCase().startsWith('application/json')) {
+    const json = await c.req.json().catch(() => null);
+    const parsed = upsertFileBodySchema.safeParse(json);
+    if (!parsed.success) {
+      return c.json(
+        {
+          error: '文本附件不能超过 200000 个字符',
+          issues: parsed.error.issues,
+        },
+        400,
+      );
+    }
+    await upsertSkillFile(skill.id, pathParse.data, parsed.data.content);
     return c.body(null, 204);
-  },
-);
+  }
+
+  return c.json({ error: '图片和二进制附件请使用 OSS 上传票据' }, 415);
+});
 
 apiRoute.delete('/skills/:owner/:slug/files/:path{.+}', async (c) => {
   const ownerHandle = c.req.param('owner');

@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, gt, sql } from 'drizzle-orm';
 import { db, installGrantUses, installGrants, publishables, skillFiles, skills, user } from '../db';
+import { type SkillFilePayload, normalizeSkillFileEntry } from '../lib/skill-file-payload';
 import { recordSkillInstall } from './install-stats-service';
 
 // 32 random bytes -> 43 chars base64url. URL becomes:
@@ -156,7 +157,7 @@ export async function consumeGrant(
   skillSlug: string,
   filePath: string,
   audit: { ip?: string | null; userAgent?: string | null },
-): Promise<{ content: string; contentType?: string } | null> {
+): Promise<SkillFilePayload | null> {
   const grant = await loadGrantForFile(token, filePath);
   if (!grant) return null;
 
@@ -177,7 +178,14 @@ export async function consumeGrant(
   }
 
   const fileRow = await db
-    .select({ content: skillFiles.content })
+    .select({
+      path: skillFiles.path,
+      content: skillFiles.content,
+      storageKind: skillFiles.storageKind,
+      objectKey: skillFiles.objectKey,
+      contentType: skillFiles.contentType,
+      sizeBytes: skillFiles.sizeBytes,
+    })
     .from(skillFiles)
     .where(and(eq(skillFiles.skillId, sk.skillId), eq(skillFiles.path, filePath)))
     .limit(1);
@@ -194,7 +202,7 @@ export async function consumeGrant(
     userAgent: audit.userAgent ?? null,
   });
 
-  return { content: fileRow[0].content };
+  return normalizeSkillFileEntry(fileRow[0]);
 }
 
 export async function gcExpiredGrants(): Promise<number> {

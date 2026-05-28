@@ -1,7 +1,10 @@
+import { isSkillUploadIgnoredPath } from '@mozia/skillhub-shared';
 import { z } from 'zod';
 
 export const VIDEO_UPLOAD_MAX_BYTES = 500 * 1024 * 1024;
 export const VIDEO_UPLOAD_MAX_DURATION_SECONDS = 180;
+export const SKILL_TEXT_FILE_MAX_CHARS = 200_000;
+export const SKILL_BINARY_FILE_MAX_BYTES = 5 * 1024 * 1024;
 
 // ─── Query ─────────────────────────────────────────────────────────────
 
@@ -204,7 +207,7 @@ const createSkillSchemaInner = z.object({
   visibility: z.enum(['public', 'private']).default('private'),
   // SKILL.md content. 20 char floor (a meaningful skill has at least a heading
   // and a sentence); 200 KB ceiling (anything more should split into files/).
-  skillMdContent: z.string().min(20).max(200_000),
+  skillMdContent: z.string().min(20).max(SKILL_TEXT_FILE_MAX_CHARS),
   // Optional: pre-parsed frontmatter; if absent we extract from skillMdContent.
   frontmatter: z.record(z.string(), z.unknown()).optional(),
   // SkillHunt display fields (decoupled from SKILL.md content).
@@ -363,16 +366,38 @@ export const completeVideoUploadSchema = z.object({
 
 export type CompleteVideoUploadInput = z.infer<typeof completeVideoUploadSchema>;
 
+// ─── OSS skill file upload ────────────────────────────────────────────
+
 // File path constraint: no leading slash, no `..`, max 512 chars (matches DB constraint)
 export const filePathSchema = z
   .string()
   .min(1)
   .max(512)
   .regex(/^[^/]/, 'must not start with /')
-  .refine((p) => !p.includes('..'), 'must not contain `..`');
+  .refine((p) => !p.includes('..'), 'must not contain `..`')
+  .refine(
+    (p) => !isSkillUploadIgnoredPath(p, { rootRelative: true }),
+    '仓库/系统文件不会作为 Skill 附件上传',
+  );
+
+export const createSkillFileUploadSchema = z.object({
+  path: filePathSchema,
+  contentType: z.string().trim().min(1).max(120).optional(),
+  size: z.number().int().positive().max(SKILL_BINARY_FILE_MAX_BYTES),
+});
+
+export type CreateSkillFileUploadInput = z.infer<typeof createSkillFileUploadSchema>;
+
+export const completeSkillFileUploadSchema = z.object({
+  path: filePathSchema,
+  objectKey: z.string().min(1).max(1024),
+  contentType: z.string().trim().min(1).max(120).optional(),
+});
+
+export type CompleteSkillFileUploadInput = z.infer<typeof completeSkillFileUploadSchema>;
 
 export const upsertFileBodySchema = z.object({
-  content: z.string().max(200_000),
+  content: z.string().max(SKILL_TEXT_FILE_MAX_CHARS),
 });
 
 // ─── Users ─────────────────────────────────────────────────────────────

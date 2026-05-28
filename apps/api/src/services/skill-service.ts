@@ -14,6 +14,14 @@ import {
 } from '../db';
 import { skillProtocolName } from '../lib/protocol-name';
 import {
+  type SkillFilePayload,
+  type SkillFileSnapshotEntry,
+  normalizeSkillFileEntry,
+  ossSkillFile,
+  skillFileFingerprint,
+  textSkillFile,
+} from '../lib/skill-file-payload';
+import {
   addPublishableBookmark,
   addPublishableUpvote,
   createPublishableComment,
@@ -27,6 +35,7 @@ import {
   removePublishableUpvote,
   setPublishableSubscription,
 } from './publishable-service';
+import { deleteUploadedObject } from './s3-storage';
 
 // ─── Well-known ───────────────────────────────────────────────────────
 
@@ -102,13 +111,42 @@ export async function findPublicOwnedSkillByProtocolName(protocolName: string) {
   );
 }
 
-export async function getSkillFileContent(skillId: string, path: string): Promise<string | null> {
+const skillFileSelect = {
+  path: skillFiles.path,
+  content: skillFiles.content,
+  storageKind: skillFiles.storageKind,
+  objectKey: skillFiles.objectKey,
+  contentType: skillFiles.contentType,
+  sizeBytes: skillFiles.sizeBytes,
+};
+
+function mapSkillFileRow(row: {
+  path: string;
+  content: string;
+  storageKind: 'inline' | 'oss';
+  objectKey: string | null;
+  contentType: string | null;
+  sizeBytes: number;
+}): SkillFilePayload {
+  return normalizeSkillFileEntry(row);
+}
+
+export async function getSkillFilePayload(
+  skillId: string,
+  path: string,
+): Promise<SkillFilePayload | null> {
   const rows = await db
-    .select({ content: skillFiles.content })
+    .select(skillFileSelect)
     .from(skillFiles)
     .where(and(eq(skillFiles.skillId, skillId), eq(skillFiles.path, path)))
     .limit(1);
-  return rows[0]?.content ?? null;
+  return rows[0] ? mapSkillFileRow(rows[0]) : null;
+}
+
+export async function getSkillFileContent(skillId: string, path: string): Promise<string | null> {
+  const file = await getSkillFilePayload(skillId, path);
+  if (!file || file.storageKind !== 'inline') return null;
+  return file.content;
 }
 
 // ─── Business API ─────────────────────────────────────────────────────
@@ -411,17 +449,17 @@ export async function findSkillByOwnerAndSlug(
 
 export async function listSkillFilesWithContent(skillId: string) {
   const rows = await db
-    .select({ path: skillFiles.path, content: skillFiles.content })
+    .select(skillFileSelect)
     .from(skillFiles)
     .where(eq(skillFiles.skillId, skillId));
-  return rows.sort((a, b) => {
+  return rows.map(mapSkillFileRow).sort((a, b) => {
     if (a.path === 'SKILL.md') return -1;
     if (b.path === 'SKILL.md') return 1;
     return a.path.localeCompare(b.path, 'zh-CN');
   });
 }
 
-export type SkillReleaseSnapshot = Array<{ path: string; content: string }>;
+export type SkillReleaseSnapshot = SkillFileSnapshotEntry[];
 
 export interface SkillReleaseWithAuthor {
   id: string;
@@ -699,9 +737,16 @@ export async function createOwnedSkill(input: CreateSkillData): Promise<SkillWit
       .returning();
     if (!row) throw new Error('createOwnedSkill: insert returned no row');
 
-    await tx
-      .insert(skillFiles)
-      .values({ skillId: row.id, path: 'SKILL.md', content: input.skillMdContent });
+    const skillMdFile = textSkillFile('SKILL.md', input.skillMdContent);
+    await tx.insert(skillFiles).values({
+      skillId: row.id,
+      path: skillMdFile.path,
+      content: skillMdFile.content,
+      storageKind: skillMdFile.storageKind,
+      objectKey: skillMdFile.objectKey,
+      contentType: skillMdFile.contentType,
+      sizeBytes: skillMdFile.sizeBytes,
+    });
 
     if (input.initialRelease) {
       await tx.insert(publishableReleases).values({
@@ -711,7 +756,7 @@ export async function createOwnedSkill(input: CreateSkillData): Promise<SkillWit
         changelog: input.initialRelease.changelog,
         snapshot: {
           kind: 'skill',
-          files: [{ path: 'SKILL.md', content: input.skillMdContent }],
+          files: [skillMdFile],
         },
         createdByUserId: input.initialRelease.createdByUserId,
       });
@@ -790,18 +835,33 @@ export async function updateOwnedSkill(
 
     if (input.skillMdContent !== undefined) {
       // Upsert SKILL.md content
+      const skillMdFile = textSkillFile('SKILL.md', input.skillMdContent);
       await tx
         .insert(skillFiles)
-        .values({ skillId, path: 'SKILL.md', content: input.skillMdContent })
+        .values({
+          skillId,
+          path: skillMdFile.path,
+          content: skillMdFile.content,
+          storageKind: skillMdFile.storageKind,
+          objectKey: skillMdFile.objectKey,
+          contentType: skillMdFile.contentType,
+          sizeBytes: skillMdFile.sizeBytes,
+        })
         .onConflictDoUpdate({
           target: [skillFiles.skillId, skillFiles.path],
-          set: { content: input.skillMdContent },
+          set: {
+            content: skillMdFile.content,
+            storageKind: skillMdFile.storageKind,
+            objectKey: skillMdFile.objectKey,
+            contentType: skillMdFile.contentType,
+            sizeBytes: skillMdFile.sizeBytes,
+          },
         });
     }
 
     if (input.release) {
       const snapshotFiles = await tx
-        .select({ path: skillFiles.path, content: skillFiles.content })
+        .select(skillFileSelect)
         .from(skillFiles)
         .where(eq(skillFiles.skillId, skillId));
       const [versionRow] = await tx
@@ -815,7 +875,7 @@ export async function updateOwnedSkill(
         changelog: input.release.changelog,
         snapshot: {
           kind: 'skill',
-          files: snapshotFiles.sort((a, b) => {
+          files: snapshotFiles.map(mapSkillFileRow).sort((a, b) => {
             if (a.path === 'SKILL.md') return -1;
             if (b.path === 'SKILL.md') return 1;
             return a.path.localeCompare(b.path, 'zh-CN');
@@ -901,12 +961,41 @@ export async function listUserBookmarks(userId: string): Promise<SkillWithOwner[
   return rows.map(mapSkillRow);
 }
 
+async function listCurrentSkillOssObjectKeys(skillId: string): Promise<string[]> {
+  const rows = await db
+    .select({ objectKey: skillFiles.objectKey })
+    .from(skillFiles)
+    .where(and(eq(skillFiles.skillId, skillId), eq(skillFiles.storageKind, 'oss')));
+
+  return [
+    ...new Set(rows.map((row) => row.objectKey).filter((value): value is string => Boolean(value))),
+  ];
+}
+
 export async function deleteSkill(skillId: string): Promise<boolean> {
+  const ossObjectKeys = await listCurrentSkillOssObjectKeys(skillId);
   const result = await db
     .delete(publishables)
     .where(and(eq(publishables.id, skillId), eq(publishables.kind, 'skill')))
     .returning({ id: publishables.id });
-  return result.length > 0;
+  const deleted = result.length > 0;
+  if (!deleted) return false;
+
+  await Promise.all(
+    ossObjectKeys.map(async (objectKey) => {
+      try {
+        await deleteUploadedObject(objectKey);
+      } catch (error) {
+        console.warn('[skill-delete] OSS 对象删除失败', {
+          skillId,
+          objectKey,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }),
+  );
+
+  return true;
 }
 
 function parseFrontmatterValue(value: unknown): string {
@@ -1010,7 +1099,7 @@ export async function forkSkillToOwner(input: {
     await Promise.all(
       sourceFiles
         .filter((file) => file.path !== 'SKILL.md')
-        .map((file) => upsertSkillFile(created.id, file.path, file.content)),
+        .map((file) => upsertSkillFilePayload(created.id, file)),
     );
 
     await createSkillRelease({
@@ -1056,18 +1145,47 @@ export async function forkSkillToOwner(input: {
 
 // ─── File CRUD on owned skills ────────────────────────────────────────
 
+export async function upsertSkillFilePayload(
+  skillId: string,
+  file: SkillFilePayload,
+): Promise<void> {
+  await db
+    .insert(skillFiles)
+    .values({
+      skillId,
+      path: file.path,
+      content: file.content,
+      storageKind: file.storageKind,
+      objectKey: file.objectKey,
+      contentType: file.contentType,
+      sizeBytes: file.sizeBytes,
+    })
+    .onConflictDoUpdate({
+      target: [skillFiles.skillId, skillFiles.path],
+      set: {
+        content: file.content,
+        storageKind: file.storageKind,
+        objectKey: file.objectKey,
+        contentType: file.contentType,
+        sizeBytes: file.sizeBytes,
+      },
+    });
+}
+
 export async function upsertSkillFile(
   skillId: string,
   path: string,
   content: string,
 ): Promise<void> {
-  await db
-    .insert(skillFiles)
-    .values({ skillId, path, content })
-    .onConflictDoUpdate({
-      target: [skillFiles.skillId, skillFiles.path],
-      set: { content },
-    });
+  await upsertSkillFilePayload(skillId, textSkillFile(path, content));
+}
+
+export async function upsertSkillOssFile(
+  skillId: string,
+  path: string,
+  input: { objectKey: string; contentType?: string | null; sizeBytes: number },
+): Promise<void> {
+  await upsertSkillFilePayload(skillId, ossSkillFile(path, input));
 }
 
 export async function deleteSkillFile(skillId: string, path: string): Promise<boolean> {
@@ -1078,12 +1196,12 @@ export async function deleteSkillFile(skillId: string, path: string): Promise<bo
   return result.length > 0;
 }
 
-function filesToMap(files: SkillReleaseSnapshot): Map<string, string> {
-  return new Map(files.map((file) => [file.path, file.content]));
+function filesToMap(files: SkillReleaseSnapshot): Map<string, SkillFilePayload> {
+  return new Map(files.map((file) => [file.path, normalizeSkillFileEntry(file)]));
 }
 
-function contentChanged(a: string | undefined, b: string | undefined) {
-  return (a ?? null) !== (b ?? null);
+function contentChanged(a: SkillFilePayload | undefined, b: SkillFilePayload | undefined) {
+  return (a ? skillFileFingerprint(a) : null) !== (b ? skillFileFingerprint(b) : null);
 }
 
 export async function getUpstreamStatus(input: {
@@ -1243,18 +1361,32 @@ export async function syncForkWithUpstream(input: {
 
   await db.transaction(async (tx) => {
     for (const path of paths) {
-      const nextContent = upstreamMap.get(path);
-      if (nextContent === undefined) {
+      const nextFile = upstreamMap.get(path);
+      if (nextFile === undefined) {
         await tx
           .delete(skillFiles)
           .where(and(eq(skillFiles.skillId, input.forkSkill.id), eq(skillFiles.path, path)));
       } else {
         await tx
           .insert(skillFiles)
-          .values({ skillId: input.forkSkill.id, path, content: nextContent })
+          .values({
+            skillId: input.forkSkill.id,
+            path,
+            content: nextFile.content,
+            storageKind: nextFile.storageKind,
+            objectKey: nextFile.objectKey,
+            contentType: nextFile.contentType,
+            sizeBytes: nextFile.sizeBytes,
+          })
           .onConflictDoUpdate({
             target: [skillFiles.skillId, skillFiles.path],
-            set: { content: nextContent },
+            set: {
+              content: nextFile.content,
+              storageKind: nextFile.storageKind,
+              objectKey: nextFile.objectKey,
+              contentType: nextFile.contentType,
+              sizeBytes: nextFile.sizeBytes,
+            },
           });
       }
     }

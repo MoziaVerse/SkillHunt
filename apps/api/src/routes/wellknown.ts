@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { mimeFromPath } from '../lib/content-type';
 import { skillProtocolName } from '../lib/protocol-name';
+import { createSkillFileResponse } from '../lib/skill-file-response';
 import {
   consumeGrant,
   peekGrantSkill,
@@ -16,7 +16,7 @@ import {
 import {
   findPublicOwnedSkillByOwnerAndSlug,
   findPublicOwnedSkillByProtocolName,
-  getSkillFileContent,
+  getSkillFilePayload,
   listPublicOwnedSkills,
   listSkillFilePaths,
 } from '../services/skill-service';
@@ -60,25 +60,29 @@ const handleAgentSkillsFile = async (c: import('hono').Context) => {
   const segments = tail.split('/').filter((s) => s.length > 0);
   if (segments.length < 2) return c.text('File path required', 400);
 
-  let ownerName: string | undefined;
-  let slug: string | undefined;
-  let filePath: string;
-  if (segments.length === 2) {
-    [slug, filePath] = segments as [string, string];
-  } else {
-    [ownerName, slug] = segments;
-    filePath = segments.slice(2).join('/');
-  }
-  if (!slug) return c.text('Slug required', 400);
-  if (isUnsafePath(filePath)) return c.text('Invalid path', 400);
+  let skill: Awaited<ReturnType<typeof findPublicOwnedSkillByOwnerAndSlug>> | null = null;
+  let filePath = '';
 
-  const skill = ownerName
-    ? await findPublicOwnedSkillByOwnerAndSlug(ownerName, slug)
-    : await findPublicOwnedSkillByProtocolName(slug);
+  if (segments.length >= 3) {
+    const [ownerName, slug] = segments;
+    if (ownerName && slug) {
+      skill = await findPublicOwnedSkillByOwnerAndSlug(ownerName, slug);
+      if (skill) filePath = segments.slice(2).join('/');
+    }
+  }
+
+  if (!skill) {
+    const [protocolName] = segments;
+    if (!protocolName) return c.text('Slug required', 400);
+    skill = await findPublicOwnedSkillByProtocolName(protocolName);
+    filePath = segments.slice(1).join('/');
+  }
+
+  if (isUnsafePath(filePath)) return c.text('Invalid path', 400);
   if (!skill) return c.notFound();
 
-  const content = await getSkillFileContent(skill.id, filePath);
-  if (content === null) return c.notFound();
+  const file = await getSkillFilePayload(skill.id, filePath);
+  if (!file) return c.notFound();
 
   if (filePath.toLowerCase() === 'skill.md') {
     await recordSkillInstall(skill.id, 'well-known', {
@@ -87,8 +91,7 @@ const handleAgentSkillsFile = async (c: import('hono').Context) => {
     });
   }
 
-  c.header('Content-Type', mimeFromPath(filePath));
-  return c.body(content);
+  return createSkillFileResponse(file);
 };
 
 // GET /i/:token/.well-known/agent-skills/index.json
@@ -133,8 +136,7 @@ const handleCapabilityFile = async (c: import('hono').Context) => {
   });
   if (!result) return c.notFound();
 
-  c.header('Content-Type', result.contentType ?? mimeFromPath(filePath));
-  return c.body(result.content);
+  return createSkillFileResponse(result);
 };
 
 wellknownRoute.get('/agent-skills/:a/:b', handleAgentSkillsFile);
@@ -206,8 +208,7 @@ const handlePackageFile = async (c: import('hono').Context) => {
     });
   }
 
-  c.header('Content-Type', mimeFromPath(filePath));
-  return c.body(result.content);
+  return createSkillFileResponse(result.file);
 };
 
 const handlePackageVersionFile = async (c: import('hono').Context) => {
@@ -240,8 +241,7 @@ const handlePackageVersionFile = async (c: import('hono').Context) => {
     });
   }
 
-  c.header('Content-Type', mimeFromPath(filePath));
-  return c.body(result.content);
+  return createSkillFileResponse(result.file);
 };
 
 packageWellknownRoute.get(
