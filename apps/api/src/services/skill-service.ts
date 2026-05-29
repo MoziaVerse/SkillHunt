@@ -8,6 +8,7 @@ import {
   publishableUpvotes,
   publishables,
   skillFiles,
+  skillInstallEvents,
   skillSyncEvents,
   skills,
   user,
@@ -194,6 +195,7 @@ export interface SkillWithOwner {
   createdAt: Date;
   updatedAt: Date;
   owner: OwnerInfo;
+  downloadCount: number;
   upvoteCount: number;
   commentCount: number;
   bookmarkCount: number;
@@ -239,6 +241,10 @@ export interface SkillCommentWithAuthor {
 }
 
 const skillSelectExtras = (viewerUserId: string | null) => ({
+  downloadCount: sql<number>`(
+    select count(*) from ${skillInstallEvents}
+    where ${skillInstallEvents.skillId} = ${skills.id}
+  )`,
   upvoteCount: sql<number>`(
     select count(*) from ${publishableUpvotes}
     where ${publishableUpvotes.publishableId} = ${publishables.id}
@@ -272,6 +278,7 @@ function mapSkillRow<
     skill: typeof skills.$inferSelect;
     publishable: typeof publishables.$inferSelect;
     owner: OwnerInfo;
+    downloadCount: number;
     upvoteCount: number;
     commentCount: number;
     bookmarkCount: number;
@@ -283,6 +290,7 @@ function mapSkillRow<
     ...row.publishable,
     ...row.skill,
     owner: row.owner,
+    downloadCount: Number(row.downloadCount ?? 0),
     upvoteCount: Number(row.upvoteCount ?? 0),
     commentCount: Number(row.commentCount ?? 0),
     bookmarkCount: Number(row.bookmarkCount ?? 0),
@@ -773,6 +781,7 @@ export async function createOwnedSkill(input: CreateSkillData): Promise<SkillWit
       ...publishable,
       ...row,
       owner: ownerRow,
+      downloadCount: 0,
       upvoteCount: 0,
       commentCount: 0,
       bookmarkCount: 0,
@@ -896,6 +905,7 @@ export async function updateOwnedSkill(
       ...publishable,
       ...row,
       owner: ownerRow,
+      downloadCount: 0,
       upvoteCount: 0,
       commentCount: 0,
       bookmarkCount: 0,

@@ -177,6 +177,12 @@ function SkillOptionCard({
           <span>
             作者 <span className="font-medium text-neutral-700">@{skill.owner.handle}</span>
           </span>
+          {skill.downloadCount > 0 ? (
+            <span className="inline-flex items-center gap-1">
+              <TwemojiIcon emoji="⬇️" />
+              {skill.downloadCount}
+            </span>
+          ) : null}
           <span>▲ {skill.upvoteCount}</span>
           <span className="inline-flex items-center gap-1">
             <TwemojiIcon emoji="🔖" />

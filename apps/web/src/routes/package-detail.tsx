@@ -347,6 +347,12 @@ function PackageSkillCard({ item }: { item: SkillPackageSkill }) {
           ) : null}
           <div className="mt-3 flex flex-wrap items-center gap-3 text-[12px] text-neutral-500">
             <span>@{item.skill.owner.handle}</span>
+            {item.skill.downloadCount > 0 ? (
+              <span className="inline-flex items-center gap-1">
+                <TwemojiIcon emoji="⬇️" />
+                {item.skill.downloadCount}
+              </span>
+            ) : null}
             <span>{item.files.length} 个文件</span>
             {item.pinnedReleaseId ? <span>固定版本</span> : <span>使用最新文件</span>}
           </div>

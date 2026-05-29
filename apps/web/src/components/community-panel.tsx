@@ -6,6 +6,7 @@ import type { CommunityComment } from '@/types/api';
 import { useEffect, useMemo, useState } from 'react';
 
 export interface CommunityStatsTarget {
+  downloadCount?: number;
   upvoteCount: number;
   commentCount: number;
   bookmarkCount: number;
@@ -26,6 +27,12 @@ export function CommunityStats({
 }) {
   return (
     <div className="mt-5 flex flex-wrap items-center gap-3 text-[13px] text-neutral-600">
+      {typeof target.downloadCount === 'number' && target.downloadCount > 0 ? (
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-neutral-600">
+          <TwemojiIcon emoji="⬇️" />
+          <span>{target.downloadCount} 次下载</span>
+        </span>
+      ) : null}
       <button
         type="button"
         onClick={onUpvoteClick}

@@ -21,6 +21,7 @@ export interface BaseSkill {
   createdAt: string;
   updatedAt: string;
   owner: OwnerInfo;
+  downloadCount: number;
   upvoteCount: number;
   commentCount: number;
   bookmarkCount: number;

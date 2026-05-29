@@ -215,6 +215,9 @@ function SpotlightRow({ items }: { items: PublishableListItem[] }) {
                   { emoji: '🔖', label: item.item.bookmarkCount },
                 ]
               : [
+                  ...(item.item.downloadCount > 0
+                    ? [{ emoji: '⬇️', label: item.item.downloadCount }]
+                    : []),
                   { label: `▲ ${item.item.upvoteCount}` },
                   { emoji: '💬', label: item.item.commentCount },
                   { emoji: '🔖', label: item.item.bookmarkCount },

@@ -74,6 +74,7 @@ const baseSkillDto = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   owner: ownerInfoSchema,
+  downloadCount: z.number().int().nonnegative(),
   upvoteCount: z.number().int().nonnegative(),
   commentCount: z.number().int().nonnegative(),
   bookmarkCount: z.number().int().nonnegative(),

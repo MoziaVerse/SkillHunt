@@ -32,6 +32,7 @@ function skill(id: string, overrides: Partial<OwnedSkillListItem> = {}): OwnedSk
       handle: `owner-${id}`,
       image: null,
     },
+    downloadCount: 0,
     upvoteCount: 0,
     commentCount: 0,
     bookmarkCount: 0,

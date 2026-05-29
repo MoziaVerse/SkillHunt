@@ -14,6 +14,7 @@ import {
   publishableUpvotes,
   publishables,
   skillFiles,
+  skillInstallEvents,
   skillPackageItems,
   skillPackages,
   skillSyncEvents,
@@ -221,6 +222,7 @@ async function resetAndSeed() {
   await db.delete(publishableBookmarks);
   await db.delete(publishableUpvotes);
   await db.delete(publishableComments);
+  await db.delete(skillInstallEvents);
   await db.delete(contestVotes);
   await db.delete(contestSubmissions);
   await db.delete(contestUsers);
@@ -319,6 +321,7 @@ async function cleanup() {
   await db.delete(publishableBookmarks);
   await db.delete(publishableUpvotes);
   await db.delete(publishableComments);
+  await db.delete(skillInstallEvents);
   await db.delete(contestVotes);
   await db.delete(contestSubmissions);
   await db.delete(contestUsers);
@@ -395,6 +398,25 @@ describe('business API', () => {
         expect(typeof it.owner.id).toBe('string');
         expect(typeof it.owner.name).toBe('string');
       }
+    });
+
+    it('returns downloadCount from skill install events', async () => {
+      const detail = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`));
+      const detailBody = (await detail.json()) as { id: string };
+      await db.insert(skillInstallEvents).values([
+        { skillId: detailBody.id, source: 'well-known', dedupeKey: 'download-a' },
+        { skillId: detailBody.id, source: 'capability', dedupeKey: 'download-b' },
+      ]);
+
+      const list = await app.fetch(reqAnon('/api/skills'));
+      const body = (await list.json()) as {
+        items: Array<{ slug: string; downloadCount: number }>;
+      };
+      expect(body.items.find((item) => item.slug === 'test-owned-pub')?.downloadCount).toBe(2);
+
+      const refreshedDetail = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`));
+      const refreshedDetailBody = (await refreshedDetail.json()) as { downloadCount: number };
+      expect(refreshedDetailBody.downloadCount).toBe(2);
     });
 
     it('type=owned filters to owned only', async () => {

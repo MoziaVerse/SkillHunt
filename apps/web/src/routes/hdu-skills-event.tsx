@@ -853,6 +853,7 @@ function ContestSkillOptionCard({
       <div className="mt-4 border-t border-neutral-100 pt-3 text-[12px] leading-5 text-neutral-500">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span>@{skill.owner.handle}</span>
+          {skill.downloadCount > 0 ? <span>⬇ {skill.downloadCount}</span> : null}
           <span>▲ {skill.upvoteCount}</span>
           {skill.demoVideoUrl ? <span>已有演示视频</span> : <span>缺少演示视频</span>}
         </div>
@@ -1514,6 +1515,7 @@ function SubmissionsTab() {
                       <ThumbsUp className="h-3.5 w-3.5" />
                       {submission.voteCount} 票
                     </span>
+                    {skill.downloadCount > 0 ? <span>⬇ {skill.downloadCount}</span> : null}
                     <span>▲ {skill.upvoteCount}</span>
                     <span>💬 {skill.commentCount}</span>
                     {videoUrl ? (

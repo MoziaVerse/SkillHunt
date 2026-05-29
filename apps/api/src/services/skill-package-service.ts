@@ -6,6 +6,7 @@ import {
   publishableUpvotes,
   publishables,
   skillFiles,
+  skillInstallEvents,
   skillPackageItems,
   skillPackages,
   skills,
@@ -161,6 +162,10 @@ export interface UpdateSkillPackageData {
 }
 
 const skillSelectExtras = () => ({
+  downloadCount: sql<number>`(
+    select count(*) from ${skillInstallEvents}
+    where ${skillInstallEvents.skillId} = ${skills.id}
+  )`,
   upvoteCount: sql<number>`0`,
   commentCount: sql<number>`0`,
   bookmarkCount: sql<number>`0`,
@@ -228,6 +233,7 @@ function mapSkillRow<
     skill: typeof skills.$inferSelect;
     publishable: typeof publishables.$inferSelect;
     owner: OwnerInfo;
+    downloadCount: number;
     upvoteCount: number;
     commentCount: number;
     bookmarkCount: number;
@@ -239,6 +245,7 @@ function mapSkillRow<
     ...row.publishable,
     ...row.skill,
     owner: row.owner,
+    downloadCount: Number(row.downloadCount ?? 0),
     upvoteCount: Number(row.upvoteCount ?? 0),
     commentCount: Number(row.commentCount ?? 0),
     bookmarkCount: Number(row.bookmarkCount ?? 0),

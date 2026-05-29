@@ -910,6 +910,9 @@ function StatusSidebar({
             <MetaRow label="可见性">{skill.visibility === 'public' ? '公开' : '私有'}</MetaRow>
           ) : null}
           <MetaRow label="标识">{skill.slug}</MetaRow>
+          {skill.downloadCount > 0 ? (
+            <MetaRow label="下载">{skill.downloadCount} 次</MetaRow>
+          ) : null}
           <MetaRow label="创建">{formatRelative(skill.createdAt)}</MetaRow>
           <MetaRow label="更新">{formatRelative(skill.updatedAt)}</MetaRow>
         </div>

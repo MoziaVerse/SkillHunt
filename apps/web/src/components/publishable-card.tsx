@@ -67,6 +67,7 @@ function SkillCard({ skill }: { skill: SkillListItem }) {
             作者 <span className="font-medium text-neutral-700">@{skill.owner.handle}</span>
           </span>
           <div className="flex items-center gap-3">
+            {skill.downloadCount > 0 ? <MetricIcon emoji="⬇️" value={skill.downloadCount} /> : null}
             <span className="text-[11px] text-neutral-500">▲ {skill.upvoteCount}</span>
             <MetricIcon emoji="💬" value={skill.commentCount} />
             <MetricIcon emoji="🔖" value={skill.bookmarkCount} />

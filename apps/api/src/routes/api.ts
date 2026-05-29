@@ -159,6 +159,7 @@ const baseFromRow = (r: SkillWithOwner) => ({
   owner: r.owner,
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
+  downloadCount: r.downloadCount,
   upvoteCount: r.upvoteCount,
   commentCount: r.commentCount,
   bookmarkCount: r.bookmarkCount,
