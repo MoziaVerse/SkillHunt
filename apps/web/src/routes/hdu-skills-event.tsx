@@ -129,6 +129,21 @@ const submissionChecklist = [
   ['Skill 演示视频', '发布或编辑 Skill 时上传 3 分钟以内演示视频，提交参赛时无需重复上传。'],
 ] as const;
 
+const votingReferenceItems = [
+  {
+    title: '校园实用性（核心）',
+    text: '优先选能真正帮到杭电同学的作品，解决高频痛点，场景明确，你自己都想用的那种！',
+  },
+  {
+    title: '创意巧思',
+    text: '选有新意的方案，不是千篇一律的通用模板，而是结合校园场景的专属创意，能给你带来新的 AI 使用灵感～',
+  },
+  {
+    title: '实用好上手',
+    text: '选介绍描述清楚的作品，逻辑易懂、内容完整，后续上架校园 SkillHunt 专区后，全校同学都能轻松用起来。',
+  },
+] as const;
+
 function dateInShanghai(value: string) {
   return new Date(`${value}+08:00`);
 }
@@ -206,10 +221,12 @@ function SectionTitle({
   eyebrow,
   title,
   description,
+  children,
 }: {
   eyebrow: string;
   title: string;
   description?: string;
+  children?: React.ReactNode;
 }) {
   return (
     <div className="mb-6">
@@ -220,6 +237,30 @@ function SectionTitle({
       {description ? (
         <p className="mt-2 max-w-2xl text-[14px] leading-6 text-neutral-500">{description}</p>
       ) : null}
+      {children}
+    </div>
+  );
+}
+
+function VotingReferenceInline() {
+  return (
+    <div className="mt-4 w-full rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+        <div className="shrink-0 text-[13px] font-semibold text-emerald-800 lg:w-20">投票重点</div>
+        <div className="grid min-w-0 gap-3 md:grid-cols-3">
+          {votingReferenceItems.map((item, index) => (
+            <div key={item.title} className="min-w-0 border-emerald-100 md:border-l md:pl-3">
+              <div className="flex items-center gap-2 text-[13px] font-semibold text-neutral-950">
+                <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-100">
+                  {index + 1}
+                </span>
+                {item.title}
+              </div>
+              <p className="mt-1 text-[12px] leading-5 text-neutral-600">{item.text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1387,7 +1428,9 @@ function SubmissionsTab() {
         eyebrow="作品"
         title="作品专区"
         description="浏览本次竞赛公开作品，投票期内每位用户总共最多 5 票。"
-      />
+      >
+        <VotingReferenceInline />
+      </SectionTitle>
 
       <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
