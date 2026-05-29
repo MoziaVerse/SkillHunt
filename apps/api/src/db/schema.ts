@@ -414,6 +414,9 @@ export const contestSubmissions = sqliteTable(
       .references(() => skills.id, { onDelete: 'cascade' }),
     submitterUserId: text('submitter_user_id').notNull(),
     track: text('track', { enum: ['学习科研', '校园生活', '创意应用', '专业实训'] }).notNull(),
+    status: text('status', { enum: ['submitted', 'withdrawn', 'disqualified'] })
+      .notNull()
+      .default('submitted'),
     videoObjectKey: text('video_object_key'),
     videoUrl: text('video_url'),
     videoDurationSeconds: integer('video_duration_seconds'),
@@ -428,7 +431,34 @@ export const contestSubmissions = sqliteTable(
   ],
 );
 
+export const contestVotes = sqliteTable(
+  'contest_votes',
+  {
+    id: text('id').primaryKey().$defaultFn(randomId),
+    eventSlug: text('event_slug').notNull(),
+    submissionId: text('submission_id')
+      .notNull()
+      .references(() => contestSubmissions.id, { onDelete: 'cascade' }),
+    track: text('track', { enum: ['学习科研', '校园生活', '创意应用', '专业实训'] }).notNull(),
+    userId: text('user_id').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+    canceledAt: integer('canceled_at', { mode: 'timestamp_ms' }),
+  },
+  (t) => [
+    uniqueIndex('contest_votes_event_submission_user_idx').on(
+      t.eventSlug,
+      t.submissionId,
+      t.userId,
+    ),
+    index('contest_votes_event_submission_idx').on(t.eventSlug, t.submissionId),
+    index('contest_votes_event_track_user_idx').on(t.eventSlug, t.track, t.userId),
+    index('contest_votes_event_canceled_idx').on(t.eventSlug, t.canceledAt),
+  ],
+);
+
 export type ContestSubmission = typeof contestSubmissions.$inferSelect;
 export type NewContestSubmission = typeof contestSubmissions.$inferInsert;
 export type ContestUser = typeof contestUsers.$inferSelect;
 export type NewContestUser = typeof contestUsers.$inferInsert;
+export type ContestVote = typeof contestVotes.$inferSelect;
+export type NewContestVote = typeof contestVotes.$inferInsert;

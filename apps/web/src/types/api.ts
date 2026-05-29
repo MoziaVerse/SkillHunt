@@ -244,16 +244,34 @@ export interface ContestSubmission {
   id: string;
   eventSlug: string;
   track: ContestTrack;
+  status: 'submitted' | 'withdrawn' | 'disqualified';
   videoObjectKey: string | null;
   videoUrl: string | null;
   videoPlaybackUrl: string | null;
   videoDurationSeconds: number | null;
+  voteCount: number;
+  viewerHasVoted: boolean;
   createdAt: string;
   updatedAt: string;
   skill: SkillListItem;
 }
 
+export interface ContestVoteSummary {
+  status: 'before' | 'open' | 'ended';
+  maxVotes: number;
+  startsAt: string;
+  endsAt: string;
+  used: number;
+  remaining: number;
+}
+
 export interface ListContestSubmissionsResponse {
   items: ContestSubmission[];
   total: number;
+  voteSummary?: ContestVoteSummary;
+}
+
+export interface ContestVoteMutationResponse {
+  item: ContestSubmission;
+  voteSummary: ContestVoteSummary;
 }

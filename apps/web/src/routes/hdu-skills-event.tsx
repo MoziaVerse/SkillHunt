@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import type {
   ContestSubmission,
   ContestTrack,
+  ContestVoteSummary,
   OwnedSkillListItem,
   SkillListItem,
 } from '@/types/api';
@@ -17,8 +18,10 @@ import {
   ClipboardList,
   FileText,
   MessageCircle,
+  PlayCircle,
   QrCode,
   Search,
+  ThumbsUp,
   Trophy,
   Upload,
   Users,
@@ -170,7 +173,7 @@ function getStage() {
   if (now < submissionEnd) {
     return {
       label: '作品征集与大众投票进行中',
-      detail: '每位用户每个赛道最多 5 票，作品提交截止到 2026 年 6 月 5 日 24:00。',
+      detail: '每位用户总共最多 5 票，作品提交截止到 2026 年 6 月 5 日 24:00。',
     };
   }
   if (now < votingEnd) {
@@ -303,6 +306,86 @@ function SignupQrModal({ open, onClose }: { open: boolean; onClose: () => void }
           />
         </div>
       </dialog>
+    </div>
+  );
+}
+
+function DemoVideoModal({
+  video,
+  onClose,
+}: {
+  video: { url: string; title: string } | null;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!video) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [video, onClose]);
+
+  if (!video) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid min-h-dvh place-items-center overflow-y-auto bg-neutral-950/55 p-4 backdrop-blur-sm"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <dialog
+        open
+        aria-modal="true"
+        aria-labelledby="demo-video-title"
+        className="static m-0 max-h-[calc(100dvh-2rem)] w-full max-w-4xl overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 p-0 shadow-2xl shadow-neutral-950/30"
+      >
+        <div className="flex items-center justify-between gap-4 border-b border-white/10 px-4 py-3">
+          <div id="demo-video-title" className="line-clamp-1 text-[15px] font-semibold text-white">
+            {video.title}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="关闭演示视频"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/15 text-white/70 transition hover:border-white/35 hover:text-white"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="bg-black">
+          <video
+            src={video.url}
+            controls
+            autoPlay
+            playsInline
+            className="aspect-video max-h-[calc(100dvh-8rem)] w-full bg-black object-contain"
+          >
+            <track kind="captions" src="data:text/vtt;charset=utf-8,WEBVTT%0A" srcLang="zh-CN" />
+          </video>
+        </div>
+      </dialog>
+    </div>
+  );
+}
+
+function ContestSubmissionCover({ skill }: { skill: SkillListItem }) {
+  if (skill.coverImage) {
+    return (
+      <img
+        src={skill.coverImage}
+        alt={`${skill.name} 封面`}
+        className="h-full w-full object-cover"
+      />
+    );
+  }
+
+  return (
+    <div className="flex h-full w-full select-none items-center justify-center bg-gradient-to-br from-neutral-50 to-neutral-100 text-[48px]">
+      <TwemojiIcon emoji={skill.icon || DEFAULT_SKILL_ICON} />
     </div>
   );
 }
@@ -577,7 +660,7 @@ function OverviewTab() {
           title="报名与咨询"
           description="完成外部问卷报名后，请继续准备标准 Skill，并在发布或编辑 Skill 时上传演示视频。赛事教程、答疑和节点提醒会在企微群内同步。"
         />
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-3">
           <QrCard
             title="报名问卷"
             text="扫描二维码填写报名问卷，报名、投票资格核验和权益发放均以问卷信息为准。"
@@ -1201,19 +1284,292 @@ function SubmitTab() {
   );
 }
 
+function voteStatusText(status: ContestVoteSummary['status'] | undefined) {
+  if (status === 'open') return '投票进行中';
+  if (status === 'ended') return '投票已结束';
+  return '投票将于 6 月 1 日开启';
+}
+
 function SubmissionsTab() {
+  const [me, setMe] = useState<MeResponse | null>(null);
+  const [items, setItems] = useState<ContestSubmission[]>([]);
+  const [voteSummary, setVoteSummary] = useState<ContestVoteSummary | null>(null);
+  const [activeTrack, setActiveTrack] = useState<ContestTrack | 'all'>('all');
+  const [loading, setLoading] = useState(true);
+  const [actionId, setActionId] = useState<string | null>(null);
+  const [activeVideo, setActiveVideo] = useState<{ url: string; title: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const [submissionRes, user] = await Promise.all([
+          apiClient.listContestSubmissions(EVENT_SLUG),
+          apiClient.getMe().catch(() => null),
+        ]);
+        if (cancelled) return;
+        setItems(submissionRes.items);
+        setVoteSummary(submissionRes.voteSummary ?? null);
+        setMe(user);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : '加载作品专区失败');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const voteSummaryText = useMemo(() => {
+    const maxVotes = voteSummary?.maxVotes ?? 5;
+    if (!me) return `登录后可以参与大众投票；每人总共最多 ${maxVotes} 票。`;
+    const used = voteSummary?.used ?? 0;
+    const remaining = voteSummary?.remaining ?? maxVotes;
+    return `你已投 ${used}/${maxVotes} 票，剩余 ${remaining} 票。`;
+  }, [me, voteSummary?.maxVotes, voteSummary?.remaining, voteSummary?.used]);
+
+  const visibleItems = useMemo(() => {
+    if (activeTrack === 'all') return items;
+    return items.filter((item) => item.track === activeTrack);
+  }, [activeTrack, items]);
+
+  const updateVotedItem = (item: ContestSubmission, nextSummary: ContestVoteSummary) => {
+    setItems((prev) => prev.map((entry) => (entry.id === item.id ? item : entry)));
+    setVoteSummary(nextSummary);
+  };
+
+  const toggleVote = async (submission: ContestSubmission) => {
+    if (voteSummary?.status !== 'open') return;
+    if (!me) {
+      setError('请先登录后再投票');
+      return;
+    }
+
+    setActionId(submission.id);
+    setError(null);
+    try {
+      const result = submission.viewerHasVoted
+        ? await apiClient.removeContestSubmissionVote(EVENT_SLUG, submission.id)
+        : await apiClient.voteContestSubmission(EVENT_SLUG, submission.id);
+      updateVotedItem(result.item, result.voteSummary);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '投票失败，请稍后重试');
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div>
+        <SectionTitle eyebrow="作品" title="作品专区" description="正在读取参赛作品列表。" />
+        <EmptyState
+          icon={<MessageCircle className="h-5 w-5" />}
+          title="正在加载作品"
+          description="稍等一下，系统正在整理本次竞赛的公开作品。"
+        />
+      </div>
+    );
+  }
+
   return (
-    <div>
+    <div className="space-y-6">
       <SectionTitle
-        eyebrow="Submissions"
+        eyebrow="作品"
         title="作品专区"
-        description="参赛作品会在征集期公开展示，投票功能将在 2026 年 6 月 1 日开放。"
+        description="浏览本次竞赛公开作品，投票期内每位用户总共最多 5 票。"
       />
-      <EmptyState
-        icon={<MessageCircle className="h-5 w-5" />}
-        title="作品专区暂未开放"
-        description="作品列表、赛道筛选和投票入口会在后续迭代中接入。投票期每位用户每个赛道最多 5 票。"
-      />
+
+      <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="text-[15px] font-semibold text-neutral-950">
+              {voteStatusText(voteSummary?.status)}
+            </div>
+            <p className="mt-1 text-[13px] leading-5 text-neutral-500">{voteSummaryText}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveTrack('all')}
+              className={cn(
+                'rounded-lg border px-3 py-2 text-[13px] transition',
+                activeTrack === 'all'
+                  ? 'border-neutral-900 bg-neutral-900 text-white'
+                  : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400',
+              )}
+            >
+              全部作品
+            </button>
+            {contestTracks.map((track) => (
+              <button
+                key={track}
+                type="button"
+                onClick={() => setActiveTrack(track)}
+                className={cn(
+                  'rounded-lg border px-3 py-2 text-[13px] transition',
+                  activeTrack === track
+                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                    : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400',
+                )}
+              >
+                {track}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {error ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] leading-5 text-red-700">
+          {error}
+        </div>
+      ) : null}
+
+      {visibleItems.length > 0 ? (
+        <div className="grid gap-4 md:grid-cols-3">
+          {visibleItems.map((submission) => {
+            const skill = submission.skill;
+            const voteOpen = voteSummary?.status === 'open';
+            const busy = actionId === submission.id;
+            const quotaUsedUp = Boolean(
+              me && !submission.viewerHasVoted && voteSummary?.remaining === 0,
+            );
+            const videoUrl = submission.videoPlaybackUrl ?? submission.videoUrl;
+            const openVideo = () => {
+              if (!videoUrl) return;
+              setActiveVideo({ url: videoUrl, title: skill.name });
+            };
+            const buttonText = !voteOpen
+              ? voteSummary?.status === 'ended'
+                ? '投票已结束'
+                : '6 月 1 日开启'
+              : !me
+                ? '登录后投票'
+                : submission.viewerHasVoted
+                  ? '已投票'
+                  : quotaUsedUp
+                    ? '票已用完'
+                    : '投一票';
+
+            return (
+              <article
+                key={submission.id}
+                role={videoUrl ? 'button' : undefined}
+                tabIndex={videoUrl ? 0 : undefined}
+                aria-label={videoUrl ? `播放 ${skill.name} 的演示视频` : undefined}
+                onClick={openVideo}
+                onKeyDown={(event) => {
+                  if (!videoUrl) return;
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    openVideo();
+                  }
+                }}
+                className={cn(
+                  'skill-card flex min-h-[360px] flex-col',
+                  videoUrl ? 'cursor-pointer transition hover:border-neutral-300' : '',
+                )}
+              >
+                <div className="h-40 overflow-hidden bg-gradient-to-br from-neutral-50 to-neutral-100">
+                  <ContestSubmissionCover skill={skill} />
+                </div>
+
+                <div className="flex flex-1 flex-col p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.12em] text-neutral-400">
+                    <span>参赛 Skill</span>
+                    <span>{new Date(submission.updatedAt).toLocaleDateString()}</span>
+                  </div>
+
+                  <div className="mb-2 flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <Link
+                        to={`/skills/${encodeURIComponent(skill.owner.handle)}/${encodeURIComponent(skill.slug)}`}
+                        onClick={(event) => event.stopPropagation()}
+                        className="line-clamp-1 text-[15px] font-semibold leading-tight text-[#0f172a] hover:text-emerald-700"
+                      >
+                        {skill.name}
+                      </Link>
+                      <div className="mt-1 text-[12px] text-neutral-500">@{skill.owner.handle}</div>
+                    </div>
+                    <span className="inline-flex shrink-0 items-center rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-emerald-700">
+                      {submission.track}
+                    </span>
+                  </div>
+
+                  <p className="line-clamp-3 flex-1 text-[13px] leading-relaxed text-[#64748b]">
+                    {skill.description}
+                  </p>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-neutral-100 pt-3 text-[11px] text-neutral-500">
+                    <span className="inline-flex items-center gap-1">
+                      <ThumbsUp className="h-3.5 w-3.5" />
+                      {submission.voteCount} 票
+                    </span>
+                    <span>▲ {skill.upvoteCount}</span>
+                    <span>💬 {skill.commentCount}</span>
+                    {videoUrl ? (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openVideo();
+                        }}
+                        className="inline-flex items-center gap-1 text-emerald-700 hover:text-emerald-800"
+                      >
+                        <PlayCircle className="h-3.5 w-3.5" />
+                        演示视频
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <Button
+                    type="button"
+                    disabled={busy || !voteOpen || quotaUsedUp}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      toggleVote(submission);
+                    }}
+                    variant={submission.viewerHasVoted ? 'outline' : 'solid'}
+                    className={cn(
+                      eventButtonBaseClass,
+                      'mt-4 w-full',
+                      submission.viewerHasVoted
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300 hover:bg-emerald-100'
+                        : '',
+                      !voteOpen
+                        ? 'border-neutral-200 bg-neutral-100 text-neutral-400 disabled:opacity-100'
+                        : '',
+                    )}
+                  >
+                    <ThumbsUp className="h-4 w-4" />
+                    {busy ? '处理中…' : buttonText}
+                  </Button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <EmptyState
+          icon={<MessageCircle className="h-5 w-5" />}
+          title={items.length === 0 ? '暂无公开作品' : '这个赛道暂无作品'}
+          description={
+            items.length === 0
+              ? '作品提交后会在这里公开展示。'
+              : '切换到全部作品或其他赛道继续浏览。'
+          }
+        />
+      )}
+      <DemoVideoModal video={activeVideo} onClose={() => setActiveVideo(null)} />
     </div>
   );
 }

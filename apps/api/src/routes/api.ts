@@ -36,10 +36,15 @@ import { skillFileFingerprint } from '../lib/skill-file-payload';
 import { createSkillFileResponse } from '../lib/skill-file-response';
 import { normalizeSsoPhone } from '../lib/sso-user';
 import {
+  ContestVoteError,
   HDU_SKILLS_EVENT_SLUG,
+  addContestVote,
   deleteContestSubmission,
   ensureContestEligibility,
+  getContestVoteSummary,
   listContestSubmissionsByUser,
+  listContestSubmissionsForEvent,
+  removeContestVote,
   upsertContestSubmission,
 } from '../services/contest-service';
 import { mintGrant } from '../services/install-grant-service';
@@ -232,18 +237,28 @@ const toContestSubmissionDto = (
   id: item.submission.id,
   eventSlug: item.submission.eventSlug,
   track: item.submission.track,
+  status: item.submission.status,
   videoObjectKey: item.submission.videoObjectKey,
   videoUrl: item.submission.videoUrl,
   videoPlaybackUrl: item.submission.videoUrl
     ? (createDemoVideoPlaybackUrl(item.submission.videoUrl) ?? item.submission.videoUrl)
     : null,
   videoDurationSeconds: item.submission.videoDurationSeconds,
+  voteCount: item.voteCount,
+  viewerHasVoted: item.viewerHasVoted,
   createdAt: item.submission.createdAt.toISOString(),
   updatedAt: item.submission.updatedAt.toISOString(),
   skill: toListItem(item.skill),
 });
 
 const isSupportedContestEvent = (eventSlug: string) => eventSlug === HDU_SKILLS_EVENT_SLUG;
+
+const contestVoteErrorResponse = (c: import('hono').Context, error: unknown) => {
+  if (error instanceof ContestVoteError) {
+    return c.json({ error: error.message }, error.status);
+  }
+  throw error;
+};
 
 const toRawReleaseDto = (release: {
   id: string;
@@ -621,6 +636,24 @@ apiRoute.get('/events/:eventSlug/me/eligibility', async (c) => {
   });
 });
 
+apiRoute.get('/events/:eventSlug/submissions', async (c) => {
+  const eventSlug = c.req.param('eventSlug');
+  if (!isSupportedContestEvent(eventSlug)) return c.json({ error: 'Contest event not found' }, 404);
+
+  const auth = await getAuthContext(c);
+  const userId = viewerUserId(auth);
+  const [items, voteSummary] = await Promise.all([
+    listContestSubmissionsForEvent({ eventSlug, viewerUserId: userId }),
+    getContestVoteSummary({ eventSlug, userId }),
+  ]);
+
+  return c.json({
+    items: items.map(toContestSubmissionDto),
+    total: items.length,
+    voteSummary,
+  });
+});
+
 apiRoute.post(
   '/events/:eventSlug/submissions',
   zValidator('json', createContestSubmissionSchema),
@@ -672,6 +705,66 @@ apiRoute.post(
     return c.json(toContestSubmissionDto(created), 201);
   },
 );
+
+apiRoute.post('/events/:eventSlug/submissions/:submissionId/vote', async (c) => {
+  const eventSlug = c.req.param('eventSlug');
+  if (!isSupportedContestEvent(eventSlug)) {
+    return c.json({ error: 'Contest event not found' }, 404);
+  }
+
+  const auth = await getAuthContext(c);
+  const { user } = auth;
+  if (!user) return c.json({ error: '请先登录后再投票' }, 401);
+  if (!hasScope(auth, 'community:write')) {
+    return c.json({ error: '缺少权限：community:write' }, 403);
+  }
+
+  const submissionId = c.req.param('submissionId');
+  try {
+    await addContestVote({ eventSlug, submissionId, userId: user.id });
+  } catch (error) {
+    return contestVoteErrorResponse(c, error);
+  }
+
+  const [items, voteSummary] = await Promise.all([
+    listContestSubmissionsForEvent({ eventSlug, viewerUserId: user.id }),
+    getContestVoteSummary({ eventSlug, userId: user.id }),
+  ]);
+  const item = items.find((entry) => entry.submission.id === submissionId);
+  if (!item) return c.json({ error: '该作品当前不可投票' }, 404);
+
+  return c.json({ item: toContestSubmissionDto(item), voteSummary });
+});
+
+apiRoute.delete('/events/:eventSlug/submissions/:submissionId/vote', async (c) => {
+  const eventSlug = c.req.param('eventSlug');
+  if (!isSupportedContestEvent(eventSlug)) {
+    return c.json({ error: 'Contest event not found' }, 404);
+  }
+
+  const auth = await getAuthContext(c);
+  const { user } = auth;
+  if (!user) return c.json({ error: '请先登录后再投票' }, 401);
+  if (!hasScope(auth, 'community:write')) {
+    return c.json({ error: '缺少权限：community:write' }, 403);
+  }
+
+  const submissionId = c.req.param('submissionId');
+  try {
+    await removeContestVote({ eventSlug, submissionId, userId: user.id });
+  } catch (error) {
+    return contestVoteErrorResponse(c, error);
+  }
+
+  const [items, voteSummary] = await Promise.all([
+    listContestSubmissionsForEvent({ eventSlug, viewerUserId: user.id }),
+    getContestVoteSummary({ eventSlug, userId: user.id }),
+  ]);
+  const item = items.find((entry) => entry.submission.id === submissionId);
+  if (!item) return c.json({ error: '该作品当前不可投票' }, 404);
+
+  return c.json({ item: toContestSubmissionDto(item), voteSummary });
+});
 
 apiRoute.delete('/events/:eventSlug/submissions/:skillId', async (c) => {
   const eventSlug = c.req.param('eventSlug');

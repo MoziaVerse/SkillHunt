@@ -24,14 +24,37 @@ const cfg = (key: keyof typeof FALLBACKS): string => {
   return FALLBACKS[key];
 };
 
-const localWebOrigin = process.env.WEB_ORIGIN ?? 'http://localhost:5180';
+const resolveAuthBaseUrl = () => {
+  const configured = cfg('BETTER_AUTH_URL');
+  const port = process.env.PORT;
+  if (!port) return configured;
+  try {
+    const url = new URL(configured);
+    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+      url.port = port;
+      return url.toString().replace(/\/$/, '');
+    }
+  } catch {
+    return configured;
+  }
+  return configured;
+};
+
+const authBaseURL = resolveAuthBaseUrl();
+
+const localWebOrigins = [
+  process.env.WEB_ORIGIN,
+  'http://localhost:5173',
+  'http://localhost:5180',
+  'http://localhost:5181',
+].filter((origin): origin is string => Boolean(origin));
 
 // Vite dev origin proxies /api → :3333, so the request's Origin header is
 // the web app origin while baseURL points at the API. Allowlist both, plus
 // anything in TRUSTED_ORIGINS (comma-separated, for prod hosts).
 const trustedOrigins = [
-  cfg('BETTER_AUTH_URL'),
-  localWebOrigin,
+  authBaseURL,
+  ...localWebOrigins,
   ...(process.env.TRUSTED_ORIGINS ?? '')
     .split(',')
     .map((s) => s.trim())
@@ -82,7 +105,7 @@ export async function mapSsoProfileToUser(profile: Record<string, unknown>) {
 }
 
 export const auth = betterAuth({
-  baseURL: cfg('BETTER_AUTH_URL'),
+  baseURL: authBaseURL,
   secret: cfg('BETTER_AUTH_SECRET'),
   trustedOrigins,
   database: drizzleAdapter(db, {

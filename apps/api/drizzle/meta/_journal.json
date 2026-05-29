@@ -43,6 +43,13 @@
       "when": 1779955840552,
       "tag": "0005_third_cammi",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1779977627207,
+      "tag": "0006_flaky_chamber",
+      "breakpoints": true
     }
   ]
 }

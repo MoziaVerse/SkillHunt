@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import {
   contestSubmissions,
   contestUsers,
+  contestVotes,
   db,
   notifications,
   publishableBookmarks,
@@ -211,6 +212,7 @@ async function insertTestSkill(input: {
 }
 
 async function resetAndSeed() {
+  process.env.SKILLHUNT_CONTEST_NOW = undefined;
   mockS3Configured = false;
   mockSkillFileObjects.clear();
   mockDeletedObjectKeys.length = 0;
@@ -219,6 +221,7 @@ async function resetAndSeed() {
   await db.delete(publishableBookmarks);
   await db.delete(publishableUpvotes);
   await db.delete(publishableComments);
+  await db.delete(contestVotes);
   await db.delete(contestSubmissions);
   await db.delete(contestUsers);
   await db.delete(skillSyncEvents);
@@ -316,6 +319,7 @@ async function cleanup() {
   await db.delete(publishableBookmarks);
   await db.delete(publishableUpvotes);
   await db.delete(publishableComments);
+  await db.delete(contestVotes);
   await db.delete(contestSubmissions);
   await db.delete(contestUsers);
   await db.delete(skillSyncEvents);
@@ -1930,6 +1934,51 @@ describe('business API', () => {
       track,
     });
 
+    const setVotingNow = (value: string) => {
+      process.env.SKILLHUNT_CONTEST_NOW = value;
+    };
+
+    async function createContestReadySkill(slug: string) {
+      const skill = await insertTestSkill({
+        slug,
+        name: slug,
+        description: `${slug} contest skill`,
+        type: 'owned',
+        visibility: 'public',
+        tags: ['contest'],
+        frontmatter: { name: slug },
+        ownerUserId: OWNER_USER_ID,
+        demoVideoUrl: `https://oss.example/${contestVideoObjectKey(OWNER_USER_ID)}`,
+      });
+      await db.insert(skillFiles).values({
+        skillId: skill.id,
+        path: 'SKILL.md',
+        content: `---\nname: ${slug}\n---\n# body\n`,
+      });
+      return skill.id;
+    }
+
+    async function submitContestSkill(
+      skillId: string,
+      track: '学习科研' | '校园生活' | '创意应用' | '专业实训' = '学习科研',
+    ) {
+      const res = await app.fetch(
+        reqAsUser(
+          '/api/events/hdu-skills-2026/submissions',
+          OWNER_USER_ID,
+          jsonInit(contestSubmissionInput(skillId, track)),
+        ),
+      );
+      expect(res.status).toBe(201);
+      return (await res.json()) as {
+        id: string;
+        track: string;
+        voteCount: number;
+        viewerHasVoted: boolean;
+        skill: { id: string; slug: string };
+      };
+    }
+
     it('returns current contest eligibility for the signed-in user', async () => {
       const res = await app.fetch(
         reqAsUser('/api/events/hdu-skills-2026/me/eligibility', OWNER_USER_ID),
@@ -2052,6 +2101,237 @@ describe('business API', () => {
       );
       const body = (await list.json()) as { items: unknown[] };
       expect(body.items).toHaveLength(0);
+    });
+
+    it('lists public contest submissions with vote summary', async () => {
+      const skillId = await ownerSkillId('test-owned-pub');
+      await submitContestSkill(skillId, '校园生活');
+
+      const list = await app.fetch(reqAnon('/api/events/hdu-skills-2026/submissions'));
+      expect(list.status).toBe(200);
+      const body = (await list.json()) as {
+        items: Array<{
+          track: string;
+          voteCount: number;
+          viewerHasVoted: boolean;
+          skill: { slug: string };
+        }>;
+        voteSummary: {
+          status: string;
+          maxVotes: number;
+          used: number;
+          remaining: number;
+        };
+      };
+      expect(body.items).toHaveLength(1);
+      expect(body.items[0]?.skill.slug).toBe('test-owned-pub');
+      expect(body.items[0]?.track).toBe('校园生活');
+      expect(body.items[0]?.voteCount).toBe(0);
+      expect(body.items[0]?.viewerHasVoted).toBe(false);
+      expect(body.voteSummary.status).toBe('before');
+      expect(body.voteSummary.maxVotes).toBe(5);
+      expect(body.voteSummary.used).toBe(0);
+      expect(body.voteSummary.remaining).toBe(5);
+    });
+
+    it('allows any signed-in user to vote without contest eligibility', async () => {
+      setVotingNow('2026-06-02T12:00:00+08:00');
+      const submission = await submitContestSkill(await ownerSkillId('test-owned-pub'));
+
+      const voted = await app.fetch(
+        reqAsUser(`/api/events/hdu-skills-2026/submissions/${submission.id}/vote`, OTHER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+      expect(voted.status).toBe(200);
+      const body = (await voted.json()) as {
+        item: { voteCount: number; viewerHasVoted: boolean };
+        voteSummary: { used: number; remaining: number };
+      };
+      expect(body.item.voteCount).toBe(1);
+      expect(body.item.viewerHasVoted).toBe(true);
+      expect(body.voteSummary.used).toBe(1);
+      expect(body.voteSummary.remaining).toBe(4);
+    });
+
+    it('allows voting for your own submission', async () => {
+      setVotingNow('2026-06-02T12:00:00+08:00');
+      const submission = await submitContestSkill(await ownerSkillId('test-owned-pub'));
+
+      const voted = await app.fetch(
+        reqAsUser(`/api/events/hdu-skills-2026/submissions/${submission.id}/vote`, OWNER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+      expect(voted.status).toBe(200);
+      const body = (await voted.json()) as { item: { voteCount: number; viewerHasVoted: boolean } };
+      expect(body.item.voteCount).toBe(1);
+      expect(body.item.viewerHasVoted).toBe(true);
+    });
+
+    it('does not count duplicate votes and releases quota after canceling', async () => {
+      setVotingNow('2026-06-02T12:00:00+08:00');
+      const submission = await submitContestSkill(await ownerSkillId('test-owned-pub'));
+
+      const first = await app.fetch(
+        reqAsUser(`/api/events/hdu-skills-2026/submissions/${submission.id}/vote`, OTHER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+      expect(first.status).toBe(200);
+      const second = await app.fetch(
+        reqAsUser(`/api/events/hdu-skills-2026/submissions/${submission.id}/vote`, OTHER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+      expect(second.status).toBe(200);
+      const duplicateBody = (await second.json()) as {
+        item: { voteCount: number };
+        voteSummary: { used: number };
+      };
+      expect(duplicateBody.item.voteCount).toBe(1);
+      expect(duplicateBody.voteSummary.used).toBe(1);
+
+      const canceled = await app.fetch(
+        reqAsUser(`/api/events/hdu-skills-2026/submissions/${submission.id}/vote`, OTHER_USER_ID, {
+          method: 'DELETE',
+        }),
+      );
+      expect(canceled.status).toBe(200);
+      const canceledBody = (await canceled.json()) as {
+        item: { voteCount: number; viewerHasVoted: boolean };
+        voteSummary: { used: number; remaining: number };
+      };
+      expect(canceledBody.item.voteCount).toBe(0);
+      expect(canceledBody.item.viewerHasVoted).toBe(false);
+      expect(canceledBody.voteSummary.used).toBe(0);
+      expect(canceledBody.voteSummary.remaining).toBe(5);
+    });
+
+    it('rejects the sixth vote across all tracks', async () => {
+      setVotingNow('2026-06-02T12:00:00+08:00');
+      const submissionIds: string[] = [];
+      submissionIds.push((await submitContestSkill(await ownerSkillId('test-owned-pub'))).id);
+      const votingTracks = ['校园生活', '创意应用', '专业实训', '学习科研', '校园生活'] as const;
+      for (let i = 1; i <= 5; i += 1) {
+        const skillId = await createContestReadySkill(`contest-vote-${i}`);
+        submissionIds.push((await submitContestSkill(skillId, votingTracks[i - 1])).id);
+      }
+
+      for (const submissionId of submissionIds.slice(0, 5)) {
+        const res = await app.fetch(
+          reqAsUser(`/api/events/hdu-skills-2026/submissions/${submissionId}/vote`, OTHER_USER_ID, {
+            method: 'POST',
+          }),
+        );
+        expect(res.status).toBe(200);
+      }
+
+      const sixth = await app.fetch(
+        reqAsUser(
+          `/api/events/hdu-skills-2026/submissions/${submissionIds[5]}/vote`,
+          OTHER_USER_ID,
+          {
+            method: 'POST',
+          },
+        ),
+      );
+      expect(sixth.status).toBe(409);
+      const body = (await sixth.json()) as { error: string };
+      expect(body.error).toContain('最多可投 5 票');
+    });
+
+    it('rejects voting before the voting period and canceling after it ends', async () => {
+      const submission = await submitContestSkill(await ownerSkillId('test-owned-pub'));
+
+      setVotingNow('2026-05-31T12:00:00+08:00');
+      const before = await app.fetch(
+        reqAsUser(`/api/events/hdu-skills-2026/submissions/${submission.id}/vote`, OTHER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+      expect(before.status).toBe(400);
+      expect(((await before.json()) as { error: string }).error).toContain('6 月 1 日');
+
+      setVotingNow('2026-06-02T12:00:00+08:00');
+      const voted = await app.fetch(
+        reqAsUser(`/api/events/hdu-skills-2026/submissions/${submission.id}/vote`, OTHER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+      expect(voted.status).toBe(200);
+
+      setVotingNow('2026-06-11T00:00:00+08:00');
+      const ended = await app.fetch(
+        reqAsUser(`/api/events/hdu-skills-2026/submissions/${submission.id}/vote`, OTHER_USER_ID, {
+          method: 'DELETE',
+        }),
+      );
+      expect(ended.status).toBe(400);
+      expect(((await ended.json()) as { error: string }).error).toContain('投票已结束');
+    });
+
+    it('clears active votes when the submission track changes', async () => {
+      setVotingNow('2026-06-02T12:00:00+08:00');
+      const skillId = await ownerSkillId('test-owned-pub');
+      const submission = await submitContestSkill(skillId);
+      const voted = await app.fetch(
+        reqAsUser(`/api/events/hdu-skills-2026/submissions/${submission.id}/vote`, OTHER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+      expect(voted.status).toBe(200);
+
+      const updated = await app.fetch(
+        reqAsUser(
+          '/api/events/hdu-skills-2026/submissions',
+          OWNER_USER_ID,
+          jsonInit(contestSubmissionInput(skillId, '创意应用')),
+        ),
+      );
+      expect(updated.status).toBe(201);
+
+      const list = await app.fetch(
+        reqAsUser('/api/events/hdu-skills-2026/submissions', OTHER_USER_ID),
+      );
+      const body = (await list.json()) as {
+        items: Array<{ id: string; track: string; voteCount: number; viewerHasVoted: boolean }>;
+        voteSummary: { used: number };
+      };
+      expect(body.items[0]?.id).toBe(submission.id);
+      expect(body.items[0]?.track).toBe('创意应用');
+      expect(body.items[0]?.voteCount).toBe(0);
+      expect(body.items[0]?.viewerHasVoted).toBe(false);
+      expect(body.voteSummary.used).toBe(0);
+    });
+
+    it('clears active votes when the submission is canceled', async () => {
+      setVotingNow('2026-06-02T12:00:00+08:00');
+      const skillId = await ownerSkillId('test-owned-pub');
+      const submission = await submitContestSkill(skillId);
+      const voted = await app.fetch(
+        reqAsUser(`/api/events/hdu-skills-2026/submissions/${submission.id}/vote`, OTHER_USER_ID, {
+          method: 'POST',
+        }),
+      );
+      expect(voted.status).toBe(200);
+
+      const deleted = await app.fetch(
+        reqAsUser(`/api/events/hdu-skills-2026/submissions/${skillId}`, OWNER_USER_ID, {
+          method: 'DELETE',
+        }),
+      );
+      expect(deleted.status).toBe(204);
+
+      const list = await app.fetch(
+        reqAsUser('/api/events/hdu-skills-2026/submissions', OTHER_USER_ID),
+      );
+      const body = (await list.json()) as {
+        items: unknown[];
+        voteSummary: { used: number };
+      };
+      expect(body.items).toHaveLength(0);
+      expect(body.voteSummary.used).toBe(0);
     });
 
     it('rejects canceling another user contest submission', async () => {

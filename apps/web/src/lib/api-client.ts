@@ -2,6 +2,7 @@ import type {
   BaseSkill,
   ContestSubmission,
   ContestTrack,
+  ContestVoteMutationResponse,
   ListContestSubmissionsResponse,
   ListPackagesResponse,
   ListPublishablesResponse,
@@ -305,6 +306,13 @@ export const apiClient = {
     );
   },
 
+  listContestSubmissions(eventSlug: string): Promise<ListContestSubmissionsResponse> {
+    return request<ListContestSubmissionsResponse>(
+      `/events/${encodeURIComponent(eventSlug)}/submissions`,
+      { credentials: 'include' },
+    );
+  },
+
   createContestSubmission(
     eventSlug: string,
     input: CreateContestSubmissionInput,
@@ -318,6 +326,26 @@ export const apiClient = {
   deleteContestSubmission(eventSlug: string, skillId: string): Promise<void> {
     return request<void>(
       `/events/${encodeURIComponent(eventSlug)}/submissions/${encodeURIComponent(skillId)}`,
+      { method: 'DELETE', credentials: 'include' },
+    );
+  },
+
+  voteContestSubmission(
+    eventSlug: string,
+    submissionId: string,
+  ): Promise<ContestVoteMutationResponse> {
+    return request<ContestVoteMutationResponse>(
+      `/events/${encodeURIComponent(eventSlug)}/submissions/${encodeURIComponent(submissionId)}/vote`,
+      { method: 'POST', credentials: 'include' },
+    );
+  },
+
+  removeContestSubmissionVote(
+    eventSlug: string,
+    submissionId: string,
+  ): Promise<ContestVoteMutationResponse> {
+    return request<ContestVoteMutationResponse>(
+      `/events/${encodeURIComponent(eventSlug)}/submissions/${encodeURIComponent(submissionId)}/vote`,
       { method: 'DELETE', credentials: 'include' },
     );
   },
