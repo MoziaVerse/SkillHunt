@@ -17,3 +17,5 @@ dist/
 .vite/
 apps/*/dist/
 apps/api/data/
+example_skill/
+deploy/

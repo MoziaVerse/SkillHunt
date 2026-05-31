@@ -19,6 +19,15 @@
     }
   },
   "files": {
-    "ignore": ["node_modules", "dist", ".pnpm", "drizzle", "SkillHub.html", "src/**/*.jsx"]
+    "ignore": [
+      "node_modules",
+      "dist",
+      ".pnpm",
+      "drizzle",
+      "deploy",
+      "SkillHub.html",
+      "src/**/*.jsx",
+      "example_skill"
+    ]
   }
 }
