@@ -4,7 +4,7 @@ import { apiClient } from '@/lib/api-client';
 import { DEFAULT_SKILL_ICON, DEFAULT_SKILL_PACKAGE_ICON } from '@/lib/default-icons';
 import { cn } from '@/lib/utils';
 import type { PublishableListItem } from '@/types/api';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
 type ContentFilter = 'all' | 'skills' | 'packages';
@@ -281,6 +281,8 @@ export default function SkillsList() {
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setContentState(parseContentFilter(searchParams.get('content')));
@@ -304,6 +306,7 @@ export default function SkillsList() {
         setItems(res.items);
         setTotal(res.total);
         setError(null);
+        setLoadMoreError(null);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -327,9 +330,10 @@ export default function SkillsList() {
     setSearchParams(nextParams, { replace: true });
   };
 
-  const loadMore = async () => {
-    if (items.length >= total) return;
+  const loadMore = useCallback(async () => {
+    if (loading || fetching || items.length >= total) return;
     setFetching(true);
+    setLoadMoreError(null);
     try {
       const res = await apiClient.listPublishables({
         kind: apiKind(content),
@@ -342,11 +346,11 @@ export default function SkillsList() {
       setItems((prev) => [...prev, ...res.items]);
       setTotal(res.total);
     } catch {
-      /* 加载更多失败不打断当前发现流。 */
+      setLoadMoreError('继续发现失败，请稍后重试。');
     } finally {
       setFetching(false);
     }
-  };
+  }, [content, fetching, items.length, loading, query, sort, total]);
 
   const hasQuery = query.trim().length > 0;
   const showSpotlight = !hasQuery && items.length > 0;
@@ -354,9 +358,25 @@ export default function SkillsList() {
   const freshLaunches = hasQuery ? items : items.slice(3);
   const hasMore = items.length < total;
 
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (!target || !hasMore || loading || fetching || loadMoreError) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) void loadMore();
+      },
+      { rootMargin: '360px 0px 520px' },
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [fetching, hasMore, loadMore, loadMoreError, loading]);
+
   const reset = () => {
     setContent('all');
     setQuery('');
+    setLoadMoreError(null);
   };
 
   return (
@@ -444,18 +464,33 @@ export default function SkillsList() {
             )}
           </div>
 
-          {!hasQuery && hasMore && (
-            <div className="flex justify-center py-8">
-              <button
-                type="button"
-                onClick={loadMore}
-                disabled={fetching}
-                className="rounded-lg border border-neutral-300 px-4 py-2 font-mono text-[12px] uppercase tracking-[0.1em] transition hover:border-neutral-900 disabled:opacity-50"
-              >
-                {fetching ? '加载中…' : '加载更多'}
-              </button>
-            </div>
-          )}
+          <div ref={loadMoreRef} className="flex justify-center px-6 py-8" aria-live="polite">
+            {hasMore ? (
+              <div className="rounded-full border border-neutral-200 bg-white px-4 py-2 text-[13px] text-neutral-500 shadow-sm shadow-neutral-950/5">
+                {loadMoreError ? (
+                  <span className="inline-flex items-center gap-3">
+                    <span>{loadMoreError}</span>
+                    <button
+                      type="button"
+                      onClick={loadMore}
+                      disabled={fetching}
+                      className="font-medium text-neutral-900 underline-offset-4 hover:underline disabled:text-neutral-400"
+                    >
+                      重试
+                    </button>
+                  </span>
+                ) : fetching ? (
+                  '正在加载更多…'
+                ) : (
+                  '继续向下滚动，自动发现更多'
+                )}
+              </div>
+            ) : (
+              <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-neutral-400">
+                已展示全部内容
+              </div>
+            )}
+          </div>
 
           {!hasQuery && (
             <section className="mt-8 px-6 py-16 text-center">
