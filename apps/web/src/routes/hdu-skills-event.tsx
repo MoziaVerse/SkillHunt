@@ -129,6 +129,26 @@ const submissionChecklist = [
   ['Skill 演示视频', '发布或编辑 Skill 时上传 3 分钟以内演示视频，提交参赛时无需重复上传。'],
 ] as const;
 
+type CurrentActionCard = {
+  phase: string;
+  date: string;
+  title: string;
+  text: string;
+  actionLabel: string;
+  actionTo?: string;
+  actionType?: 'signup';
+  icon: 'signup' | 'submit' | 'vote' | 'awards';
+};
+
+type AwardNoticeCard = {
+  status: 'upcoming' | 'reviewing' | 'public' | 'closed';
+  badge: string;
+  title: string;
+  date: string;
+  text: string;
+  detail: string;
+};
+
 const votingReferenceItems = [
   {
     title: '校园实用性（核心）',
@@ -156,6 +176,101 @@ function getTimelineStatus(item: (typeof schedule)[number], now = new Date()): T
   if (now < start) return 'upcoming';
   if (now >= end) return 'done';
   return 'current';
+}
+
+function getCurrentActionCards(now = new Date()): CurrentActionCard[] {
+  return schedule
+    .filter((item) => getTimelineStatus(item, now) === 'current')
+    .map((item) => {
+      if (item.title === '正式报名期') {
+        return {
+          phase: item.title,
+          date: item.date,
+          title: '完成报名问卷',
+          text: '请先填写外部报名问卷，并确认报名手机号和 SkillHunt 登录手机号一致。',
+          actionLabel: '填写报名问卷',
+          actionType: 'signup',
+          icon: 'signup',
+        };
+      }
+      if (item.title === '作品征集期') {
+        return {
+          phase: item.title,
+          date: item.date,
+          title: '提交参赛作品',
+          text: '发布公开 Skill 后，到提交作品页选择参赛赛道。有效作品需要 Skill 已上传 3 分钟以内演示视频。',
+          actionLabel: '选择 Skill 参赛',
+          actionTo: `/events/${EVENT_SLUG}?tab=submit`,
+          icon: 'submit',
+        };
+      }
+      if (item.title === '评审投票期') {
+        return {
+          phase: item.title,
+          date: item.date,
+          title: '参与大众投票',
+          text: '作品专区已进入投票评审阶段。每个用户每个赛道最多 5 票，可给自己作品投票。',
+          actionLabel: '进入作品专区',
+          actionTo: `/events/${EVENT_SLUG}?tab=submissions`,
+          icon: 'vote',
+        };
+      }
+      return {
+        phase: item.title,
+        date: item.date,
+        title: '查看获奖公示',
+        text: '获奖名单、奖励发放和校园专区上架会在公示阶段同步更新。',
+        actionLabel: '查看获奖公示',
+        actionTo: `/events/${EVENT_SLUG}?tab=awards`,
+        icon: 'awards',
+      };
+    });
+}
+
+function getAwardNoticeCard(now = new Date()): AwardNoticeCard {
+  const votingStart = dateInShanghai('2026-06-01T00:00:00');
+  const votingEnd = dateInShanghai('2026-06-11T00:00:00');
+  const showcaseStart = dateInShanghai('2026-06-11T00:00:00');
+  const showcaseEnd = dateInShanghai('2026-06-16T00:00:00');
+
+  if (now < votingStart) {
+    return {
+      status: 'upcoming',
+      badge: '未开始',
+      title: '等待作品征集与评审',
+      date: '6 月 11 日 - 6 月 15 日',
+      text: '获奖名单会在专家评审和大众投票结束后进入公示。',
+      detail: '当前重点是完成报名、发布 Skill 并提交参赛作品。',
+    };
+  }
+  if (now < votingEnd) {
+    return {
+      status: 'reviewing',
+      badge: '评审投票中',
+      title: '获奖结果正在形成',
+      date: '6 月 1 日 - 6 月 10 日',
+      text: '大众投票与专家评审正在同步进行，获奖名单暂不公示。',
+      detail: '请先关注作品专区投票进展，最终结果会在公示期统一展示。',
+    };
+  }
+  if (now >= showcaseStart && now < showcaseEnd) {
+    return {
+      status: 'public',
+      badge: '公示中',
+      title: '获奖名单公示中',
+      date: '6 月 11 日 - 6 月 15 日',
+      text: '获奖作品、奖项、创作者姓名及所属学院/单位会在这里集中展示。',
+      detail: '公示期间会同步推进奖励发放、权益确认和校园专区上架。',
+    };
+  }
+  return {
+    status: 'closed',
+    badge: '已结束',
+    title: '公示收尾已完成',
+    date: '6 月 16 日起',
+    text: '获奖作品将沉淀为杭电校园 Skills 专区，供全校师生持续发现与使用。',
+    detail: '如需查看历史结果，可关注后续上架的校园专区作品与赛事复盘。',
+  };
 }
 
 function getStage() {
@@ -567,6 +682,92 @@ function ContestTimeline() {
   );
 }
 
+function CurrentActionCards({ onSignupClick }: { onSignupClick: () => void }) {
+  const cards = getCurrentActionCards();
+  const iconMap = {
+    signup: QrCode,
+    submit: Upload,
+    vote: ThumbsUp,
+    awards: Trophy,
+  };
+
+  if (cards.length === 0) {
+    return (
+      <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-5">
+        <div className="text-[15px] font-semibold text-neutral-950">当前提醒</div>
+        <p className="mt-2 text-[13px] leading-6 text-neutral-500">
+          活动当前没有正在进行的阶段，可查看时间线确认下一步安排。
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="text-[15px] font-semibold text-neutral-950">正在进行</div>
+        <div className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[12px] text-emerald-700">
+          {cards.length} 项
+        </div>
+      </div>
+      <div className="space-y-3">
+        {cards.map((card) => {
+          const Icon = iconMap[card.icon];
+          const action =
+            card.actionType === 'signup' ? (
+              <Button
+                type="button"
+                onClick={onSignupClick}
+                className={cn(eventPrimaryButtonClass, 'mt-4 w-full')}
+              >
+                {card.actionLabel}
+                <QrCode className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button
+                asChild
+                variant="outline"
+                className={cn(eventSecondaryButtonClass, 'mt-4 w-full bg-white')}
+              >
+                <Link to={card.actionTo ?? `/events/${EVENT_SLUG}`}>
+                  {card.actionLabel}
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            );
+
+          return (
+            <div
+              key={card.phase}
+              className="rounded-xl border border-emerald-200 bg-emerald-50 p-5"
+            >
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-white text-emerald-700">
+                  <Icon className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-[12px] font-semibold text-emerald-700">{card.phase}</div>
+                    <span className="rounded-full border border-emerald-200 bg-white px-2 py-0.5 text-[11px] text-emerald-700">
+                      进行中
+                    </span>
+                  </div>
+                  <div className="mt-2 text-[15px] font-semibold text-emerald-950">
+                    {card.title}
+                  </div>
+                  <div className="mt-1 font-mono text-[11px] text-emerald-700/70">{card.date}</div>
+                  <p className="mt-2 text-[13px] leading-6 text-emerald-800">{card.text}</p>
+                  {action}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function Hero({
   stage,
   onSignupClick,
@@ -822,20 +1023,7 @@ function GuideTab({ onSignupClick }: { onSignupClick: () => void }) {
                 ))}
               </div>
             </div>
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
-              <div className="text-[15px] font-semibold text-emerald-900">现在最重要</div>
-              <p className="mt-2 text-[13px] leading-6 text-emerald-800">
-                先完成报名问卷，再发布公开 Skill。活动资格会按报名手机号校验。
-              </p>
-              <Button
-                type="button"
-                onClick={onSignupClick}
-                className={cn(eventPrimaryButtonClass, 'mt-4 w-full')}
-              >
-                填写报名问卷
-                <QrCode className="h-4 w-4" />
-              </Button>
-            </div>
+            <CurrentActionCards onSignupClick={onSignupClick} />
           </aside>
         </div>
       </section>
@@ -1619,19 +1807,100 @@ function SubmissionsTab() {
   );
 }
 
-function AwardsTab() {
+function AwardNotice({ notice }: { notice: AwardNoticeCard }) {
+  const tone = {
+    upcoming: {
+      wrap: 'border-neutral-200 bg-neutral-50',
+      icon: 'border-neutral-200 bg-white text-neutral-500',
+      badge: 'border-neutral-200 bg-white text-neutral-500',
+      title: 'text-neutral-950',
+      text: 'text-neutral-500',
+    },
+    reviewing: {
+      wrap: 'border-amber-200 bg-amber-50',
+      icon: 'border-amber-200 bg-white text-amber-700',
+      badge: 'border-amber-200 bg-white text-amber-700',
+      title: 'text-amber-950',
+      text: 'text-amber-800',
+    },
+    public: {
+      wrap: 'border-emerald-200 bg-emerald-50',
+      icon: 'border-emerald-200 bg-white text-emerald-700',
+      badge: 'border-emerald-200 bg-white text-emerald-700',
+      title: 'text-emerald-950',
+      text: 'text-emerald-800',
+    },
+    closed: {
+      wrap: 'border-neutral-200 bg-white',
+      icon: 'border-neutral-200 bg-neutral-50 text-neutral-700',
+      badge: 'border-neutral-200 bg-neutral-50 text-neutral-600',
+      title: 'text-neutral-950',
+      text: 'text-neutral-600',
+    },
+  }[notice.status];
+
   return (
-    <div>
+    <section className={cn('rounded-xl border p-5', tone.wrap)}>
+      <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+        <div className="flex gap-4">
+          <div
+            className={cn(
+              'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border',
+              tone.icon,
+            )}
+          >
+            <Award className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-neutral-400">
+                Awards
+              </span>
+              <span className={cn('rounded-full border px-2 py-0.5 text-[12px]', tone.badge)}>
+                {notice.badge}
+              </span>
+            </div>
+            <h2 className={cn('mt-3 text-[22px] font-semibold', tone.title)}>{notice.title}</h2>
+            <p className={cn('mt-2 max-w-2xl text-[14px] leading-6', tone.text)}>{notice.text}</p>
+          </div>
+        </div>
+        <div className="shrink-0 rounded-lg border border-white/70 bg-white/70 px-3 py-2 font-mono text-[12px] text-neutral-500 shadow-sm shadow-neutral-950/5">
+          {notice.date}
+        </div>
+      </div>
+      <div className="mt-5 rounded-lg border border-white/70 bg-white/70 px-4 py-3 text-[13px] leading-6 text-neutral-600 shadow-sm shadow-neutral-950/5">
+        {notice.detail}
+      </div>
+    </section>
+  );
+}
+
+function AwardsTab() {
+  const notice = getAwardNoticeCard();
+
+  return (
+    <div className="space-y-6">
       <SectionTitle
         eyebrow="Awards"
         title="获奖公示"
-        description="公示期为 2026 年 6 月 11 日至 6 月 15 日，参与奖也会进入公示结果。"
+        description="公示期为 6 月 11 日至 6 月 15 日，页面会根据当前时间自动切换公示状态。"
       />
-      <EmptyState
-        icon={<Award className="h-5 w-5" />}
-        title="获奖名单待公示"
-        description="专家评审和大众投票结束后，这里会展示获奖作品、奖项、创作者姓名及所属学院/单位。"
-      />
+      <AwardNotice notice={notice} />
+
+      <section className="rounded-xl border border-neutral-200 bg-white p-5">
+        <div className="mb-5 flex items-center gap-2 text-[16px] font-semibold text-neutral-950">
+          <Trophy className="h-5 w-5 text-emerald-600" />
+          奖项设置
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          {awards.map(([title, text]) => (
+            <div key={title} className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+              <div className="text-[14px] font-semibold text-neutral-950">{title}</div>
+              <p className="mt-2 text-[13px] leading-6 text-neutral-500">{text}</p>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
