@@ -480,6 +480,26 @@ describe('business API', () => {
       expect(body.files).toContain('SKILL.md');
     });
 
+    it('uses WEB_ORIGIN for public installCommand when configured', async () => {
+      const originalWebOrigin = process.env.WEB_ORIGIN;
+      process.env.WEB_ORIGIN = 'https://skillhunt.mzsjai.com/';
+      try {
+        const res = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`));
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as { installCommand: string };
+        const protocolName = skillProtocolName(OWNER_NAME, 'test-owned-pub');
+        expect(body.installCommand).toBe(
+          `npx skills add https://skillhunt.mzsjai.com/s/${protocolName} --skill ${protocolName}`,
+        );
+      } finally {
+        if (originalWebOrigin === undefined) {
+          process.env.WEB_ORIGIN = undefined;
+        } else {
+          process.env.WEB_ORIGIN = originalWebOrigin;
+        }
+      }
+    });
+
     it('referenced skill returns sourceInstallCommand + sourceUrl', async () => {
       const res = await app.fetch(reqAnon(`/api/skills/${OTHER_NAME}/test-ref`));
       expect(res.status).toBe(200);

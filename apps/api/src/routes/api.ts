@@ -128,6 +128,18 @@ import {
 
 export const apiRoute = new Hono();
 
+const publicOrigin = (requestUrl: string) => {
+  const configuredOrigin = process.env.WEB_ORIGIN?.trim();
+  if (configuredOrigin) {
+    try {
+      return new URL(configuredOrigin).origin;
+    } catch {
+      // Fall back to the request URL when the environment value is malformed.
+    }
+  }
+  return new URL(requestUrl).origin;
+};
+
 const skillAccessActor = (ctx: AuthContext) => ({
   userId: ctx.user?.id ?? null,
   scopes: ctx.scopes,
@@ -410,7 +422,7 @@ async function listPublishablesResponse(
   },
 ) {
   const auth = await getAuthContext(c);
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   const fetchLimit = opts.kind === 'all' ? opts.limit + opts.offset : opts.limit;
   const fetchOffset = opts.kind === 'all' ? 0 : opts.offset;
   const [skillsRes, packagesRes] = await Promise.all([
@@ -474,7 +486,7 @@ async function listOwnerPublishablesResponse(
     viewerUserId: string | null;
   },
 ) {
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   const [skillsRows, packageRows] = await Promise.all([
     opts.kind !== 'package'
       ? opts.includePrivate
@@ -810,7 +822,7 @@ apiRoute.get('/skills/:owner/:slug', async (c) => {
   const skill = await findSkillByOwnerAndSlug(ownerHandle, slug, viewerUserId(auth));
   if (!skill) return c.json({ error: 'Not Found' }, 404);
   if (!canReadSkill(skill, skillAccessActor(auth))) return c.json({ error: 'Not Found' }, 404);
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   const detail = await toDetail(origin, skill);
   if ('error' in detail) return c.json(detail, 500);
   return c.json(detail);
@@ -843,7 +855,7 @@ apiRoute.get('/skills/:owner/:slug/packages', async (c) => {
     viewerUserId: viewerUserId(auth),
     includePrivate: canIncludePrivateSkills(auth),
   });
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   return c.json({ items: items.map((item) => toPackageListItem(origin, item)), total });
 });
 
@@ -880,7 +892,7 @@ apiRoute.get('/packages', zValidator('query', listPackagesQuerySchema), async (c
     viewerUserId: viewerUserId(auth),
     includePrivate: canIncludePrivateSkills(auth),
   });
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   return c.json({ items: items.map((item) => toPackageListItem(origin, item)), total });
 });
 
@@ -893,7 +905,7 @@ apiRoute.get('/packages/:owner/:slug', async (c) => {
     includePrivate: canIncludePrivateSkills(auth),
   });
   if (!pkg) return c.json({ error: 'Not Found' }, 404);
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   return c.json(toPackageDetail(origin, pkg));
 });
 
@@ -907,7 +919,7 @@ apiRoute.get('/packages/:owner/:slug/releases', async (c) => {
   });
   if (!pkg) return c.json({ error: 'Not Found' }, 404);
   const releases = await listSkillPackageReleases(pkg.id);
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   return c.json({
     items: releases.map((release) => toPackageReleaseDto(origin, pkg, release)),
     total: releases.length,
@@ -939,7 +951,7 @@ apiRoute.post(
         title: input.title,
         changelog: input.changelog,
       });
-      const origin = new URL(c.req.url).origin;
+      const origin = publicOrigin(c.req.url);
       return c.json(toPackageReleaseDto(origin, pkg, release), 201);
     } catch (error) {
       return packageErrorResponse(c, error);
@@ -981,7 +993,7 @@ apiRoute.post('/packages', zValidator('json', createSkillPackageSchema), async (
       includePrivate: true,
     });
     if (!detail) return c.json({ error: 'Not Found' }, 404);
-    const origin = new URL(c.req.url).origin;
+    const origin = publicOrigin(c.req.url);
     return c.json(toPackageDetail(origin, detail), 201);
   } catch (error) {
     return packageErrorResponse(c, error);
@@ -1009,7 +1021,7 @@ apiRoute.put('/packages/:owner/:slug', zValidator('json', updateSkillPackageSche
       includePrivate: true,
     });
     if (!detail) return c.json({ error: 'Not Found' }, 404);
-    const origin = new URL(c.req.url).origin;
+    const origin = publicOrigin(c.req.url);
     return c.json(toPackageDetail(origin, detail));
   } catch (error) {
     return packageErrorResponse(c, error);
@@ -1063,7 +1075,7 @@ apiRoute.post(
         includePrivate: true,
       });
       if (!detail) return c.json({ error: 'Not Found' }, 404);
-      const origin = new URL(c.req.url).origin;
+      const origin = publicOrigin(c.req.url);
       return c.json(toPackageDetail(origin, detail), 201);
     } catch (error) {
       return packageErrorResponse(c, error);
@@ -1097,7 +1109,7 @@ apiRoute.put(
         includePrivate: true,
       });
       if (!detail) return c.json({ error: 'Not Found' }, 404);
-      const origin = new URL(c.req.url).origin;
+      const origin = publicOrigin(c.req.url);
       return c.json(toPackageDetail(origin, detail));
     } catch (error) {
       return packageErrorResponse(c, error);
@@ -1186,7 +1198,7 @@ apiRoute.post('/packages/:owner/:slug/upvote', async (c) => {
   await addSkillPackageUpvote(pkg.id, user.id);
   const refreshed = await findSkillPackageById(pkg.id, user.id);
   if (!refreshed) return c.json({ error: 'Not Found' }, 404);
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   return c.json(toPackageListItem(origin, refreshed));
 });
 
@@ -1209,7 +1221,7 @@ apiRoute.delete('/packages/:owner/:slug/upvote', async (c) => {
   await removeSkillPackageUpvote(pkg.id, user.id);
   const refreshed = await findSkillPackageById(pkg.id, user.id);
   if (!refreshed) return c.json({ error: 'Not Found' }, 404);
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   return c.json(toPackageListItem(origin, refreshed));
 });
 
@@ -1232,7 +1244,7 @@ apiRoute.post('/packages/:owner/:slug/bookmark', async (c) => {
   await addSkillPackageBookmark(pkg.id, user.id);
   const refreshed = await findSkillPackageById(pkg.id, user.id);
   if (!refreshed) return c.json({ error: 'Not Found' }, 404);
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   return c.json(toPackageListItem(origin, refreshed));
 });
 
@@ -1255,7 +1267,7 @@ apiRoute.delete('/packages/:owner/:slug/bookmark', async (c) => {
   await removeSkillPackageBookmark(pkg.id, user.id);
   const refreshed = await findSkillPackageById(pkg.id, user.id);
   if (!refreshed) return c.json({ error: 'Not Found' }, 404);
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   return c.json(toPackageListItem(origin, refreshed));
 });
 
@@ -1291,7 +1303,7 @@ apiRoute.post('/skills', zValidator('json', createSkillSchema), async (c) => {
         : undefined,
   });
 
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   const createdWithCounts = await findSkillById(created.id, user?.id ?? null);
   if (!createdWithCounts) return c.json({ error: 'Not Found' }, 404);
   const detail = await toDetail(origin, createdWithCounts);
@@ -1324,7 +1336,7 @@ apiRoute.put('/skills/:owner/:slug', zValidator('json', updateSkillSchema), asyn
   });
   if (!updated) return c.json({ error: 'Not Found' }, 404);
 
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   const updatedWithCounts = await findSkillById(updated.id, user?.id ?? null);
   if (!updatedWithCounts) return c.json({ error: 'Not Found' }, 404);
   const detail = await toDetail(origin, updatedWithCounts);
@@ -1372,7 +1384,7 @@ apiRoute.post('/skills/:owner/:slug/fork', zValidator('json', forkSkillSchema), 
     note: input.note,
   });
 
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   const createdWithCounts = await findSkillById(created.id, user.id);
   if (!createdWithCounts) return c.json({ error: 'Not Found' }, 404);
   const detail = await toDetail(origin, createdWithCounts);
@@ -1551,7 +1563,7 @@ apiRoute.get('/skills/:owner/:slug/package', async (c) => {
   }
 
   const files = await listSkillFilesWithContent(skill.id);
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   return c.json({
     id: skill.id,
     owner: skill.owner,
@@ -1818,7 +1830,7 @@ const handleListMyPackages = async (c: import('hono').Context) => {
     viewerUserId: user.id,
     includePrivate: hasScope(auth, 'skills:read_private'),
   });
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   return c.json({
     owner: {
       id: me.id,
@@ -1892,7 +1904,7 @@ apiRoute.get('/users/:owner/packages', async (c) => {
       user && user.id === ownerRow.id && hasScope(auth, 'skills:read_private'),
     ),
   });
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   return c.json({
     owner: {
       id: ownerRow.id,
@@ -2136,7 +2148,7 @@ apiRoute.post('/install-tokens', zValidator('json', mintInstallTokenSchema), asy
     maxUses: input.maxUses,
   });
 
-  const origin = new URL(c.req.url).origin;
+  const origin = publicOrigin(c.req.url);
   const installCommand = `npx skills add ${origin}/i/${grant.token}`;
   return c.json(
     {
