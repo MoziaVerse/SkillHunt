@@ -365,6 +365,64 @@ describe('well-known endpoint', () => {
     }
   });
 
+  it('shortens long user-owned protocol names so the whole index remains installable', async () => {
+    await db.insert(user).values({
+      id: ALICE_ID,
+      name: 'Alice',
+      handle: 'alice',
+      email: 'alice@example.com',
+      emailVerified: true,
+    });
+
+    const longSlug = 'hang-dian-ren-sheng-mo-ni-qi-h-d-u-l-i-f-e-s-i-m-u-l-a-t-o-r';
+    const skill = await insertTestSkill({
+      slug: longSlug,
+      name: '超长协议名测试',
+      description: '验证超长 owner + slug 会被裁剪为 CLI 可安装名称',
+      type: 'owned',
+      visibility: 'public',
+      tags: [],
+      frontmatter: { name: 'long-skill' },
+      ownerUserId: ALICE_ID,
+    });
+    await db.insert(skillFiles).values({
+      skillId: skill.id,
+      path: 'SKILL.md',
+      content: '---\nname: long-skill\ndescription: x\n---\n# long body\n',
+    });
+
+    const protocolName = skillProtocolName('alice', longSlug);
+    const index = await app.fetch(
+      new Request('http://localhost/.well-known/agent-skills/index.json'),
+    );
+    const body = (await index.json()) as { skills: Array<{ name: string }> };
+
+    expect(protocolName.length).toBeLessThanOrEqual(64);
+    expect(body.skills.map((s) => s.name)).toContain(protocolName);
+    expect(body.skills.every(isValidSkillEntry)).toBe(true);
+
+    const file = await app.fetch(
+      new Request(`http://localhost/.well-known/agent-skills/${protocolName}/SKILL.md`),
+    );
+    expect(file.status).toBe(200);
+    expect(await file.text()).toContain('long body');
+  });
+
+  it('legacy /.well-known/skills route mirrors the JSON index and files', async () => {
+    const index = await app.fetch(new Request('http://localhost/.well-known/skills/index.json'));
+    expect(index.status).toBe(200);
+    expect(index.headers.get('content-type')).toContain('application/json');
+    const body = (await index.json()) as { skills: Array<{ name: string }> };
+    expect(body.skills[0]?.name).toBe('test-owned-public');
+
+    const file = await app.fetch(
+      new Request('http://localhost/.well-known/skills/test-owned-public/SKILL.md'),
+    );
+    expect(file.status).toBe(200);
+    expect(file.headers.get('content-type')).toContain('text/markdown');
+    expect(await file.text()).toContain('test-owned-public');
+  });
+
   it('non-mozia public skills use CLI-safe protocol names, not owner/slug', async () => {
     await db.insert(user).values({
       id: ALICE_ID,
@@ -405,6 +463,24 @@ describe('well-known endpoint', () => {
     );
     expect(file.status).toBe(200);
     expect(await file.text()).toContain('alice body');
+  });
+
+  it('legacy package /.well-known/skills route mirrors package index and files', async () => {
+    const index = await packageApp.fetch(
+      new Request('http://localhost/p/mozia/case-suite/.well-known/skills/index.json'),
+    );
+    expect(index.status).toBe(200);
+    expect(index.headers.get('content-type')).toContain('application/json');
+    const body = (await index.json()) as { skills: Array<{ name: string }> };
+    expect(body.skills[0]?.name).toBe('test-owned-public');
+
+    const file = await packageApp.fetch(
+      new Request(
+        'http://localhost/p/mozia/case-suite/.well-known/skills/test-owned-public/SKILL.md',
+      ),
+    );
+    expect(file.status).toBe(200);
+    expect(await file.text()).toContain('test-owned-public');
   });
 
   it('package index exposes only public owned skills inside the package', async () => {
@@ -519,7 +595,9 @@ function isValidSkillEntry(entry: unknown): boolean {
   if (!entry || typeof entry !== 'object') return false;
   const e = entry as Record<string, unknown>;
   if (typeof e.name !== 'string' || e.name.length === 0) return false;
+  if (e.name.length > 64) return false;
   if (!/^[a-z0-9-]+$/.test(e.name)) return false;
+  if (e.name.startsWith('-') || e.name.endsWith('-') || e.name.includes('--')) return false;
   if (typeof e.description !== 'string' || e.description.length === 0) return false;
   if (!Array.isArray(e.files) || e.files.length === 0) return false;
   let hasSkillMd = false;
