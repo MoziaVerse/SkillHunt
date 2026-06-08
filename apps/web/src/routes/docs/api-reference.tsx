@@ -317,7 +317,7 @@ export default function ApiReference() {
   "owner": { "id": "uuid", "name": "alice", "handle": "alice" },
   "skillMdContent": "---\\nname: React Hooks\\n---\\n...",
   "files": ["SKILL.md", "examples/usage.md"],
-  "installCommand": "npx skills add https://skillhunt.mozia.ai --skill alice/react-hooks",
+  "installCommand": "npx skills add https://skillhunt.mozia.ai/s/alice-react-hooks-1cp8y0e --skill alice-react-hooks-1cp8y0e",
   "createdAt": "2026-01-15T08:00:00.000Z",
   "updatedAt": "2026-03-01T12:00:00.000Z"
 }`}
@@ -355,8 +355,8 @@ export default function ApiReference() {
   "name": "React Hooks",
   "description": "...",
   "visibility": "private",
-  "protocolName": "alice-react-hooks-a1b2c3d4",
-  "installCommand": "npx skills add https://skillhunt.mozia.ai --skill alice-react-hooks-a1b2c3d4",
+  "protocolName": "alice-react-hooks-1cp8y0e",
+  "installCommand": "npx skills add https://skillhunt.mozia.ai/s/alice-react-hooks-1cp8y0e --skill alice-react-hooks-1cp8y0e",
   "hash": "sha256:...",
   "files": [
     { "path": "SKILL.md", "content": "---\\nname: React Hooks\\n---\\n..." },
@@ -741,9 +741,16 @@ export default function ApiReference() {
         <code className={inlineCodeClass}>GET /.well-known/agent-skills/:owner/:slug/:file</code>
       </h3>
       <p>获取指定公开 skill 的文件内容。</p>
+
+      <h3>
+        <code className={inlineCodeClass}>
+          GET /s/:skillName/.well-known/agent-skills/index.json
+        </code>
+      </h3>
+      <p>列出单个公开 skill 的安装索引，适合生成更快的 npx skills 安装命令。</p>
       <pre className={codeBlockClass}>
         {`# 安装公开 skill
-npx skills add https://skillhunt.mozia.ai --skill alice/react-hooks
+npx skills add https://skillhunt.mozia.ai/s/alice-react-hooks-1cp8y0e --skill alice-react-hooks-1cp8y0e
 
 # 通过 capability URL 安装私有 skill
 npx skills add https://skillhunt.mozia.ai/i/capability-token`}

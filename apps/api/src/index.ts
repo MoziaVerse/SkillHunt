@@ -5,6 +5,7 @@ import { apiRoute } from './routes/api';
 import {
   capabilityWellknownRoute,
   packageWellknownRoute,
+  singleSkillWellknownRoute,
   wellknownRoute,
 } from './routes/wellknown';
 
@@ -26,6 +27,7 @@ app.on(['GET', 'POST'], '/api/auth/*', (c) => auth.handler(c.req.raw));
 
 app.route('/.well-known', wellknownRoute);
 app.route('/i', capabilityWellknownRoute);
+app.route('/s', singleSkillWellknownRoute);
 app.route('/p', packageWellknownRoute);
 app.route('/api', apiRoute);
 

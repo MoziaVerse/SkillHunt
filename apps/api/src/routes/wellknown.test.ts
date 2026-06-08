@@ -15,6 +15,7 @@ import { skillProtocolName } from '../lib/protocol-name';
 
 let app: Hono;
 let packageApp: Hono;
+let singleSkillApp: Hono;
 const OWNER_ID = 'mozia-virtual';
 const ALICE_ID = 'alice-owner';
 const BINARY_OBJECT_KEY = 'skillhunt/skill-files/mozia-virtual/test-owned-public/background.webp';
@@ -60,9 +61,12 @@ beforeAll(async () => {
   mockedFetch.preconnect = originalFetch.preconnect;
   globalThis.fetch = mockedFetch;
 
-  const { packageWellknownRoute, wellknownRoute } = await import('./wellknown');
+  const { packageWellknownRoute, singleSkillWellknownRoute, wellknownRoute } = await import(
+    './wellknown'
+  );
   app = new Hono().route('/.well-known', wellknownRoute);
   packageApp = new Hono().route('/p', packageWellknownRoute);
+  singleSkillApp = new Hono().route('/s', singleSkillWellknownRoute);
 });
 
 async function insertTestSkill(input: {
@@ -421,6 +425,43 @@ describe('well-known endpoint', () => {
     expect(file.status).toBe(200);
     expect(file.headers.get('content-type')).toContain('text/markdown');
     expect(await file.text()).toContain('test-owned-public');
+  });
+
+  it('single skill well-known index exposes only the requested skill', async () => {
+    const protocolName = skillProtocolName('mozia', 'test-owned-public');
+    const index = await singleSkillApp.fetch(
+      new Request(`http://localhost/s/${protocolName}/.well-known/agent-skills/index.json`),
+    );
+    expect(index.status).toBe(200);
+
+    const body = (await index.json()) as { skills: Array<{ name: string; files: string[] }> };
+    expect(body.skills).toHaveLength(1);
+    expect(body.skills[0]?.name).toBe(protocolName);
+    expect(body.skills[0]?.files).toContain('SKILL.md');
+    expect(body.skills[0]?.files).toContain('extra.md');
+    expect(body.skills.every(isValidSkillEntry)).toBe(true);
+  });
+
+  it('single skill well-known file route returns files for npx skills add', async () => {
+    const protocolName = skillProtocolName('mozia', 'test-owned-public');
+    const res = await singleSkillApp.fetch(
+      new Request(
+        `http://localhost/s/${protocolName}/.well-known/agent-skills/${protocolName}/SKILL.md`,
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/markdown');
+    expect(await res.text()).toContain('test-owned-public');
+  });
+
+  it('single skill well-known route rejects mismatched skill names', async () => {
+    const protocolName = skillProtocolName('mozia', 'test-owned-public');
+    const res = await singleSkillApp.fetch(
+      new Request(
+        `http://localhost/s/${protocolName}/.well-known/agent-skills/no-such-skill/SKILL.md`,
+      ),
+    );
+    expect(res.status).toBe(404);
   });
 
   it('non-mozia public skills use CLI-safe protocol names, not owner/slug', async () => {

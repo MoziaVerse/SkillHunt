@@ -24,9 +24,26 @@ import {
 export const wellknownRoute = new Hono();
 export const capabilityWellknownRoute = new Hono();
 export const packageWellknownRoute = new Hono();
+export const singleSkillWellknownRoute = new Hono();
 
 const isUnsafePath = (p: string) => !p || p.includes('..') || p.startsWith('/');
 const PUBLIC_WELL_KNOWN_PREFIXES = ['/.well-known/agent-skills/', '/.well-known/skills/'] as const;
+
+const publicOwnedSkillIndexEntry = async (protocolName: string) => {
+  const rows = await listPublicOwnedSkills();
+  const row = rows.find((s) => skillProtocolName(s.ownerHandle, s.slug) === protocolName);
+  if (!row) return null;
+
+  const files = await listSkillFilePaths(row.id);
+  if (!files.some((f) => f === 'SKILL.md')) return null;
+
+  return {
+    skillId: row.id,
+    name: protocolName,
+    description: row.description,
+    files,
+  };
+};
 
 // GET /.well-known/agent-skills/index.json
 // GET /.well-known/skills/index.json
@@ -163,6 +180,85 @@ capabilityWellknownRoute.get('/:token/.well-known/agent-skills/:skillName', hand
 capabilityWellknownRoute.get('/:token/.well-known/agent-skills/:skillName/*', handleCapabilityFile);
 capabilityWellknownRoute.get('/:token/.well-known/skills/:skillName', handleCapabilityFile);
 capabilityWellknownRoute.get('/:token/.well-known/skills/:skillName/*', handleCapabilityFile);
+
+// GET /s/:skillName/.well-known/agent-skills/index.json
+// GET /s/:skillName/.well-known/skills/index.json
+//
+// This endpoint gives `npx skills add` a one-skill discovery root. The official
+// CLI fetches every file listed in an index before applying `--skill`, so using
+// the global root for a single install can become slow as SkillHunt grows.
+const handleSingleSkillIndex = async (c: import('hono').Context) => {
+  const skillName = c.req.param('skillName');
+  if (!skillName) return c.notFound();
+
+  const entry = await publicOwnedSkillIndexEntry(skillName);
+  if (!entry) return c.notFound();
+
+  return c.json({
+    skills: [
+      {
+        name: entry.name,
+        description: entry.description,
+        files: entry.files,
+      },
+    ],
+  });
+};
+
+singleSkillWellknownRoute.get(
+  '/:skillName/.well-known/agent-skills/index.json',
+  handleSingleSkillIndex,
+);
+singleSkillWellknownRoute.get('/:skillName/.well-known/skills/index.json', handleSingleSkillIndex);
+
+// GET /s/:sourceSkillName/.well-known/agent-skills/:skillName/SKILL.md|other-file
+// GET /s/:sourceSkillName/.well-known/skills/:skillName/SKILL.md|other-file
+const handleSingleSkillFile = async (c: import('hono').Context) => {
+  const sourceSkillName = c.req.param('sourceSkillName');
+  const skillName = c.req.param('skillName');
+  if (!sourceSkillName || !skillName || sourceSkillName !== skillName) return c.notFound();
+
+  const prefix = [
+    `/s/${sourceSkillName}/.well-known/agent-skills/${skillName}/`,
+    `/s/${sourceSkillName}/.well-known/skills/${skillName}/`,
+  ].find((p) => c.req.path.startsWith(p));
+  if (!prefix) return c.text('File path required', 400);
+
+  const filePath = c.req.path.slice(prefix.length);
+  if (isUnsafePath(filePath)) return c.text('Invalid path', 400);
+
+  const entry = await publicOwnedSkillIndexEntry(skillName);
+  if (!entry) return c.notFound();
+
+  const file = await getSkillFilePayload(entry.skillId, filePath);
+  if (!file) return c.notFound();
+
+  if (filePath.toLowerCase() === 'skill.md') {
+    await recordSkillInstall(entry.skillId, 'well-known', {
+      ip: c.req.header('x-forwarded-for') ?? null,
+      userAgent: c.req.header('user-agent') ?? null,
+    });
+  }
+
+  return createSkillFileResponse(file);
+};
+
+singleSkillWellknownRoute.get(
+  '/:sourceSkillName/.well-known/agent-skills/:skillName',
+  handleSingleSkillFile,
+);
+singleSkillWellknownRoute.get(
+  '/:sourceSkillName/.well-known/agent-skills/:skillName/*',
+  handleSingleSkillFile,
+);
+singleSkillWellknownRoute.get(
+  '/:sourceSkillName/.well-known/skills/:skillName',
+  handleSingleSkillFile,
+);
+singleSkillWellknownRoute.get(
+  '/:sourceSkillName/.well-known/skills/:skillName/*',
+  handleSingleSkillFile,
+);
 
 // GET /p/:owner/:packageSlug/.well-known/agent-skills/index.json
 // GET /p/:owner/:packageSlug/.well-known/skills/index.json

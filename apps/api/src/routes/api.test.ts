@@ -459,7 +459,7 @@ describe('business API', () => {
   });
 
   describe('GET /api/skills/:owner/:slug (canonical)', () => {
-    it('owned public skill returns skillMdContent + generic installCommand + id', async () => {
+    it('owned public skill returns skillMdContent + single-skill installCommand + id', async () => {
       const res = await app.fetch(reqAnon(`/api/skills/${OWNER_NAME}/test-owned-pub`));
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
@@ -473,11 +473,9 @@ describe('business API', () => {
       expect(typeof body.id).toBe('string');
       expect(body.type).toBe('owned');
       expect(body.skillMdContent).toContain('body');
+      const protocolName = skillProtocolName(OWNER_NAME, 'test-owned-pub');
       expect(body.installCommand).toBe(
-        `npx skills add http://localhost --skill ${skillProtocolName(
-          OWNER_NAME,
-          'test-owned-pub',
-        )}`,
+        `npx skills add http://localhost/s/${protocolName} --skill ${protocolName}`,
       );
       expect(body.files).toContain('SKILL.md');
     });
@@ -1798,10 +1796,14 @@ describe('business API', () => {
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
         protocolName: string;
+        installCommand: string;
         hash: string;
         files: Array<{ path: string; content: string }>;
       };
       expect(body.protocolName).toBe(skillProtocolName(OWNER_NAME, 'test-owned-pub'));
+      expect(body.installCommand).toBe(
+        `npx skills add http://localhost/s/${body.protocolName} --skill ${body.protocolName}`,
+      );
       expect(body.hash).toHaveLength(64);
       expect(body.files.some((file) => file.path === 'SKILL.md')).toBe(true);
     });

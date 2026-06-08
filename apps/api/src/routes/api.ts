@@ -192,6 +192,11 @@ const toListItem = (r: SkillWithOwner): SkillListItem => {
   };
 };
 
+const ownedSkillInstallCommand = (origin: string, skill: SkillWithOwner) => {
+  const protocolName = skillProtocolName(skill.owner.handle, skill.slug);
+  return `npx skills add ${origin}/s/${protocolName} --skill ${protocolName}`;
+};
+
 const toDetail = async (
   origin: string,
   skill: SkillWithOwner,
@@ -201,7 +206,7 @@ const toDetail = async (
     const files = await listSkillFilesWithContent(skill.id);
     const skillMd = files.find((f) => f.path === 'SKILL.md');
     if (!skillMd) return { error: 'Skill data corrupted' };
-    const installCommand = `npx skills add ${origin} --skill ${skillProtocolName(skill.owner.handle, skill.slug)}`;
+    const installCommand = ownedSkillInstallCommand(origin, skill);
     return {
       ...base,
       type: 'owned',
@@ -1555,10 +1560,7 @@ apiRoute.get('/skills/:owner/:slug/package', async (c) => {
     description: skill.description,
     visibility: skill.visibility,
     protocolName: skillProtocolName(skill.owner.handle, skill.slug),
-    installCommand: `npx skills add ${origin} --skill ${skillProtocolName(
-      skill.owner.handle,
-      skill.slug,
-    )}`,
+    installCommand: ownedSkillInstallCommand(origin, skill),
     hash: hashFiles(files),
     files,
     updatedAt: skill.updatedAt.toISOString(),
