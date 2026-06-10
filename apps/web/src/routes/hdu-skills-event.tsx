@@ -141,13 +141,53 @@ type CurrentActionCard = {
 };
 
 type AwardNoticeCard = {
-  status: 'upcoming' | 'reviewing' | 'public' | 'closed';
+  status: 'upcoming' | 'reviewing' | 'finalizing' | 'public' | 'closed';
   badge: string;
   title: string;
   date: string;
   text: string;
   detail: string;
 };
+
+type AwardResultPublishStatus = 'finalizing' | 'public';
+
+type AwardResultItem = {
+  skillName: string;
+  track: ContestTrack;
+  maker: string;
+  organization: string;
+  description: string;
+  href?: string;
+};
+
+type AwardResultGroup = {
+  award: string;
+  items: AwardResultItem[];
+};
+
+const awardResultConfig: {
+  publishStatus: AwardResultPublishStatus;
+  updatedAt: string;
+} = {
+  // 名单确认后改为 public，并在 awardResultGroups 填入获奖作品。
+  publishStatus: 'finalizing',
+  updatedAt: '名单确认后更新',
+};
+
+const awardResultGroups: AwardResultGroup[] = [];
+
+const awardFinalizingSteps = [
+  ['投票结果汇总', '整理大众投票记录，核对异常投票与重复提交情况。'],
+  ['专家评审确认', '汇总专家评分和评审意见，确认各赛道作品排序。'],
+  ['名单信息复核', '核对作品、创作者、团队和学院/单位信息。'],
+  ['统一发布公示', '名单确认后，本页会切换为获奖结果展示。'],
+] as const;
+
+const awardPublicNotes = [
+  ['公示范围', '展示获奖作品、奖项、创作者姓名及所属学院/单位。'],
+  ['异议反馈', '公示期内如有疑问，可在赛事企微群联系组织方。'],
+  ['后续安排', '公示结束后推进权益确认、奖励发放和校园专区上架。'],
+] as const;
 
 const votingReferenceItems = [
   {
@@ -218,8 +258,11 @@ function getCurrentActionCards(now = new Date()): CurrentActionCard[] {
       return {
         phase: item.title,
         date: item.date,
-        title: '查看获奖公示',
-        text: '获奖名单、奖励发放和校园专区上架会在公示阶段同步更新。',
+        title: awardResultConfig.publishStatus === 'public' ? '查看获奖名单' : '关注评审统计进展',
+        text:
+          awardResultConfig.publishStatus === 'public'
+            ? '获奖名单、奖励发放和校园专区上架会在公示阶段同步更新。'
+            : '大众投票与专家评审进入统计确认阶段，获奖名单确认后统一展示。',
         actionLabel: '查看获奖公示',
         actionTo: `/events/${EVENT_SLUG}?tab=awards`,
         icon: 'awards',
@@ -254,6 +297,17 @@ function getAwardNoticeCard(now = new Date()): AwardNoticeCard {
     };
   }
   if (now >= showcaseStart && now < showcaseEnd) {
+    if (awardResultConfig.publishStatus === 'finalizing') {
+      return {
+        status: 'finalizing',
+        badge: '结果整理中',
+        title: '获奖结果正在整理中',
+        date: '6 月 11 日 - 6 月 15 日',
+        text: '大众投票与专家评审已进入统计确认阶段，最终获奖名单将在确认完成后统一公示。',
+        detail: '当前不会提前展示名单，请关注本页后续更新。',
+      };
+    }
+
     return {
       status: 'public',
       badge: '公示中',
@@ -315,7 +369,10 @@ function getStage() {
   if (now < showcaseEnd) {
     return {
       label: '获奖公示期',
-      detail: '获奖名单公示、权益发放和校园专区上架正在进行。',
+      detail:
+        awardResultConfig.publishStatus === 'public'
+          ? '获奖名单公示、权益发放和校园专区上架正在进行。'
+          : '评审结果正在统计确认，获奖名单确认后统一公示。',
     };
   }
   return {
@@ -1823,6 +1880,13 @@ function AwardNotice({ notice }: { notice: AwardNoticeCard }) {
       title: 'text-amber-950',
       text: 'text-amber-800',
     },
+    finalizing: {
+      wrap: 'border-sky-200 bg-sky-50',
+      icon: 'border-sky-200 bg-white text-sky-700',
+      badge: 'border-sky-200 bg-white text-sky-700',
+      title: 'text-sky-950',
+      text: 'text-sky-800',
+    },
     public: {
       wrap: 'border-emerald-200 bg-emerald-50',
       icon: 'border-emerald-200 bg-white text-emerald-700',
@@ -1854,7 +1918,7 @@ function AwardNotice({ notice }: { notice: AwardNoticeCard }) {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-neutral-400">
-                Awards
+                公示状态
               </span>
               <span className={cn('rounded-full border px-2 py-0.5 text-[12px]', tone.badge)}>
                 {notice.badge}
@@ -1875,32 +1939,280 @@ function AwardNotice({ notice }: { notice: AwardNoticeCard }) {
   );
 }
 
+function AwardPhaseStepper({ notice }: { notice: AwardNoticeCard }) {
+  type PhaseState = 'done' | 'current' | 'upcoming';
+
+  const finalizingState: PhaseState =
+    notice.status === 'public' || notice.status === 'closed'
+      ? 'done'
+      : notice.status === 'finalizing'
+        ? 'current'
+        : 'upcoming';
+  const publicState: PhaseState =
+    notice.status === 'public'
+      ? 'current'
+      : notice.status === 'closed' && awardResultConfig.publishStatus === 'public'
+        ? 'done'
+        : 'upcoming';
+  const phases = [
+    {
+      title: '评审统计',
+      text: '汇总大众投票与专家评审，复核作品和创作者信息。',
+      state: finalizingState,
+    },
+    {
+      title: '名单公示',
+      text: '结果确认后集中展示获奖作品，并同步后续奖励安排。',
+      state: publicState,
+    },
+  ];
+
+  return (
+    <section className="rounded-xl border border-neutral-200 bg-white p-5">
+      <div className="grid gap-4 md:grid-cols-2">
+        {phases.map((phase, index) => {
+          const stateText =
+            phase.state === 'current' ? '进行中' : phase.state === 'done' ? '已完成' : '待开始';
+          return (
+            <div
+              key={phase.title}
+              className={cn(
+                'flex gap-4 border-neutral-100 md:border-l md:first:border-l-0 md:first:pl-0 md:pl-5',
+                phase.state === 'current' ? 'text-neutral-950' : 'text-neutral-500',
+              )}
+            >
+              <div
+                className={cn(
+                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border font-mono text-[11px]',
+                  phase.state === 'current'
+                    ? 'border-emerald-600 bg-emerald-600 text-white'
+                    : phase.state === 'done'
+                      ? 'border-neutral-900 bg-neutral-900 text-white'
+                      : 'border-neutral-300 bg-white text-neutral-400',
+                )}
+              >
+                {index + 1}
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-[15px] font-semibold text-neutral-950">{phase.title}</div>
+                  <span
+                    className={cn(
+                      'rounded-full border px-2 py-0.5 text-[12px]',
+                      phase.state === 'current'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-neutral-200 bg-neutral-50 text-neutral-500',
+                    )}
+                  >
+                    {stateText}
+                  </span>
+                </div>
+                <p className="mt-2 text-[13px] leading-6 text-neutral-500">{phase.text}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function AwardFinalizingPanel({ notice }: { notice: AwardNoticeCard }) {
+  const active = notice.status === 'finalizing';
+
+  return (
+    <section className="rounded-xl border border-neutral-200 bg-white">
+      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="p-5">
+          <div className="flex items-center gap-2 text-[16px] font-semibold text-neutral-950">
+            <ClipboardList className="h-5 w-5 text-sky-600" />
+            {active ? '评审统计正在进行' : '等待进入评审统计'}
+          </div>
+          <p className="mt-2 max-w-2xl text-[13px] leading-6 text-neutral-500">
+            {active
+              ? '当前阶段以结果确认和信息复核为主，名单不会提前展示。确认完成后，这里会切换为获奖名单。'
+              : '投票和专家评审结束后，本页会先展示结果整理进展，再进入名单公示。'}
+          </p>
+
+          <div className="mt-5 divide-y divide-neutral-100 rounded-lg border border-neutral-200">
+            {awardFinalizingSteps.map(([title, text], index) => (
+              <div key={title} className="flex gap-4 p-4">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-neutral-950 font-mono text-[11px] text-white">
+                  {index + 1}
+                </div>
+                <div>
+                  <div className="text-[14px] font-semibold text-neutral-950">{title}</div>
+                  <p className="mt-1 text-[13px] leading-6 text-neutral-500">{text}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <aside className="border-t border-neutral-100 bg-neutral-50 p-5 lg:border-t-0 lg:border-l">
+          <div className="text-[15px] font-semibold text-neutral-950">当前提示</div>
+          <p className="mt-2 text-[13px] leading-6 text-neutral-500">
+            请先关注作品专区和赛事群通知，最终名单会在本页统一更新。
+          </p>
+          <div className="mt-5 space-y-3">
+            <Button
+              asChild
+              variant="outline"
+              className={cn(eventSecondaryButtonClass, 'w-full bg-white')}
+            >
+              <Link to={`/events/${EVENT_SLUG}?tab=submissions`}>
+                查看参赛作品
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button
+              asChild
+              variant="outline"
+              className={cn(eventSecondaryButtonClass, 'w-full bg-white')}
+            >
+              <Link to={`/events/${EVENT_SLUG}`}>
+                返回活动概览
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function AwardResultsPanel() {
+  const visibleGroups = awardResultGroups.filter((group) => group.items.length > 0);
+
+  if (visibleGroups.length === 0) {
+    return (
+      <EmptyState
+        icon={<Trophy className="h-5 w-5" />}
+        title="获奖名单正在录入"
+        description="名单确认后会按奖项展示作品、赛道、创作者和所属学院/单位。"
+      />
+    );
+  }
+
+  return (
+    <section className="rounded-xl border border-neutral-200 bg-white p-5">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-[16px] font-semibold text-neutral-950">
+            <Trophy className="h-5 w-5 text-emerald-600" />
+            获奖名单
+          </div>
+          <p className="mt-2 text-[13px] leading-6 text-neutral-500">
+            以下为本次竞赛获奖作品，公示期内如有疑问可联系赛事组织方。
+          </p>
+        </div>
+        <div className="shrink-0 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 font-mono text-[12px] text-neutral-500">
+          更新时间：{awardResultConfig.updatedAt}
+        </div>
+      </div>
+
+      <div className="space-y-5">
+        {visibleGroups.map((group) => (
+          <div key={group.award}>
+            <div className="mb-3 text-[15px] font-semibold text-neutral-950">{group.award}</div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {group.items.map((item) => (
+                <article
+                  key={`${group.award}-${item.skillName}-${item.maker}`}
+                  className="rounded-lg border border-neutral-200 bg-neutral-50 p-4"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-emerald-200 bg-white px-2 py-0.5 text-[12px] text-emerald-700">
+                      {item.track}
+                    </span>
+                    <span className="text-[12px] text-neutral-500">{item.organization}</span>
+                  </div>
+                  <h3 className="mt-3 text-[16px] font-semibold text-neutral-950">
+                    {item.skillName}
+                  </h3>
+                  <p className="mt-2 text-[13px] leading-6 text-neutral-500">{item.description}</p>
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 pt-3">
+                    <div className="text-[13px] text-neutral-600">创作者：{item.maker}</div>
+                    {item.href ? (
+                      <Link
+                        to={item.href}
+                        className="inline-flex items-center gap-1 text-[13px] font-medium text-emerald-700 hover:text-emerald-800"
+                      >
+                        查看作品
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    ) : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AwardPublicNotes() {
+  return (
+    <section className="rounded-xl border border-neutral-200 bg-neutral-50 p-5">
+      <div className="mb-4 flex items-center gap-2 text-[16px] font-semibold text-neutral-950">
+        <FileText className="h-5 w-5 text-emerald-600" />
+        公示说明
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        {awardPublicNotes.map(([title, text]) => (
+          <div
+            key={title}
+            className="border-neutral-200 md:border-l md:pl-4 md:first:border-l-0 md:first:pl-0"
+          >
+            <div className="text-[14px] font-semibold text-neutral-950">{title}</div>
+            <p className="mt-2 text-[13px] leading-6 text-neutral-500">{text}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AwardPrizeSection() {
+  return (
+    <section className="rounded-xl border border-neutral-200 bg-white p-5">
+      <div className="mb-5 flex items-center gap-2 text-[16px] font-semibold text-neutral-950">
+        <Trophy className="h-5 w-5 text-emerald-600" />
+        奖项设置
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        {awards.map(([title, text]) => (
+          <div key={title} className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+            <div className="text-[14px] font-semibold text-neutral-950">{title}</div>
+            <p className="mt-2 text-[13px] leading-6 text-neutral-500">{text}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function AwardsTab() {
   const notice = getAwardNoticeCard();
+  const showResults =
+    notice.status === 'public' ||
+    (notice.status === 'closed' && awardResultConfig.publishStatus === 'public');
 
   return (
     <div className="space-y-6">
       <SectionTitle
-        eyebrow="Awards"
+        eyebrow="公示"
         title="获奖公示"
-        description="公示期为 6 月 11 日至 6 月 15 日，页面会根据当前时间自动切换公示状态。"
+        description="公示期分为结果整理和名单展示两个阶段，名单确认前不会提前展示获奖结果。"
       />
       <AwardNotice notice={notice} />
-
-      <section className="rounded-xl border border-neutral-200 bg-white p-5">
-        <div className="mb-5 flex items-center gap-2 text-[16px] font-semibold text-neutral-950">
-          <Trophy className="h-5 w-5 text-emerald-600" />
-          奖项设置
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          {awards.map(([title, text]) => (
-            <div key={title} className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
-              <div className="text-[14px] font-semibold text-neutral-950">{title}</div>
-              <p className="mt-2 text-[13px] leading-6 text-neutral-500">{text}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+      <AwardPhaseStepper notice={notice} />
+      {showResults ? <AwardResultsPanel /> : <AwardFinalizingPanel notice={notice} />}
+      <AwardPublicNotes />
+      <AwardPrizeSection />
     </div>
   );
 }

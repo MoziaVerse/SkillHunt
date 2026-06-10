@@ -2148,6 +2148,7 @@ describe('business API', () => {
     });
 
     it('lists public contest submissions with vote summary', async () => {
+      setVotingNow('2026-05-31T12:00:00+08:00');
       const skillId = await ownerSkillId('test-owned-pub');
       await submitContestSkill(skillId, '校园生活');
 
