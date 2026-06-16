@@ -106,7 +106,7 @@ const awards = [
   ['一等奖', '1288 元 Token 充值金、暑期实习直通名额、荣誉证书、阿里云神秘奖励'],
   ['二等奖', '688 元 Token 充值金、暑期实习面试直通资格、荣誉证书、阿里云神秘奖励'],
   ['三等奖', '288 元 Token 充值金、暑期实习面试直通资格、荣誉证书、阿里云神秘奖励'],
-  ['优秀奖', '88 元 Token 充值金、荣誉证书'],
+  ['优秀奖', '100 元 Token 充值金、荣誉证书'],
   ['参与奖', '完成报名并注册 Matrix 平台，可获 38 元 Token 充值金'],
 ] as const;
 
@@ -151,6 +151,13 @@ type AwardNoticeCard = {
 
 type AwardResultPublishStatus = 'finalizing' | 'public';
 
+type AwardScoreBreakdown = {
+  ai: number;
+  vote: number;
+  expert: number;
+  interaction: number;
+};
+
 type AwardResultItem = {
   skillName: string;
   track: ContestTrack;
@@ -169,12 +176,364 @@ const awardResultConfig: {
   publishStatus: AwardResultPublishStatus;
   updatedAt: string;
 } = {
-  // 名单确认后改为 public，并在 awardResultGroups 填入获奖作品。
-  publishStatus: 'finalizing',
-  updatedAt: '名单确认后更新',
+  publishStatus: 'public',
+  updatedAt: '2026 年 6 月 15 日',
 };
 
-const awardResultGroups: AwardResultGroup[] = [];
+const awardResultGroups: AwardResultGroup[] = [
+  {
+    award: '一等奖',
+    items: [
+      {
+        skillName: 'class-research-notes',
+        track: '学习科研',
+        maker: '卢世豪',
+        organization: '计算机学院(软件学院)',
+        description: '专业：软件工程',
+        href: '/skills/loseheart/class-research-notes',
+      },
+      {
+        skillName: '杭电人生模拟器hdu-life-simulator',
+        track: '创意应用',
+        maker: '滕智卓',
+        organization: '自动化学院',
+        description: '专业：自动化',
+        href: '/skills/ellipse/hdu-life-simulator',
+      },
+    ],
+  },
+  {
+    award: '二等奖',
+    items: [
+      {
+        skillName: 'academic-research',
+        track: '学习科研',
+        maker: '虞欣怡、冷雨',
+        organization: '计算机学院(软件学院)',
+        description: '专业：计算机科学与技术',
+        href: '/skills/lengyxy/academic-research',
+      },
+      {
+        skillName: '杭电校园生活助手',
+        track: '校园生活',
+        maker: '王杰、杨忠润',
+        organization: '网络空间安全学院(浙江保密学院)',
+        description: '专业：信息安全',
+        href: '/skills/whiteink/campus-nav',
+      },
+      {
+        skillName: '规划助手',
+        track: '创意应用',
+        maker: '夏涵欣',
+        organization: '计算机学院(软件学院)',
+        description: '专业：计算机科学与技术',
+        href: '/skills/tan90/gui-hua-zhu-shou',
+      },
+    ],
+  },
+  {
+    award: '三等奖',
+    items: [
+      {
+        skillName: 'career-path',
+        track: '学习科研',
+        maker: '杨家鹏、罗临风',
+        organization: '网络空间安全学院(浙江保密学院)',
+        description: '专业：网络空间安全',
+        href: '/skills/xya/career-path',
+      },
+      {
+        skillName: '吃了吗您嘞',
+        track: '校园生活',
+        maker: '钱泽东、夏哲玮',
+        organization: '网络空间安全学院(浙江保密学院)',
+        description: '专业：网络空间安全',
+        href: '/skills/qz-wood/chi-le-ma-nin-le',
+      },
+      {
+        skillName: 'college-life-editor',
+        track: '创意应用',
+        maker: '潘钟祎',
+        organization: '计算机学院(软件学院)',
+        description: '专业：计算机科学与技术',
+        href: '/skills/p-zy1/c-o-l-l-e-g-e-l-i-f-e-e-d-i-t-o-r',
+      },
+      {
+        skillName: '校园招聘.skill',
+        track: '创意应用',
+        maker: '钟国强',
+        organization: '网络空间安全学院(浙江保密学院)',
+        description: '专业：网络工程',
+        href: '/skills/zgq/skill',
+      },
+    ],
+  },
+  {
+    award: '优秀奖',
+    items: [
+      {
+        skillName: 'course-advisor-hdu',
+        track: '校园生活',
+        maker: '石泽熙',
+        organization: '网络空间安全学院(浙江保密学院)',
+        description: '专业：网络工程',
+        href: '/skills/breuky/course-advisor-hdu',
+      },
+      {
+        skillName: 'campus-event-planner',
+        track: '校园生活',
+        maker: '潘钟祎',
+        organization: '计算机学院(软件学院)',
+        description: '专业：计算机科学与技术',
+        href: '/skills/p-zy1/c-a-m-p-u-s-e-v-e-n-t-p-l-a-n-n-e-r',
+      },
+      {
+        skillName: 'internship-assistant',
+        track: '创意应用',
+        maker: '胡卓鸣',
+        organization: '网络空间安全学院(浙江保密学院)',
+        description: '专业：信息安全',
+        href: '/skills/kingmanzzz/internship-assistant',
+      },
+      {
+        skillName: '杭电校园活动导演台 EventOS Pro',
+        track: '校园生活',
+        maker: '苏冰燕、毛怡萍',
+        organization: '计算机学院(软件学院)',
+        description: '专业：计算机科学与技术',
+        href: '/skills/maoyiping/hdu-eventos-pro-skill',
+      },
+      {
+        skillName: '出行规划助手',
+        track: '创意应用',
+        maker: '杨家鹏、罗临风',
+        organization: '网络空间安全学院(浙江保密学院)',
+        description: '专业：网络空间安全',
+        href: '/skills/something/chu-hang-gui-hua-zhu-shou',
+      },
+      {
+        skillName: 'campus-creative-studio',
+        track: '校园生活',
+        maker: '胡颖、潘忠琼',
+        organization: '计算机学院(软件学院)',
+        description: '专业：计算机科学与技术',
+        href: '/skills/hy/campus-creative-studio',
+      },
+      {
+        skillName: 'Sci_Report',
+        track: '学习科研',
+        maker: '郭祥峰',
+        organization: '网络空间安全学院(浙江保密学院)',
+        description: '专业：信息安全',
+        href: '/skills/s0cket/skill',
+      },
+      {
+        skillName: 'lab-data-audit',
+        track: '学习科研',
+        maker: '刘祖一',
+        organization: '网络空间安全学院(浙江保密学院)',
+        description: '专业：信息安全',
+        href: '/skills/lewis/lab-data-audit',
+      },
+      {
+        skillName: 'academic-paper-assistant',
+        track: '学习科研',
+        maker: '陈瀚霄、陈昊天',
+        organization: '网络空间安全学院(浙江保密学院)、计算机学院(软件学院)',
+        description: '专业：网络空间安全、计算机科学与技术',
+        href: '/skills/mojianqinxi/academic-paper-assistant',
+      },
+      {
+        skillName: 'doc2deck',
+        track: '学习科研',
+        maker: '刘昌浩',
+        organization: '网络空间安全学院(浙江保密学院)',
+        description: '专业：信息安全',
+        href: '/skills/haoo/doc2deck',
+      },
+      {
+        skillName: 'smart-schedule',
+        track: '学习科研',
+        maker: '何玥、俞舒静',
+        organization: '计算机学院(软件学院)',
+        description: '专业：计算机科学与技术',
+        href: '/skills/ysj/smart-schedule',
+      },
+    ],
+  },
+];
+
+const awardScoreBySkillName: Record<string, AwardScoreBreakdown> = {
+  'class-research-notes': {
+    ai: 82.6,
+    vote: 93.86,
+    expert: 91,
+    interaction: 100,
+  },
+  '杭电人生模拟器hdu-life-simulator': {
+    ai: 65.6,
+    vote: 100,
+    expert: 85,
+    interaction: 43.93,
+  },
+  'academic-research': {
+    ai: 70.8,
+    vote: 97.12,
+    expert: 55,
+    interaction: 70.01,
+  },
+  杭电校园生活助手: {
+    ai: 82.8,
+    vote: 48.56,
+    expert: 57.5,
+    interaction: 18.92,
+  },
+  规划助手: {
+    ai: 57.8,
+    vote: 75.97,
+    expert: 82.5,
+    interaction: 37.84,
+  },
+  'career-path': {
+    ai: 78,
+    vote: 62.01,
+    expert: 50,
+    interaction: 18.92,
+  },
+  吃了吗您嘞: {
+    ai: 77.8,
+    vote: 27.42,
+    expert: 75,
+    interaction: 29.99,
+  },
+  'college-life-editor': {
+    ai: 73.8,
+    vote: 62.01,
+    expert: 47.5,
+    interaction: 29.99,
+  },
+  '校园招聘.skill': {
+    ai: 77.8,
+    vote: 34.59,
+    expert: 55,
+    interaction: 48.91,
+  },
+  'course-advisor-hdu': {
+    ai: 84.8,
+    vote: 17.3,
+    expert: 47.5,
+    interaction: 56.76,
+  },
+  'campus-event-planner': {
+    ai: 76.4,
+    vote: 48.56,
+    expert: 47.5,
+    interaction: 29.99,
+  },
+  'internship-assistant': {
+    ai: 78,
+    vote: 17.3,
+    expert: 75,
+    interaction: 18.92,
+  },
+  '杭电校园活动导演台 EventOS Pro': {
+    ai: 75.8,
+    vote: 17.3,
+    expert: 60,
+    interaction: 37.84,
+  },
+  出行规划助手: {
+    ai: 49,
+    vote: 75.97,
+    expert: 65,
+    interaction: 48.91,
+  },
+  'campus-creative-studio': {
+    ai: 78.2,
+    vote: 17.3,
+    expert: 60,
+    interaction: 18.92,
+  },
+  Sci_Report: {
+    ai: 65.6,
+    vote: 27.42,
+    expert: 60,
+    interaction: 59.98,
+  },
+  'lab-data-audit': {
+    ai: 87,
+    vote: 0,
+    expert: 40,
+    interaction: 43.93,
+  },
+  'academic-paper-assistant': {
+    ai: 64.2,
+    vote: 34.59,
+    expert: 60,
+    interaction: 43.93,
+  },
+  doc2deck: {
+    ai: 77.8,
+    vote: 17.3,
+    expert: 42.5,
+    interaction: 29.99,
+  },
+  'smart-schedule': {
+    ai: 79.8,
+    vote: 17.3,
+    expert: 40,
+    interaction: 18.92,
+  },
+};
+
+const awardScoringRules = [
+  ['本体评分', '50%', '基于 Skill 本体多轮评测，综合结构完整性、Prompt 设计、创新表达与复用潜力。'],
+  ['用户投票热度', '20%', '按赛事专区投票数进行对数压缩折算，体现校园用户认可度。'],
+  ['专家评分', '20%', '由评审小组综合评定，重点考察创新性、校园场景价值、实用性与可落地性。'],
+  ['平台互动热度', '10%', '按收藏数、下载数和点赞数进行对数压缩折算，体现实际关注度与使用意愿。'],
+] as const;
+
+const awardFinalScoreWeights = {
+  ai: 0.5,
+  vote: 0.2,
+  expert: 0.2,
+  interaction: 0.1,
+} as const;
+
+const awardVisuals = {
+  一等奖: {
+    label: '最高荣誉',
+    accentText: 'text-amber-700',
+    border: 'border-amber-200',
+    softBg: 'bg-amber-50',
+    chip: 'border-amber-200 bg-amber-50 text-amber-700',
+    rank: 'bg-amber-500 text-white',
+  },
+  二等奖: {
+    label: '优秀作品',
+    accentText: 'text-sky-700',
+    border: 'border-sky-200',
+    softBg: 'bg-sky-50',
+    chip: 'border-sky-200 bg-sky-50 text-sky-700',
+    rank: 'bg-sky-600 text-white',
+  },
+  三等奖: {
+    label: '潜力作品',
+    accentText: 'text-emerald-700',
+    border: 'border-emerald-200',
+    softBg: 'bg-emerald-50',
+    chip: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    rank: 'bg-emerald-600 text-white',
+  },
+  优秀奖: {
+    label: '入围展示',
+    accentText: 'text-neutral-700',
+    border: 'border-neutral-200',
+    softBg: 'bg-neutral-50',
+    chip: 'border-neutral-200 bg-neutral-50 text-neutral-600',
+    rank: 'bg-neutral-800 text-white',
+  },
+} as const;
 
 const awardFinalizingSteps = [
   ['投票结果汇总', '整理大众投票记录，核对异常投票与重复提交情况。'],
@@ -185,8 +544,8 @@ const awardFinalizingSteps = [
 
 const awardPublicNotes = [
   ['公示范围', '展示获奖作品、奖项、创作者姓名及所属学院/单位。'],
-  ['异议反馈', '公示期内如有疑问，可在赛事企微群联系组织方。'],
-  ['后续安排', '公示结束后推进权益确认、奖励发放和校园专区上架。'],
+  ['复核反馈', '如需核对作品、奖项或评分信息，可在赛事企微群联系组织方。'],
+  ['后续安排', '组织方将继续推进权益确认、奖励发放和校园专区上架。'],
 ] as const;
 
 const votingReferenceItems = [
@@ -317,6 +676,18 @@ function getAwardNoticeCard(now = new Date()): AwardNoticeCard {
       detail: '公示期间会同步推进奖励发放、权益确认和校园专区上架。',
     };
   }
+
+  if (awardResultConfig.publishStatus === 'public') {
+    return {
+      status: 'public',
+      badge: '可复查',
+      title: '获奖结果已公布',
+      date: '6 月 16 日起长期保留',
+      text: '获奖名单、奖项和最终得分会在本页长期保留，便于参赛者和组织方复查。',
+      detail: '后续如需核对作品、奖项或评分机制，可继续使用本页作为赛事结果公示入口。',
+    };
+  }
+
   return {
     status: 'closed',
     badge: '已结束',
@@ -376,13 +747,22 @@ function getStage() {
     };
   }
   return {
-    label: '活动已结束',
-    detail: '获奖作品将沉淀为杭电校园 Skills 专区，供师生持续发现与使用。',
+    label: '获奖结果已公布',
+    detail: '获奖名单和评分结果会长期保留，作为本次竞赛的结果复查页面。',
   };
 }
 
-function parseTab(value: string | null): EventTab {
-  return tabs.some((tab) => tab.key === value) ? (value as EventTab) : 'overview';
+function shouldPrioritizeAwardResults(now = new Date()) {
+  const showcaseEnd = dateInShanghai('2026-06-16T00:00:00');
+  return awardResultConfig.publishStatus === 'public' && now >= showcaseEnd;
+}
+
+function getDefaultEventTab(now = new Date()): EventTab {
+  return shouldPrioritizeAwardResults(now) ? 'awards' : 'overview';
+}
+
+function parseTab(value: string | null, defaultTab: EventTab): EventTab {
+  return tabs.some((tab) => tab.key === value) ? (value as EventTab) : defaultTab;
 }
 
 function isOwnedSkill(item: SkillListItem): item is OwnedSkillListItem {
@@ -832,6 +1212,8 @@ function Hero({
   stage: ReturnType<typeof getStage>;
   onSignupClick: () => void;
 }) {
+  const prioritizeAwardResults = shouldPrioritizeAwardResults();
+
   return (
     <section className="border-b border-neutral-200 px-6 py-14">
       <div className="mx-auto max-w-[1200px]">
@@ -852,29 +1234,53 @@ function Hero({
             能力被发现、讨论和使用。
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Button type="button" onClick={onSignupClick} className={eventPrimaryButtonClass}>
-              填写报名问卷
-              <QrCode className="h-4 w-4" />
-            </Button>
-            <Button asChild variant="outline" className={eventSecondaryButtonClass}>
-              <Link to={`/events/${EVENT_SLUG}?tab=submit`}>
-                检查参赛资格
-                <CheckCircle2 className="h-4 w-4" />
-              </Link>
-            </Button>
-            <Button asChild variant="outline" className={eventSecondaryButtonClass}>
-              <Link to="/publish/skill">
-                发布 Skill
-                <Upload className="h-4 w-4" />
-              </Link>
-            </Button>
-            <Button asChild variant="outline" className={eventSecondaryButtonClass}>
-              <Link to={`/events/${EVENT_SLUG}?tab=submit`}>
-                选择 Skill 参赛
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
+            {prioritizeAwardResults ? (
+              <>
+                <Button asChild className={eventPrimaryButtonClass}>
+                  <Link to={`/events/${EVENT_SLUG}?tab=awards`}>
+                    查看获奖结果
+                    <Trophy className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" className={eventSecondaryButtonClass}>
+                  <Link to={`/events/${EVENT_SLUG}?tab=submissions`}>
+                    查看参赛作品
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button type="button" onClick={onSignupClick} className={eventPrimaryButtonClass}>
+                  填写报名问卷
+                  <QrCode className="h-4 w-4" />
+                </Button>
+                <Button asChild variant="outline" className={eventSecondaryButtonClass}>
+                  <Link to={`/events/${EVENT_SLUG}?tab=submit`}>
+                    检查参赛资格
+                    <CheckCircle2 className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" className={eventSecondaryButtonClass}>
+                  <Link to="/publish/skill">
+                    发布 Skill
+                    <Upload className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" className={eventSecondaryButtonClass}>
+                  <Link to={`/events/${EVENT_SLUG}?tab=submit`}>
+                    选择 Skill 参赛
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              </>
+            )}
           </div>
+          {prioritizeAwardResults ? (
+            <p className="mt-3 text-[13px] leading-6 text-neutral-500">
+              报名、提交和投票已结束，当前页面优先展示获奖结果与评分机制。
+            </p>
+          ) : null}
         </div>
       </div>
     </section>
@@ -1972,7 +2378,13 @@ function AwardPhaseStepper({ notice }: { notice: AwardNoticeCard }) {
       <div className="grid gap-4 md:grid-cols-2">
         {phases.map((phase, index) => {
           const stateText =
-            phase.state === 'current' ? '进行中' : phase.state === 'done' ? '已完成' : '待开始';
+            phase.state === 'current'
+              ? notice.badge === '可复查' && phase.title === '名单公示'
+                ? '可复查'
+                : '进行中'
+              : phase.state === 'done'
+                ? '已完成'
+                : '待开始';
           return (
             <div
               key={phase.title}
@@ -2095,62 +2507,207 @@ function AwardResultsPanel() {
     );
   }
 
+  let rankCursor = 0;
+  const rankedGroups = visibleGroups.map((group) => ({
+    ...group,
+    items: group.items.map((item) => {
+      rankCursor += 1;
+      return {
+        ...item,
+        award: group.award,
+        rank: rankCursor,
+        scores: awardScoreBySkillName[item.skillName],
+      };
+    }),
+  }));
+  const totalWinners = rankedGroups.reduce((sum, group) => sum + group.items.length, 0);
+  const rankedItems = rankedGroups.flatMap((group) => group.items);
+
   return (
-    <section className="rounded-xl border border-neutral-200 bg-white p-5">
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-[16px] font-semibold text-neutral-950">
-            <Trophy className="h-5 w-5 text-emerald-600" />
-            获奖名单
+    <section className="space-y-6">
+      <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+        <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="p-5 sm:p-6">
+            <div className="flex items-center gap-2 text-[13px] font-medium text-emerald-700">
+              <Trophy className="h-4 w-4" />
+              杭电 Skills 创意竞赛
+            </div>
+            <h2 className="mt-3 text-[28px] font-semibold leading-tight text-neutral-950 sm:text-[32px]">
+              获奖名单正式公示
+            </h2>
+            <p className="mt-3 max-w-2xl text-[14px] leading-7 text-neutral-500">
+              以下为本次竞赛获奖作品。名单按奖项分组展示，如需复核可联系赛事组织方。
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-[12px] text-neutral-600">
+                共 {totalWinners} 个获奖作品
+              </span>
+              <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-[12px] text-neutral-600">
+                更新时间：{awardResultConfig.updatedAt}
+              </span>
+            </div>
           </div>
-          <p className="mt-2 text-[13px] leading-6 text-neutral-500">
-            以下为本次竞赛获奖作品，公示期内如有疑问可联系赛事组织方。
-          </p>
-        </div>
-        <div className="shrink-0 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 font-mono text-[12px] text-neutral-500">
-          更新时间：{awardResultConfig.updatedAt}
+
+          <div className="border-t border-neutral-100 bg-neutral-50 p-5 lg:border-t-0 lg:border-l">
+            <div className="grid grid-cols-2 gap-3">
+              {rankedGroups.map((group) => {
+                const visual = getAwardVisual(group.award);
+                return (
+                  <div
+                    key={group.award}
+                    className={cn('rounded-lg border bg-white p-4', visual.border)}
+                  >
+                    <div className={cn('text-[12px] font-medium', visual.accentText)}>
+                      {visual.label}
+                    </div>
+                    <div className="mt-2 text-[22px] font-semibold text-neutral-950">
+                      {group.items.length}
+                    </div>
+                    <div className="mt-1 text-[12px] text-neutral-500">{group.award}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="space-y-5">
-        {visibleGroups.map((group) => (
-          <div key={group.award}>
-            <div className="mb-3 text-[15px] font-semibold text-neutral-950">{group.award}</div>
-            <div className="grid gap-3 md:grid-cols-2">
-              {group.items.map((item) => (
-                <article
-                  key={`${group.award}-${item.skillName}-${item.maker}`}
-                  className="rounded-lg border border-neutral-200 bg-neutral-50 p-4"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full border border-emerald-200 bg-white px-2 py-0.5 text-[12px] text-emerald-700">
-                      {item.track}
-                    </span>
-                    <span className="text-[12px] text-neutral-500">{item.organization}</span>
-                  </div>
-                  <h3 className="mt-3 text-[16px] font-semibold text-neutral-950">
-                    {item.skillName}
-                  </h3>
-                  <p className="mt-2 text-[13px] leading-6 text-neutral-500">{item.description}</p>
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 pt-3">
-                    <div className="text-[13px] text-neutral-600">创作者：{item.maker}</div>
-                    {item.href ? (
-                      <Link
-                        to={item.href}
-                        className="inline-flex items-center gap-1 text-[13px] font-medium text-emerald-700 hover:text-emerald-800"
-                      >
-                        查看作品
-                        <ArrowRight className="h-3.5 w-3.5" />
-                      </Link>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
-            </div>
+      <AwardResultsTable items={rankedItems} />
+    </section>
+  );
+}
+
+type RankedAwardResultItem = AwardResultItem & {
+  award: string;
+  rank: number;
+  scores?: AwardScoreBreakdown;
+};
+
+function getAwardVisual(award: string) {
+  return awardVisuals[award as keyof typeof awardVisuals] ?? awardVisuals.优秀奖;
+}
+
+function formatAwardScore(value: number | undefined) {
+  if (typeof value !== 'number') return '-';
+  return value
+    .toFixed(2)
+    .replace(/\.00$/, '')
+    .replace(/(\.\d)0$/, '$1');
+}
+
+function calculateAwardFinalScore(scores: AwardScoreBreakdown | undefined) {
+  if (!scores) return undefined;
+
+  return (
+    scores.ai * awardFinalScoreWeights.ai +
+    scores.vote * awardFinalScoreWeights.vote +
+    scores.expert * awardFinalScoreWeights.expert +
+    scores.interaction * awardFinalScoreWeights.interaction
+  );
+}
+
+function AwardResultsTable({ items }: { items: RankedAwardResultItem[] }) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+      <div className="flex flex-col gap-3 border-b border-neutral-200 bg-neutral-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-[16px] font-semibold text-neutral-950">
+            <ClipboardList className="h-5 w-5 text-emerald-600" />
+            获奖与评分明细
           </div>
-        ))}
+          <p className="mt-1 text-[13px] leading-6 text-neutral-500">
+            表格按最终公示顺序排列，展示奖项、作品信息和按新权重计算后的最终得分。
+          </p>
+        </div>
+        <div className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-[12px] text-neutral-500">
+          共 {items.length} 条
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1040px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-neutral-200 bg-white text-[12px] font-semibold text-neutral-500">
+              <th className="w-[76px] px-4 py-3">序号</th>
+              <th className="w-[110px] px-4 py-3">奖项</th>
+              <th className="w-[250px] px-4 py-3">作品</th>
+              <th className="w-[150px] px-4 py-3">创作者</th>
+              <th className="w-[250px] px-4 py-3">学院 / 专业</th>
+              <th className="w-[110px] px-3 py-3 text-right">最终得分</th>
+              <th className="w-[132px] px-4 py-3 text-right">作品链接</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-neutral-100 text-[13px]">
+            {items.map((item) => (
+              <AwardTableRow key={`${item.award}-${item.skillName}-${item.maker}`} item={item} />
+            ))}
+          </tbody>
+        </table>
       </div>
     </section>
+  );
+}
+
+function AwardTableRow({ item }: { item: RankedAwardResultItem }) {
+  const visual = getAwardVisual(item.award);
+  const rankText = String(item.rank).padStart(2, '0');
+  const finalScore = calculateAwardFinalScore(item.scores);
+
+  return (
+    <tr className="bg-white align-top transition hover:bg-neutral-50">
+      <td className="px-4 py-4">
+        <span
+          className={cn(
+            'inline-flex h-8 w-8 items-center justify-center rounded-lg font-mono text-[12px] font-semibold',
+            visual.rank,
+          )}
+        >
+          {rankText}
+        </span>
+      </td>
+      <td className="px-4 py-4">
+        <span
+          className={cn('inline-flex rounded-full border px-2 py-0.5 text-[12px]', visual.chip)}
+        >
+          {item.award}
+        </span>
+      </td>
+      <td className="px-4 py-4">
+        <div className="max-w-[230px]">
+          <div className="break-words text-[14px] font-semibold leading-5 text-neutral-950">
+            {item.skillName}
+          </div>
+          <div className="mt-2 inline-flex rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-[12px] text-neutral-500">
+            {item.track}
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-4 text-neutral-700">{item.maker}</td>
+      <td className="px-4 py-4">
+        <div className="max-w-[230px] text-neutral-700">{item.organization}</div>
+        <div className="mt-1 text-[12px] text-neutral-400">{item.description}</div>
+      </td>
+      <td className="px-3 py-4 text-right font-mono text-[15px] font-semibold text-neutral-950">
+        {formatAwardScore(finalScore)}
+      </td>
+      <td className="px-4 py-4 text-right">
+        <AwardItemAction href={item.href} />
+      </td>
+    </tr>
+  );
+}
+
+function AwardItemAction({ href }: { href?: string }) {
+  if (!href) return null;
+
+  return (
+    <Link
+      to={href}
+      className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[13px] font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-800"
+    >
+      查看作品
+      <ArrowRight className="h-3.5 w-3.5" />
+    </Link>
   );
 }
 
@@ -2169,6 +2726,38 @@ function AwardPublicNotes() {
           >
             <div className="text-[14px] font-semibold text-neutral-950">{title}</div>
             <p className="mt-2 text-[13px] leading-6 text-neutral-500">{text}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AwardScoringSection() {
+  return (
+    <section className="rounded-xl border border-neutral-200 bg-white p-5">
+      <div className="mb-5 flex items-center gap-2 text-[16px] font-semibold text-neutral-950">
+        <ClipboardList className="h-5 w-5 text-emerald-600" />
+        评分机制
+      </div>
+      <div className="overflow-hidden rounded-lg border border-neutral-200">
+        <div className="grid grid-cols-[120px_72px_minmax(0,1fr)] bg-neutral-50 text-[12px] font-semibold text-neutral-500">
+          <div className="border-r border-neutral-200 px-3 py-2">评分模块</div>
+          <div className="border-r border-neutral-200 px-3 py-2 text-center">占比</div>
+          <div className="px-3 py-2">说明</div>
+        </div>
+        {awardScoringRules.map(([title, weight, text]) => (
+          <div
+            key={title}
+            className="grid grid-cols-[120px_72px_minmax(0,1fr)] border-t border-neutral-200 text-[13px] leading-6"
+          >
+            <div className="border-r border-neutral-200 px-3 py-3 font-medium text-neutral-950">
+              {title}
+            </div>
+            <div className="border-r border-neutral-200 px-3 py-3 text-center font-mono text-neutral-700">
+              {weight}
+            </div>
+            <div className="px-3 py-3 text-neutral-500">{text}</div>
           </div>
         ))}
       </div>
@@ -2206,11 +2795,12 @@ function AwardsTab() {
       <SectionTitle
         eyebrow="公示"
         title="获奖公示"
-        description="公示期分为结果整理和名单展示两个阶段，名单确认前不会提前展示获奖结果。"
+        description="以下为本次 Skills 创意竞赛获奖名单与评分机制说明。"
       />
       <AwardNotice notice={notice} />
       <AwardPhaseStepper notice={notice} />
       {showResults ? <AwardResultsPanel /> : <AwardFinalizingPanel notice={notice} />}
+      {showResults ? <AwardScoringSection /> : null}
       <AwardPublicNotes />
       <AwardPrizeSection />
     </div>
@@ -2229,11 +2819,12 @@ export default function HduSkillsEventPage() {
   const stage = getStage();
   const [searchParams, setSearchParams] = useSearchParams();
   const [signupModalOpen, setSignupModalOpen] = useState(false);
-  const activeTab = parseTab(searchParams.get('tab'));
+  const defaultTab = getDefaultEventTab();
+  const activeTab = parseTab(searchParams.get('tab'), defaultTab);
 
   const setActiveTab = (tab: EventTab) => {
     const next = new URLSearchParams(searchParams);
-    if (tab === 'overview') next.delete('tab');
+    if (tab === defaultTab) next.delete('tab');
     else next.set('tab', tab);
     setSearchParams(next, { replace: true });
   };
