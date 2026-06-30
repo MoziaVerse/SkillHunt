@@ -1,3 +1,4 @@
+import { DemoVideoPlayer } from '@/components/demo-video-player';
 import { TwemojiIcon } from '@/components/twemoji-icon';
 import { Button } from '@/components/ui/button';
 import { type ContestEligibilityResponse, type MeResponse, apiClient } from '@/lib/api-client';
@@ -950,15 +951,12 @@ function DemoVideoModal({
           </button>
         </div>
         <div className="bg-black">
-          <video
+          <DemoVideoPlayer
             src={video.url}
-            controls
             autoPlay
-            playsInline
-            className="aspect-video max-h-[calc(100dvh-8rem)] w-full bg-black object-contain"
-          >
-            <track kind="captions" src="data:text/vtt;charset=utf-8,WEBVTT%0A" srcLang="zh-CN" />
-          </video>
+            className="max-h-[calc(100dvh-8rem)] rounded-none"
+            videoClassName="max-h-[calc(100dvh-12rem)]"
+          />
         </div>
       </dialog>
     </div>

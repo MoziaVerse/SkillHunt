@@ -1,4 +1,5 @@
 import { CommentsSection, CommunityStats } from '@/components/community-panel';
+import { DemoVideoPlayer } from '@/components/demo-video-player';
 import { InstallCommand } from '@/components/install-command';
 import { Logo } from '@/components/logo';
 import { MarkdownView } from '@/components/markdown-view';
@@ -1535,14 +1536,10 @@ function DetailContent({
             <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-neutral-500 mb-3">
               演示视频
             </div>
-            <video
+            <DemoVideoPlayer
               src={apiClient.getSkillDemoVideoUrl(skill.owner.handle, skill.slug)}
-              controls
-              preload="metadata"
-              className="aspect-video w-full rounded-xl bg-neutral-950"
-            >
-              <track kind="captions" label="暂无字幕" src="data:text/vtt,WEBVTT%0A" />
-            </video>
+              className="w-full rounded-xl bg-neutral-950"
+            />
           </section>
         )}
         <AboutSection skill={skill} />
