@@ -35,9 +35,14 @@ function MetricIcon({ emoji, value }: { emoji: string; value: number }) {
   );
 }
 
+function visibleTags(item: { tags: string[]; externalTags: string[] }) {
+  return [...new Set([...item.externalTags, ...item.tags])].slice(0, 3);
+}
+
 function SkillCard({ skill }: { skill: SkillListItem }) {
   const icon =
     skill.icon ?? (skill.type === 'owned' ? DEFAULT_SKILL_ICON : DEFAULT_REFERENCED_SKILL_ICON);
+  const tags = visibleTags(skill);
   return (
     <Link to={`/skills/${skill.owner.handle}/${skill.slug}`} className="skill-card flex flex-col">
       <div className="aspect-square h-40 overflow-hidden bg-gradient-to-br from-neutral-50 to-neutral-100">
@@ -62,6 +67,17 @@ function SkillCard({ skill }: { skill: SkillListItem }) {
           {skill.description}
         </p>
 
+        <div className="mt-3 flex flex-wrap gap-1 overflow-hidden">
+          {tags.map((tag) => (
+            <span
+              key={tag}
+              className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600"
+            >
+              #{tag}
+            </span>
+          ))}
+        </div>
+
         <div className="mt-3 flex items-center justify-between border-t border-neutral-100 pt-3">
           <span className="text-[12px] text-neutral-500">
             作者 <span className="font-medium text-neutral-700">@{skill.owner.handle}</span>
@@ -84,6 +100,7 @@ function SkillCard({ skill }: { skill: SkillListItem }) {
 }
 
 function PackageCard({ pkg }: { pkg: SkillPackageListItem }) {
+  const tags = visibleTags(pkg);
   return (
     <Link to={`/packages/${pkg.owner.handle}/${pkg.slug}`} className="skill-card flex flex-col">
       <div className="aspect-square h-40 overflow-hidden bg-gradient-to-br from-neutral-50 to-neutral-100">
@@ -113,7 +130,7 @@ function PackageCard({ pkg }: { pkg: SkillPackageListItem }) {
         </p>
 
         <div className="mt-3 flex flex-wrap gap-1 overflow-hidden">
-          {pkg.tags.slice(0, 3).map((tag) => (
+          {tags.map((tag) => (
             <span
               key={tag}
               className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600"

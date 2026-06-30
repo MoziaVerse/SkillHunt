@@ -19,6 +19,11 @@ import {
   normalizeSkillFileEntry,
 } from '../lib/skill-file-payload';
 import {
+  parseTagJson,
+  publishableExternalTagsJson,
+  publishableTagFilterCondition,
+} from './publishable-external-tag-service';
+import {
   addPublishableBookmark,
   addPublishableUpvote,
   createPublishableComment,
@@ -60,6 +65,7 @@ export interface SkillPackageWithOwner {
   description: string;
   visibility: 'public' | 'private';
   tags: string[];
+  externalTags: string[];
   icon: string | null;
   coverImage: string | null;
   createdAt: Date;
@@ -171,6 +177,7 @@ const skillSelectExtras = () => ({
   bookmarkCount: sql<number>`0`,
   viewerHasUpvoted: sql<number>`0`,
   viewerHasBookmarked: sql<number>`0`,
+  externalTags: publishableExternalTagsJson(),
 });
 
 const packageSelectExtras = (viewerUserId: string | null) => ({
@@ -200,6 +207,7 @@ const packageSelectExtras = (viewerUserId: string | null) => ({
           and ${publishableBookmarks.userId} = ${viewerUserId}
       )`
     : sql<number>`0`,
+  externalTags: publishableExternalTagsJson(),
 });
 
 function mapPackageRow<
@@ -213,11 +221,13 @@ function mapPackageRow<
     bookmarkCount: number;
     viewerHasUpvoted: number | boolean;
     viewerHasBookmarked: number | boolean;
+    externalTags: unknown;
   },
 >(row: T): SkillPackageWithOwner {
   return {
     ...row.publishable,
     ...row.package,
+    externalTags: parseTagJson(row.externalTags),
     owner: row.owner,
     skillCount: Number(row.skillCount ?? 0),
     upvoteCount: Number(row.upvoteCount ?? 0),
@@ -239,11 +249,13 @@ function mapSkillRow<
     bookmarkCount: number;
     viewerHasUpvoted: number | boolean;
     viewerHasBookmarked: number | boolean;
+    externalTags: unknown;
   },
 >(row: T): SkillWithOwner {
   return {
     ...row.publishable,
     ...row.skill,
+    externalTags: parseTagJson(row.externalTags),
     owner: row.owner,
     downloadCount: Number(row.downloadCount ?? 0),
     upvoteCount: Number(row.upvoteCount ?? 0),
@@ -395,12 +407,8 @@ export async function listSkillPackagesForApi(
   }
 
   if (opts.tags.length > 0) {
-    conditions.push(
-      sql`exists (select 1 from json_each(${publishables.tags}) where json_each.value in (${sql.join(
-        opts.tags.map((tag) => sql`${tag}`),
-        sql`, `,
-      )}))`,
-    );
+    const tagCond = publishableTagFilterCondition(opts.tags);
+    if (tagCond) conditions.push(tagCond);
   }
 
   const where = conditions.length ? and(...conditions) : undefined;

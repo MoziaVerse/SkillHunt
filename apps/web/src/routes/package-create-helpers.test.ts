@@ -21,6 +21,7 @@ function skill(id: string, overrides: Partial<OwnedSkillListItem> = {}): OwnedSk
     name: `Skill ${id}`,
     description: `Description ${id}`,
     tags: [],
+    externalTags: [],
     icon: null,
     coverImage: null,
     demoVideoUrl: null,

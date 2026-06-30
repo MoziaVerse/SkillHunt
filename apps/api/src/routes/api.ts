@@ -165,6 +165,7 @@ const baseFromRow = (r: SkillWithOwner) => ({
   name: r.name,
   description: r.description,
   tags: r.tags,
+  externalTags: r.externalTags,
   icon: r.icon ?? null,
   coverImage: r.coverImage ?? null,
   demoVideoUrl: r.demoVideoUrl ?? null,
@@ -309,6 +310,7 @@ const toPackageListItem = (origin: string, pkg: SkillPackageWithOwner) => ({
   description: pkg.description,
   visibility: pkg.visibility,
   tags: pkg.tags,
+  externalTags: pkg.externalTags,
   icon: pkg.icon,
   coverImage: pkg.coverImage,
   owner: pkg.owner,
@@ -605,7 +607,8 @@ apiRoute.get('/publishables', zValidator('query', listPublishablesQuerySchema), 
 });
 
 apiRoute.get('/tags', async (c) => {
-  const tags = await listAllTags();
+  const includeExternal = ['1', 'true'].includes(c.req.query('includeExternal') ?? '');
+  const tags = await listAllTags({ includeExternal });
   return c.json({ tags });
 });
 

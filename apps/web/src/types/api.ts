@@ -15,6 +15,7 @@ export interface BaseSkill {
   name: string;
   description: string;
   tags: string[];
+  externalTags: string[];
   icon: string | null;
   coverImage: string | null;
   demoVideoUrl: string | null;
@@ -62,6 +63,7 @@ export interface SkillPackageListItem {
   description: string;
   visibility: 'public' | 'private';
   tags: string[];
+  externalTags: string[];
   icon: string | null;
   coverImage: string | null;
   owner: OwnerInfo;

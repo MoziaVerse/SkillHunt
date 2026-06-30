@@ -17,6 +17,17 @@ function parseContentFilter(value: string | null): ContentFilter {
   return 'all';
 }
 
+function parseSelectedTags(searchParams: URLSearchParams) {
+  return [
+    ...new Set(
+      searchParams
+        .getAll('tag')
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
 function apiKind(content: ContentFilter) {
   if (content === 'skills') return 'skill' as const;
   if (content === 'packages') return 'package' as const;
@@ -51,6 +62,10 @@ function itemTitle(item: PublishableListItem) {
 function itemIcon(item: PublishableListItem) {
   if (item.kind === 'package') return item.item.icon ?? DEFAULT_SKILL_PACKAGE_ICON;
   return item.item.icon ?? DEFAULT_SKILL_ICON;
+}
+
+function itemTags(item: PublishableListItem) {
+  return [...new Set([...item.item.externalTags, ...item.item.tags])];
 }
 
 function itemTarget(item: PublishableListItem) {
@@ -200,6 +215,77 @@ function FilterBar({
   );
 }
 
+function TagFilterBar({
+  tags,
+  selectedTags,
+  loading,
+  onToggle,
+  onClear,
+}: {
+  tags: string[];
+  selectedTags: string[];
+  loading: boolean;
+  onToggle: (tag: string) => void;
+  onClear: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (tags.length === 0 && !loading) return null;
+
+  return (
+    <div className="px-6 pb-6">
+      <div className="mx-auto flex max-w-[1200px] items-start gap-2">
+        <span className="mr-1 shrink-0 pt-1 text-[12px] text-neutral-500">标签</span>
+        <div
+          className={cn(
+            'flex min-w-0 flex-1 flex-wrap gap-2 overflow-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+            expanded ? 'max-h-[104px] overflow-y-auto' : 'max-h-8',
+          )}
+        >
+          <button
+            type="button"
+            onClick={onClear}
+            className={cn(
+              'shrink-0 rounded-full border px-3 py-1 text-[12px] transition',
+              selectedTags.length === 0
+                ? 'border-neutral-900 bg-neutral-900 text-white'
+                : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-400',
+            )}
+          >
+            全部
+          </button>
+          {tags.map((tag) => {
+            const active = selectedTags.includes(tag);
+            return (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => onToggle(tag)}
+                className={cn(
+                  'shrink-0 rounded-full border px-3 py-1 text-[12px] transition',
+                  active
+                    ? 'border-emerald-700 bg-emerald-700 text-white'
+                    : 'border-neutral-200 bg-white text-neutral-600 hover:border-emerald-300 hover:text-emerald-700',
+                )}
+              >
+                {tag}
+              </button>
+            );
+          })}
+          {loading ? <span className="shrink-0 text-[12px] text-neutral-400">加载中…</span> : null}
+        </div>
+        <button
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+          className="shrink-0 rounded-full border border-neutral-200 bg-white px-3 py-1 text-[12px] text-neutral-600 transition hover:border-neutral-400 hover:text-neutral-900"
+        >
+          {expanded ? '收起' : '展开'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SpotlightRow({ items }: { items: PublishableListItem[] }) {
   if (items.length === 0) return null;
   return (
@@ -245,14 +331,16 @@ function SpotlightRow({ items }: { items: PublishableListItem[] }) {
                 {item.item.description}
               </p>
               <div className="mt-4 flex flex-wrap items-center gap-2">
-                {item.item.tags.slice(0, 3).map((tag) => (
-                  <span
-                    key={tag}
-                    className="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600"
-                  >
-                    #{tag}
-                  </span>
-                ))}
+                {itemTags(item)
+                  .slice(0, 3)
+                  .map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600"
+                    >
+                      #{tag}
+                    </span>
+                  ))}
               </div>
               <div className="mt-4 flex items-center gap-4 text-[12px] text-neutral-500">
                 {metrics.map((metric) => (
@@ -274,11 +362,14 @@ export default function SkillsList() {
   const [content, setContentState] = useState<ContentFilter>(() =>
     parseContentFilter(searchParams.get('content')),
   );
+  const [selectedTags, setSelectedTags] = useState<string[]>(() => parseSelectedTags(searchParams));
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortMode>('recent');
   const [items, setItems] = useState<PublishableListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [tagsLoading, setTagsLoading] = useState(true);
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
@@ -286,7 +377,27 @@ export default function SkillsList() {
 
   useEffect(() => {
     setContentState(parseContentFilter(searchParams.get('content')));
+    setSelectedTags(parseSelectedTags(searchParams));
   }, [searchParams]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setTagsLoading(true);
+    apiClient
+      .listTags({ includeExternal: true })
+      .then((res) => {
+        if (!cancelled) setAvailableTags(res.tags);
+      })
+      .catch(() => {
+        if (!cancelled) setAvailableTags([]);
+      })
+      .finally(() => {
+        if (!cancelled) setTagsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -296,7 +407,7 @@ export default function SkillsList() {
       .listPublishables({
         kind: apiKind(content),
         q: query.trim() || undefined,
-        tag: [],
+        tag: selectedTags,
         sort,
         limit: PAGE_SIZE,
         offset: 0,
@@ -320,7 +431,7 @@ export default function SkillsList() {
     return () => {
       cancelled = true;
     };
-  }, [content, query, sort]);
+  }, [content, query, selectedTags, sort]);
 
   const setContent = (next: ContentFilter) => {
     setContentState(next);
@@ -330,6 +441,25 @@ export default function SkillsList() {
     setSearchParams(nextParams, { replace: true });
   };
 
+  const updateSelectedTags = (nextTags: string[]) => {
+    const normalizedTags = [...new Set(nextTags.map((tag) => tag.trim()).filter(Boolean))];
+    setSelectedTags(normalizedTags);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('tag');
+    for (const tag of normalizedTags) nextParams.append('tag', tag);
+    setSearchParams(nextParams, { replace: true });
+  };
+
+  const toggleTag = (tag: string) => {
+    updateSelectedTags(
+      selectedTags.includes(tag)
+        ? selectedTags.filter((selectedTag) => selectedTag !== tag)
+        : [...selectedTags, tag],
+    );
+  };
+
+  const clearTags = () => updateSelectedTags([]);
+
   const loadMore = useCallback(async () => {
     if (loading || fetching || items.length >= total) return;
     setFetching(true);
@@ -338,7 +468,7 @@ export default function SkillsList() {
       const res = await apiClient.listPublishables({
         kind: apiKind(content),
         q: query.trim() || undefined,
-        tag: [],
+        tag: selectedTags,
         sort,
         limit: PAGE_SIZE,
         offset: items.length,
@@ -350,13 +480,25 @@ export default function SkillsList() {
     } finally {
       setFetching(false);
     }
-  }, [content, fetching, items.length, loading, query, sort, total]);
+  }, [content, fetching, items.length, loading, query, selectedTags, sort, total]);
 
   const hasQuery = query.trim().length > 0;
-  const showSpotlight = !hasQuery && items.length > 0;
+  const hasSelectedTags = selectedTags.length > 0;
+  const hasActiveFilter = hasQuery || hasSelectedTags;
+  const showSpotlight = !hasActiveFilter && items.length > 0;
   const spotlight = useMemo(() => (showSpotlight ? items.slice(0, 3) : []), [items, showSpotlight]);
-  const freshLaunches = hasQuery ? items : items.slice(3);
+  const freshLaunches = hasActiveFilter ? items : items.slice(3);
   const hasMore = items.length < total;
+  const tagOptions = useMemo(
+    () => [...new Set([...selectedTags, ...availableTags])],
+    [availableTags, selectedTags],
+  );
+  const filterLabel = [
+    hasQuery ? `「${query.trim()}」` : null,
+    hasSelectedTags ? selectedTags.map((tag) => `#${tag}`).join('、') : null,
+  ]
+    .filter(Boolean)
+    .join(' + ');
 
   useEffect(() => {
     const target = loadMoreRef.current;
@@ -375,6 +517,7 @@ export default function SkillsList() {
 
   const reset = () => {
     setContent('all');
+    clearTags();
     setQuery('');
     setLoadMoreError(null);
   };
@@ -383,6 +526,13 @@ export default function SkillsList() {
     <>
       <Hero query={query} onQueryChange={setQuery} />
       <FilterBar content={content} setContent={setContent} sort={sort} setSort={setSort} />
+      <TagFilterBar
+        tags={tagOptions}
+        selectedTags={selectedTags}
+        loading={tagsLoading}
+        onToggle={toggleTag}
+        onClear={clearTags}
+      />
 
       {!loading && !error && showSpotlight && <SpotlightRow items={spotlight} />}
 
@@ -401,10 +551,10 @@ export default function SkillsList() {
       {!error && !loading && items.length === 0 && (
         <div className="min-h-[400px] px-6 py-24 text-center">
           <div className="mb-3 font-mono text-[12px] uppercase tracking-[0.18em] text-neutral-400">
-            {hasQuery ? '未找到匹配结果' : '无匹配结果'}
+            {hasActiveFilter ? '未找到匹配结果' : '无匹配结果'}
           </div>
           <div className="text-[15px] text-neutral-700">
-            {hasQuery ? '换个关键词或清除筛选条件试试。' : emptyContentText(content)}
+            {hasActiveFilter ? '换个关键词或清除筛选条件试试。' : emptyContentText(content)}
           </div>
           <button
             type="button"
@@ -424,13 +574,13 @@ export default function SkillsList() {
               fetching ? 'opacity-60' : 'opacity-100',
             )}
           >
-            {hasQuery ? (
+            {hasActiveFilter ? (
               <div className="mx-auto mb-4 max-w-[1200px]">
                 <div className="mb-1 font-mono text-[11px] uppercase tracking-[0.18em] text-neutral-400">
-                  搜索结果
+                  筛选结果
                 </div>
                 <h2 className="text-[24px] font-semibold tracking-[-0.02em] text-neutral-900">
-                  找到 {contentCountText(total, content)}与「{query.trim()}」相关
+                  找到 {contentCountText(total, content)}与 {filterLabel} 相关
                 </h2>
               </div>
             ) : (

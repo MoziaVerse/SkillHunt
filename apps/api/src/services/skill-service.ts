@@ -4,6 +4,7 @@ import {
   notifications,
   publishableBookmarks,
   publishableComments,
+  publishableExternalTags,
   publishableReleases,
   publishableUpvotes,
   publishables,
@@ -22,6 +23,11 @@ import {
   skillFileFingerprint,
   textSkillFile,
 } from '../lib/skill-file-payload';
+import {
+  parseTagJson,
+  publishableExternalTagsJson,
+  publishableTagFilterCondition,
+} from './publishable-external-tag-service';
 import {
   addPublishableBookmark,
   addPublishableUpvote,
@@ -176,6 +182,7 @@ export interface SkillWithOwner {
   type: 'owned' | 'referenced';
   visibility: 'public' | 'private';
   tags: string[];
+  externalTags: string[];
   sourceRepo: string | null;
   sourceSkillName: string | null;
   sourceInstallCommand: string | null;
@@ -271,6 +278,7 @@ const skillSelectExtras = (viewerUserId: string | null) => ({
           and ${publishableBookmarks.userId} = ${viewerUserId}
       )`
     : sql<number>`0`,
+  externalTags: publishableExternalTagsJson(),
 });
 
 function mapSkillRow<
@@ -284,11 +292,13 @@ function mapSkillRow<
     bookmarkCount: number;
     viewerHasUpvoted: number | boolean;
     viewerHasBookmarked: number | boolean;
+    externalTags: unknown;
   },
 >(row: T): SkillWithOwner {
   return {
     ...row.publishable,
     ...row.skill,
+    externalTags: parseTagJson(row.externalTags),
     owner: row.owner,
     downloadCount: Number(row.downloadCount ?? 0),
     upvoteCount: Number(row.upvoteCount ?? 0),
@@ -362,12 +372,8 @@ export async function listSkillsForApi(
 
   // Tag filtering in SQL (instead of post-filtering in JS)
   if (opts.tags.length > 0) {
-    conditions.push(
-      sql`exists (select 1 from json_each(${publishables.tags}) where json_each.value in (${sql.join(
-        opts.tags.map((t) => sql`${t}`),
-        sql`, `,
-      )}))`,
-    );
+    const tagCond = publishableTagFilterCondition(opts.tags);
+    if (tagCond) conditions.push(tagCond);
   }
 
   const where = conditions.length ? and(...conditions) : undefined;
@@ -571,12 +577,30 @@ export async function ensureLatestSkillRelease(skill: SkillWithOwner) {
   });
 }
 
-export async function listAllTags(): Promise<string[]> {
-  const rows = await db
-    .select({ tags: publishables.tags })
-    .from(publishables)
-    .where(eq(publishables.visibility, 'public'));
-  return [...new Set(rows.flatMap((r) => r.tags))].sort();
+export async function listAllTags(opts: { includeExternal?: boolean } = {}): Promise<string[]> {
+  if (!opts.includeExternal) {
+    const rows = await db
+      .select({ tags: publishables.tags })
+      .from(publishables)
+      .where(eq(publishables.visibility, 'public'));
+    return [...new Set(rows.flatMap((r) => r.tags))].sort();
+  }
+
+  const [publishableRows, externalRows] = await Promise.all([
+    db
+      .select({ tags: publishables.tags })
+      .from(publishables)
+      .where(eq(publishables.visibility, 'public')),
+    db
+      .select({ tag: publishableExternalTags.tag })
+      .from(publishableExternalTags)
+      .innerJoin(publishables, eq(publishableExternalTags.publishableId, publishables.id))
+      .where(eq(publishables.visibility, 'public')),
+  ]);
+
+  return [
+    ...new Set([...publishableRows.flatMap((r) => r.tags), ...externalRows.map((r) => r.tag)]),
+  ].sort();
 }
 
 // ─── User lookup ──────────────────────────────────────────────────────
@@ -787,6 +811,7 @@ export async function createOwnedSkill(input: CreateSkillData): Promise<SkillWit
       bookmarkCount: 0,
       viewerHasUpvoted: false,
       viewerHasBookmarked: false,
+      externalTags: [],
     };
   });
 }
@@ -911,6 +936,7 @@ export async function updateOwnedSkill(
       bookmarkCount: 0,
       viewerHasUpvoted: false,
       viewerHasBookmarked: false,
+      externalTags: [],
     };
   });
 }

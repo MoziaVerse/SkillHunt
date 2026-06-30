@@ -288,8 +288,11 @@ export const apiClient = {
     });
   },
 
-  listTags(): Promise<ListTagsResponse> {
-    return request<ListTagsResponse>('/tags', { credentials: 'include' });
+  listTags(params: { includeExternal?: boolean } = {}): Promise<ListTagsResponse> {
+    const usp = new URLSearchParams();
+    if (params.includeExternal) usp.set('includeExternal', 'true');
+    const qs = usp.toString();
+    return request<ListTagsResponse>(`/tags${qs ? `?${qs}` : ''}`, { credentials: 'include' });
   },
 
   listMyContestSubmissions(eventSlug: string): Promise<ListContestSubmissionsResponse> {

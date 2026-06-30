@@ -31,6 +31,31 @@ export const publishables = sqliteTable(
   ],
 );
 
+export const publishableExternalTags = sqliteTable(
+  'publishable_external_tags',
+  {
+    id: text('id').primaryKey().$defaultFn(randomId),
+    publishableId: text('publishable_id')
+      .notNull()
+      .references(() => publishables.id, { onDelete: 'cascade' }),
+    tag: text('tag').notNull(),
+    sourceType: text('source_type', { enum: ['event', 'manual', 'system'] }).notNull(),
+    sourceId: text('source_id').notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(nowMs),
+  },
+  (t) => [
+    uniqueIndex('publishable_external_tags_unique_idx').on(
+      t.publishableId,
+      t.tag,
+      t.sourceType,
+      t.sourceId,
+    ),
+    index('publishable_external_tags_publishable_idx').on(t.publishableId),
+    index('publishable_external_tags_tag_idx').on(t.tag),
+    index('publishable_external_tags_source_idx').on(t.sourceType, t.sourceId),
+  ],
+);
+
 export type PublishableKind = 'skill' | 'package';
 export type SkillReleaseSnapshot = {
   kind: 'skill';
@@ -173,6 +198,8 @@ export const skillSyncEvents = sqliteTable(
 
 export type Publishable = typeof publishables.$inferSelect;
 export type NewPublishable = typeof publishables.$inferInsert;
+export type PublishableExternalTag = typeof publishableExternalTags.$inferSelect;
+export type NewPublishableExternalTag = typeof publishableExternalTags.$inferInsert;
 export type PublishableRelease = typeof publishableReleases.$inferSelect;
 export type NewPublishableRelease = typeof publishableReleases.$inferInsert;
 export type SkillSyncEvent = typeof skillSyncEvents.$inferSelect;

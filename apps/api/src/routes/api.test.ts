@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import {
   contestSubmissions,
@@ -9,6 +9,7 @@ import {
   notifications,
   publishableBookmarks,
   publishableComments,
+  publishableExternalTags,
   publishableReleases,
   publishableSubscriptions,
   publishableUpvotes,
@@ -222,6 +223,7 @@ async function resetAndSeed() {
   await db.delete(publishableBookmarks);
   await db.delete(publishableUpvotes);
   await db.delete(publishableComments);
+  await db.delete(publishableExternalTags);
   await db.delete(skillInstallEvents);
   await db.delete(contestVotes);
   await db.delete(contestSubmissions);
@@ -321,6 +323,7 @@ async function cleanup() {
   await db.delete(publishableBookmarks);
   await db.delete(publishableUpvotes);
   await db.delete(publishableComments);
+  await db.delete(publishableExternalTags);
   await db.delete(skillInstallEvents);
   await db.delete(contestVotes);
   await db.delete(contestSubmissions);
@@ -553,6 +556,46 @@ describe('business API', () => {
       expect(body.tags.sort()).toEqual(['design', 'tooling']);
       expect(body.tags).not.toContain('writing');
     });
+
+    it('returns external tags only when explicitly requested', async () => {
+      const [publicSkill] = await db
+        .select({ id: publishables.id })
+        .from(publishables)
+        .where(eq(publishables.slug, 'test-owned-pub'))
+        .limit(1);
+      const [privateSkill] = await db
+        .select({ id: publishables.id })
+        .from(publishables)
+        .where(eq(publishables.slug, 'test-owned-priv'))
+        .limit(1);
+      if (!publicSkill || !privateSkill) throw new Error('seed skills not found');
+
+      await db.insert(publishableExternalTags).values([
+        {
+          publishableId: publicSkill.id,
+          tag: '杭电竞赛',
+          sourceType: 'event',
+          sourceId: 'hdu-skills-2026',
+        },
+        {
+          publishableId: privateSkill.id,
+          tag: '隐藏活动',
+          sourceType: 'event',
+          sourceId: 'private-event',
+        },
+      ]);
+
+      const defaultRes = await app.fetch(reqAnon('/api/tags'));
+      expect(defaultRes.status).toBe(200);
+      const defaultBody = (await defaultRes.json()) as { tags: string[] };
+      expect(defaultBody.tags).not.toContain('杭电竞赛');
+
+      const res = await app.fetch(reqAnon('/api/tags?includeExternal=true'));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { tags: string[] };
+      expect(body.tags).toContain('杭电竞赛');
+      expect(body.tags).not.toContain('隐藏活动');
+    });
   });
 
   describe('Skill Package API', () => {
@@ -639,6 +682,32 @@ describe('business API', () => {
       };
       expect(packagesBody.items.every((item) => item.kind === 'package')).toBe(true);
       expect(packagesBody.items.map((item) => item.item.slug)).toContain('publishable-suite');
+    });
+
+    it('filters publishables by external tag without mutating built-in tags', async () => {
+      const skillId = await publicSkillId();
+      await db.insert(publishableExternalTags).values({
+        publishableId: skillId,
+        tag: '杭电竞赛',
+        sourceType: 'event',
+        sourceId: 'hdu-skills-2026',
+      });
+
+      const res = await app.fetch(reqAnon('/api/publishables?tag=杭电竞赛'));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        items: Array<{
+          kind: 'skill' | 'package';
+          item: { slug: string; tags: string[]; externalTags: string[] };
+        }>;
+        total: number;
+      };
+      expect(body.total).toBeGreaterThanOrEqual(1);
+      const match = body.items.find(
+        (item) => item.kind === 'skill' && item.item.slug === 'test-owned-pub',
+      );
+      expect(match?.item.tags).toEqual(['design']);
+      expect(match?.item.externalTags).toEqual(['杭电竞赛']);
     });
 
     it('publishes package releases with changelog and versioned install command', async () => {
